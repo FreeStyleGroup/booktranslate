@@ -29,13 +29,13 @@
 ```
 apps/
   web/        Next.js 16 + React 19 (TypeScript) — витрина и будущее рабочее место
-docs/         решения по архитектуре и их обоснование
+  api/        FastAPI + SQLAlchemy 2 + Postgres — бэкенд
+docs/         документация: журнал работ, решения, модель данных, сборка и выкат
 ```
 
-Бэкенд появится в `apps/api` — стек выбирается отдельно, см.
-`docs/DECISIONS.md`.
+## Запуск
 
-## Запуск витрины
+Витрина:
 
 ```bash
 cd apps/web
@@ -43,13 +43,27 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Проверки, которые гоняет CI:
+Бэкенд и база — контейнерами (коду нужен Python 3.12, и версия среды не
+должна зависеть от машины разработчика):
 
 ```bash
-npm run lint
-npm run typecheck
-npm run build
+docker compose up --build                       # API на http://localhost:8000
+docker compose exec api alembic upgrade head    # накатить схему
 ```
+
+Проверки, те же, что в CI:
+
+```bash
+cd apps/web && npm run lint && npm run typecheck && npm run build
+docker compose exec api ruff check . && docker compose exec api mypy app
+docker compose exec api pytest
+```
+
+## С чего начать чтение
+
+`docs/README.md` — карта документации. Если вернулись к проекту после
+перерыва, начинайте с `docs/JOURNAL.md`: там по этапам, что сделано и что
+осталось открытым. Правила работы с ветками и PR — в `CONTRIBUTING.md`.
 
 ## Развёртывание
 

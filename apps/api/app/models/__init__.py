@@ -1,0 +1,25 @@
+"""Доменные модели.
+
+Импорт здесь нужен не для удобства, а для Alembic: autogenerate видит только
+те таблицы, чьи классы уже загружены к моменту сравнения со схемой базы.
+Модель, забытая в этом списке, молча не попадёт в миграцию.
+"""
+
+from app.models.document import Document, DocumentStatus, SourceFormat
+from app.models.organization import Membership, Organization, Role, User
+from app.models.project import Project
+from app.models.segment import Segment, SegmentKind, SegmentStatus
+
+__all__ = [
+    "Document",
+    "DocumentStatus",
+    "Membership",
+    "Organization",
+    "Project",
+    "Role",
+    "Segment",
+    "SegmentKind",
+    "SegmentStatus",
+    "SourceFormat",
+    "User",
+]

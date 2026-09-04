@@ -1,0 +1,44 @@
+# Локальная среда разработки: база и API.
+# Витрина (apps/web) поднимается отдельно через npm run dev — так быстрее
+# горячая перезагрузка, а в контейнере от неё пользы нет.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: booktranslate
+      POSTGRES_PASSWORD: booktranslate
+      POSTGRES_DB: booktranslate
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # API стартует только после того, как база реально отвечает:
+      # без проверки контейнер поднимается раньше готовности Postgres,
+      # и первая же миграция падает на отказе в соединении.
+      test: ["CMD-SHELL", "pg_isready -U booktranslate -d booktranslate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://booktranslate:booktranslate@postgres:5432/booktranslate
+      ENVIRONMENT: development
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Код подключён томом: правка файла подхватывается без пересборки
+      # образа. Пересборка нужна только при изменении зависимостей.
+      - ./apps/api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
