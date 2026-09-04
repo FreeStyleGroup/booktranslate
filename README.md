@@ -56,6 +56,17 @@ npm run build
 Витрина деплоится на Vercel из этого репозитория: Root Directory — `apps/web`.
 Каждый push в `main` уезжает в продакшен, каждая ветка получает превью-ссылку.
 
+Проект на Vercel: `booktranslate` в аккаунте `freestyletravel` — отсюда
+`freestyletravel` в адресах вида
+`booktranslate-<хеш>-freestyletravel.vercel.app`: Vercel подставляет в них
+slug аккаунта, а не имя проекта.
+
+⚠️ По умолчанию Vercel закрывает деплои своей авторизацией: посторонний
+получает редирект на `vercel.com/sso-api`, а не страницу. Пока витрину нужно
+показывать без входа в Vercel — Project Settings → Deployment Protection →
+Vercel Authentication → Disabled (для Production; на превью защиту разумно
+оставить).
+
 Бэкенд на Vercel не поедет — ему нужны постоянные процессы, очередь и база;
 он развернётся на отдельном сервере, а витрина будет ходить к нему по адресу
 из `NEXT_PUBLIC_API_URL`.
