@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "booktranslate-api"
 version = "0.1.0"
@@ -22,6 +26,13 @@ dev = [
     "ruff==0.13.0",
     "mypy==1.18.1",
 ]
+
+[tool.setuptools.packages.find]
+# Пакет дистрибутива один — app. Без явного указания setuptools видит рядом
+# каталог alembic, считает его вторым верхнеуровневым пакетом и отказывается
+# собирать: «Multiple top-level packages discovered in a flat-layout».
+# Миграции пакетом и не являются — это скрипты, которые запускает alembic.
+include = ["app*"]
 
 [tool.ruff]
 line-length = 100
