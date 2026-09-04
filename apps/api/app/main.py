@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health
+from app.api.routes import auth, health
 from app.core.config import get_settings
 
 
@@ -14,6 +14,10 @@ def create_app() -> FastAPI:
     один и тот же объект на весь процесс.
     """
     settings = get_settings()
+    # Проверки, которые нельзя выразить типом поля, — например запрет
+    # ключа подписи из примера вне разработки. Лучше не подняться совсем,
+    # чем подняться в рабочей среде с известным всем секретом.
+    settings.validate_runtime()
 
     app = FastAPI(
         title=settings.app_name,
@@ -30,6 +34,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(auth.router)
 
     return app
 

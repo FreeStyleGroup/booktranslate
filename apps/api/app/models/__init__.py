@@ -9,6 +9,7 @@ from app.models.document import Document, DocumentStatus, SourceFormat
 from app.models.organization import Membership, Organization, Role, User
 from app.models.project import Project
 from app.models.segment import Segment, SegmentKind, SegmentStatus
+from app.models.session import RefreshSession
 
 __all__ = [
     "Document",
@@ -16,6 +17,7 @@ __all__ = [
     "Membership",
     "Organization",
     "Project",
+    "RefreshSession",
     "Role",
     "Segment",
     "SegmentKind",

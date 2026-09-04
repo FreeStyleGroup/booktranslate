@@ -31,6 +31,30 @@ class Settings(BaseSettings):
     # Домены витрины, которым разрешён доступ к API из браузера.
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # Ключ подписи токенов. Значение по умолчанию годится только для
+    # разработки: в рабочей среде переменная обязательна, иначе подделать
+    # токен сможет любой, кто читал этот файл. Проверка — в validate().
+    jwt_secret: str = "dev-secret-change-me"
+    jwt_algorithm: str = "HS256"
+
+    # Короткий срок жизни доступа и длинный — обновления. Украденный
+    # access-токен протухает за четверть часа, а refresh лежит в базе и
+    # отзывается: у него есть чему протухнуть принудительно.
+    access_token_ttl_minutes: int = 15
+    refresh_token_ttl_days: int = 30
+
+    def validate_runtime(self) -> None:
+        """Проверки, которые нельзя выразить типом поля.
+
+        Вызывается при сборке приложения: лучше не подняться совсем, чем
+        подняться в рабочей среде с ключом подписи из примера.
+        """
+        if self.environment != "development" and self.jwt_secret == "dev-secret-change-me":
+            raise RuntimeError(
+                "JWT_SECRET не задан: в среде «" + self.environment + "» "
+                "запуск с ключом по умолчанию запрещён"
+            )
+
 
 @lru_cache
 def get_settings() -> Settings:

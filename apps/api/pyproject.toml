@@ -11,11 +11,19 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.118.0",
     "uvicorn[standard]==0.37.0",
-    "pydantic==2.11.7",
+    # extra «email» тянет email-validator: без него EmailStr падает при
+    # построении схемы, то есть приложение не поднимется вовсе.
+    "pydantic[email]==2.11.7",
     "pydantic-settings==2.10.1",
     "sqlalchemy==2.0.43",
     "alembic==1.16.4",
     "asyncpg==0.30.0",
+    "pyjwt==2.13.0",
+    # Argon2id — рекомендация OWASP для новых проектов: в отличие от bcrypt
+    # он нагружает не только процессор, но и память, что обесценивает
+    # перебор на видеокартах. Библиотека берётся напрямую, без passlib:
+    # passlib не поддерживается с 2020 года и тянет legacy-алгоритмы.
+    "argon2-cffi==25.1.0",
 ]
 
 [project.optional-dependencies]
