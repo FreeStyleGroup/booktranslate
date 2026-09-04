@@ -5,6 +5,17 @@ dist/
 build/
 coverage/
 
+# Python: артефакты установки и кеши инструментов. Появляются при
+# «pip install -e» и прогоне проверок, к исходникам отношения не имеют.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 .env
 .env.local
 .env.*.local
