@@ -1,8 +1,3 @@
-# Заготовка GitHub Actions. Лежит вне .github/workflows намеренно:
-# токен, которым ведётся разработка, не имеет права workflow, и GitHub
-# отклоняет любой push, создающий или меняющий файлы в .github/workflows.
-# После «gh auth refresh -h github.com -s workflow» файл переезжает в
-# .github/workflows/ci.yml и начинает работать.
 name: CI
 
 on:

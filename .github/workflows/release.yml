@@ -1,6 +1,3 @@
-# Заготовка GitHub Actions (см. пояснение в github-ci.yml — файлы
-# .github/workflows требуют права workflow у токена).
-# Переезжает в .github/workflows/release.yml.
 name: Release API
 
 on:
