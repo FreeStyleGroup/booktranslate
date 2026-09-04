@@ -1,0 +1,10 @@
+# В репозитории всегда LF: сборка идёт на Linux (CI и Vercel), а часть
+# работы ведётся на Windows — без этого каждый второй коммит выглядел бы
+# как полная перезапись файла.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.pdf binary

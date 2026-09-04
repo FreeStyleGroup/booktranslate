@@ -1,0 +1,38 @@
+# Заготовка GitHub Actions. Лежит вне .github/workflows намеренно:
+# токен, которым ведётся разработка, не имеет права workflow, и GitHub
+# отклоняет любой push, создающий или меняющий файлы в .github/workflows.
+# После «gh auth refresh -h github.com -s workflow» файл переезжает в
+# .github/workflows/ci.yml и начинает работать.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web:
+    name: Витрина (lint, types, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      # npm ci, а не install: сборка обязана падать при рассинхроне
+      # package.json и lock-файла, а не молча ставить другие версии.
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run build
