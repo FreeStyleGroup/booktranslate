@@ -3,8 +3,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health
+from app.api.errors import handle_domain_error
+from app.api.routes import auth, documents, health, projects
 from app.core.config import get_settings
+from app.services.errors import DomainError
 
 
 def create_app() -> FastAPI:
@@ -33,8 +35,14 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Один обработчик на всё дерево доменных ошибок: Starlette ищет
+    # обработчик по предкам исключения, поэтому наследники находятся сами.
+    app.add_exception_handler(DomainError, handle_domain_error)
+
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(projects.router)
+    app.include_router(documents.router)
 
     return app
 

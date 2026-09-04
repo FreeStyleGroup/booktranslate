@@ -9,7 +9,7 @@
 import enum
 import uuid
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,19 @@ class SourceFormat(str, enum.Enum):
 
 class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        # Один и тот же файл не заводится в проекте дважды. Проверка перед
+        # вставкой отсеивает повтор в обычном случае, но два одновременных
+        # запроса пройдут её оба — гарантию даёт только ограничение в базе.
+        # Частичное: у документа без подсчитанной суммы ограничивать нечего.
+        Index(
+            "documents_project_content_hash",
+            "project_id",
+            "content_hash",
+            unique=True,
+            postgresql_where=text("content_hash IS NOT NULL"),
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
@@ -48,6 +61,10 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     )
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    # Имя файла таким, каким его дал человек. Хранится отдельно от названия:
+    # название потом правят, а по имени файла ищут «тот самый», который
+    # присылали в переписке.
+    original_filename: Mapped[str | None] = mapped_column(String(255))
     source_format: Mapped[SourceFormat] = mapped_column(
         Enum(SourceFormat, name="document_source_format", native_enum=True), nullable=False
     )

@@ -1,10 +1,11 @@
 """Вход, регистрация, обновление доступа.
 
-Обработчики тонкие: разбирают запрос, зовут сервис и переводят ошибки
-предметной области в коды ответа. Логика — в `app/services/auth.py`.
+Обработчики тонкие: разбирают запрос и зовут сервис. Логика — в
+`app/services/auth.py`, перевод ошибок предметной области в коды ответа —
+в `app/api/errors.py`.
 """
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Request, Response, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentUserDep, SessionDep
@@ -19,7 +20,6 @@ from app.schemas.auth import (
     UserPublic,
 )
 from app.services.auth import AuthService
-from app.services.errors import AuthError, ConflictError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,50 +41,37 @@ def _client_info(request: Request) -> tuple[str | None, str | None]:
 async def register(payload: RegisterRequest, request: Request, session: SessionDep) -> TokenPair:
     user_agent, ip_address = _client_info(request)
 
-    try:
-        return await AuthService(session).register(
-            email=payload.email,
-            password=payload.password,
-            full_name=payload.full_name,
-            organization_name=payload.organization_name,
-            user_agent=user_agent,
-            ip_address=ip_address,
-        )
-    except ConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await AuthService(session).register(
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+        organization_name=payload.organization_name,
+        user_agent=user_agent,
+        ip_address=ip_address,
+    )
 
 
 @router.post("/login", response_model=TokenPair)
 async def login(payload: LoginRequest, request: Request, session: SessionDep) -> TokenPair:
     user_agent, ip_address = _client_info(request)
 
-    try:
-        return await AuthService(session).login(
-            email=payload.email,
-            password=payload.password,
-            user_agent=user_agent,
-            ip_address=ip_address,
-        )
-    except AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+    return await AuthService(session).login(
+        email=payload.email,
+        password=payload.password,
+        user_agent=user_agent,
+        ip_address=ip_address,
+    )
 
 
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(payload: RefreshRequest, request: Request, session: SessionDep) -> TokenPair:
     user_agent, ip_address = _client_info(request)
 
-    try:
-        return await AuthService(session).refresh(
-            refresh_token=payload.refresh_token,
-            user_agent=user_agent,
-            ip_address=ip_address,
-        )
-    except AuthError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    return await AuthService(session).refresh(
+        refresh_token=payload.refresh_token,
+        user_agent=user_agent,
+        ip_address=ip_address,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

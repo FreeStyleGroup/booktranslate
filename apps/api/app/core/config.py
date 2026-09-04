@@ -43,6 +43,20 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
 
+    # Где лежат исходные файлы документов. Каталог на диске — временное
+    # решение на время разработки и одного сервера; интерфейс хранилища
+    # рассчитан на замену объектным (см. app/services/storage.py).
+    storage_root: str = "./var/storage"
+
+    # Потолок размера загружаемого файла. Проверяется на лету, по мере
+    # чтения: узнавать о превышении после того, как гигабайт уже принят на
+    # диск, поздно и дорого.
+    max_upload_mb: int = 50
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
+
     def validate_runtime(self) -> None:
         """Проверки, которые нельзя выразить типом поля.
 

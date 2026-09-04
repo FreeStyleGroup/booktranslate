@@ -29,12 +29,16 @@ services:
       DATABASE_URL: postgresql+asyncpg://booktranslate:booktranslate@postgres:5432/booktranslate
       ENVIRONMENT: development
       DEBUG: "true"
+      # Исходные файлы — на отдельном томе, а не рядом с кодом: иначе они
+      # попадают в рабочую копию и в git-статус разработчика.
+      STORAGE_ROOT: /var/booktranslate/storage
     ports:
       - "8000:8000"
     volumes:
       # Код подключён томом: правка файла подхватывается без пересборки
       # образа. Пересборка нужна только при изменении зависимостей.
       - ./apps/api:/app
+      - api_storage:/var/booktranslate/storage
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       postgres:
@@ -42,3 +46,4 @@ services:
 
 volumes:
   postgres_data:
+  api_storage:

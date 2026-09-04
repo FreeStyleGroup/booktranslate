@@ -34,3 +34,19 @@ class NotFoundError(DomainError):
 
 class ConflictError(DomainError):
     """Действие противоречит текущему состоянию: 409."""
+
+
+class InvalidInputError(DomainError):
+    """Данные разобрались, но по смыслу не годятся: 400.
+
+    Не то же самое, что ошибка схемы (её ловит Pydantic и отвечает 422):
+    здесь тип верный, а содержимое бессмысленно — например пустой файл.
+    """
+
+
+class PayloadTooLargeError(DomainError):
+    """Загруженное превышает разрешённый размер: 413."""
+
+
+class UnsupportedFormatError(DomainError):
+    """Формат файла не поддерживается: 415."""

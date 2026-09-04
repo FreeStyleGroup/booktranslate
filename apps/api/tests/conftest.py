@@ -11,6 +11,7 @@
 
 import os
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.session import get_session
 from app.main import create_app
+from app.services.storage import LocalStorage, ObjectStorage, get_storage
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -65,7 +67,17 @@ async def client() -> AsyncGenerator[AsyncClient]:
 
 
 @pytest.fixture
-async def db_client(session: AsyncSession) -> AsyncGenerator[AsyncClient]:
+def storage_root(tmp_path: Path) -> Path:
+    """Каталог хранилища на время одного теста.
+
+    Свой у каждого теста: загруженные файлы не переживают его и не
+    попадают в рабочий каталог разработчика.
+    """
+    return tmp_path / "storage"
+
+
+@pytest.fixture
+async def db_client(session: AsyncSession, storage_root: Path) -> AsyncGenerator[AsyncClient]:
     """Клиент к приложению, работающему в транзакции теста.
 
     Отдельная фикстура, а не общая с `client`: тест, которому база не
@@ -76,7 +88,11 @@ async def db_client(session: AsyncSession) -> AsyncGenerator[AsyncClient]:
     async def override_session() -> AsyncGenerator[AsyncSession]:
         yield session
 
+    def override_storage() -> ObjectStorage:
+        return LocalStorage(storage_root)
+
     app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_storage] = override_storage
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

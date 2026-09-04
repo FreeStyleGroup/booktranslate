@@ -23,57 +23,7 @@ from app.models.organization import Membership, Organization, Role, User
 from app.models.session import RefreshSession
 from app.schemas.auth import TokenPair
 from app.services.errors import AuthError, ConflictError
-
-
-def _slugify(value: str) -> str:
-    """Короткое имя организации из её названия.
-
-    Транслитерация намеренно простая: короткое имя не обязано быть
-    красивым, оно обязано быть предсказуемым и уникальным. Владелец
-    сможет его изменить.
-    """
-    table = str.maketrans(
-        {
-            "а": "a",
-            "б": "b",
-            "в": "v",
-            "г": "g",
-            "д": "d",
-            "е": "e",
-            "ё": "e",
-            "ж": "zh",
-            "з": "z",
-            "и": "i",
-            "й": "i",
-            "к": "k",
-            "л": "l",
-            "м": "m",
-            "н": "n",
-            "о": "o",
-            "п": "p",
-            "р": "r",
-            "с": "s",
-            "т": "t",
-            "у": "u",
-            "ф": "f",
-            "х": "h",
-            "ц": "c",
-            "ч": "ch",
-            "ш": "sh",
-            "щ": "sch",
-            "ъ": "",
-            "ы": "y",
-            "ь": "",
-            "э": "e",
-            "ю": "yu",
-            "я": "ya",
-        }
-    )
-    lowered = value.strip().lower().translate(table)
-    cleaned = "".join(char if char.isalnum() else "-" for char in lowered)
-    slug = "-".join(part for part in cleaned.split("-") if part)[:60]
-
-    return slug or "org"
+from app.services.slug import slugify
 
 
 class AuthService:
@@ -97,7 +47,7 @@ class AuthService:
         user = User(email=email, full_name=full_name, password_hash=hash_password(password))
         organization = Organization(
             name=organization_name,
-            slug=await self._unique_slug(_slugify(organization_name)),
+            slug=await self._unique_slug(slugify(organization_name, fallback="org")),
         )
         # Тот, кто завёл организацию, становится её владельцем: иначе
         # первым же действием оказалось бы некому выдать права.

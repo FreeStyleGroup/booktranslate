@@ -6,7 +6,6 @@
 """
 
 import uuid
-from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -16,27 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenError, decode_access_token
 from app.db.session import get_session
-from app.models.organization import Membership, Role, User
+from app.models.organization import Membership, User
+from app.services.context import RequestContext
+from app.services.storage import ObjectStorage, get_storage
 
 # auto_error=False: без заголовка отвечаем своей ошибкой на русском,
 # а не стандартным «Not authenticated».
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-@dataclass(frozen=True)
-class RequestContext:
-    """От чьего имени и в какой организации выполняется запрос."""
-
-    user: User
-    organization_id: uuid.UUID
-    role: Role
-
-    def require(self, *roles: Role) -> None:
-        if self.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Недостаточно прав для этого действия",
-            )
 
 
 async def get_current_user(
@@ -128,3 +113,4 @@ async def get_context(
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 ContextDep = Annotated[RequestContext, Depends(get_context)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
