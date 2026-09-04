@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: booktranslate-api
+Version: 0.1.0
+Summary: API платформы перевода технической документации
+Requires-Python: >=3.12
+Requires-Dist: fastapi==0.118.0
+Requires-Dist: uvicorn[standard]==0.37.0
+Requires-Dist: pydantic==2.11.7
+Requires-Dist: pydantic-settings==2.10.1
+Requires-Dist: sqlalchemy==2.0.43
+Requires-Dist: alembic==1.16.4
+Requires-Dist: asyncpg==0.30.0
+Provides-Extra: dev
+Requires-Dist: pytest==8.4.1; extra == "dev"
+Requires-Dist: pytest-asyncio==1.1.0; extra == "dev"
+Requires-Dist: httpx==0.28.1; extra == "dev"
+Requires-Dist: ruff==0.13.0; extra == "dev"
+Requires-Dist: mypy==1.18.1; extra == "dev"

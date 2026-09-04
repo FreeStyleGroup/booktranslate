@@ -10,7 +10,7 @@ import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -71,10 +71,12 @@ class Membership(UUIDPrimaryKey, TimestampMixin, Base):
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     role: Mapped[Role] = mapped_column(
         Enum(Role, name="membership_role", native_enum=True), nullable=False

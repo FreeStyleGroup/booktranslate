@@ -10,7 +10,7 @@ import enum
 import uuid
 
 from sqlalchemy import BigInteger, Enum, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -18,13 +18,13 @@ from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
 
 
 class DocumentStatus(str, enum.Enum):
-    UPLOADED = "uploaded"        # файл принят, ничего с ним ещё не делали
-    PARSING = "parsing"          # разбираем структуру
-    PARSED = "parsed"            # разобран на сегменты, готов к переводу
+    UPLOADED = "uploaded"  # файл принят, ничего с ним ещё не делали
+    PARSING = "parsing"  # разбираем структуру
+    PARSED = "parsed"  # разобран на сегменты, готов к переводу
     TRANSLATING = "translating"  # перевод идёт
-    REVIEW = "review"            # переведён, ждёт человека
-    DONE = "done"                # проверен и принят
-    FAILED = "failed"            # сломался; причина — в error
+    REVIEW = "review"  # переведён, ждёт человека
+    DONE = "done"  # проверен и принят
+    FAILED = "failed"  # сломался; причина — в error
 
 
 class SourceFormat(str, enum.Enum):
@@ -41,7 +41,7 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     __tablename__ = "documents"
 
     project_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True),
+        postgresql.UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

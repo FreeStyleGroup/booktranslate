@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -23,7 +23,9 @@ class UUIDPrimaryKey:
     можно связывать с другими до похода в базу.
     """
 
-    id: Mapped[uuid.UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
 
 
 class TimestampMixin:
@@ -45,7 +47,7 @@ class TenantMixin:
     """
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True),
+        postgresql.UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

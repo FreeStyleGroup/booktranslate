@@ -8,10 +8,10 @@
 
 import enum
 import uuid
+from typing import Any
 
 from sqlalchemy import Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -19,12 +19,12 @@ from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
 
 
 class SegmentStatus(str, enum.Enum):
-    NEW = "new"                # разобран, не переведён
-    MACHINE = "machine"        # перевод модели, человек не смотрел
-    MEMORY = "memory"          # подставлен из памяти переводов
-    EDITED = "edited"          # правил человек
-    APPROVED = "approved"      # принят редактором
-    FLAGGED = "flagged"        # проверка нашла проблему
+    NEW = "new"  # разобран, не переведён
+    MACHINE = "machine"  # перевод модели, человек не смотрел
+    MEMORY = "memory"  # подставлен из памяти переводов
+    EDITED = "edited"  # правил человек
+    APPROVED = "approved"  # принят редактором
+    FLAGGED = "flagged"  # проверка нашла проблему
 
 
 class SegmentKind(str, enum.Enum):
@@ -54,7 +54,7 @@ class Segment(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     )
 
     document_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True),
+        postgresql.UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -79,12 +79,12 @@ class Segment(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # Где сегмент стоял в исходнике: номер страницы, раздел, путь в разметке.
     # Свободная структура, потому что у PDF, DOCX и XLIFF она разная, а
     # заводить под каждый формат свои колонки — плодить пустоты.
-    source_location: Mapped[dict | None] = mapped_column(JSONB)
+    source_location: Mapped[dict[str, Any] | None] = mapped_column(postgresql.JSONB)
 
     # Итог проверок: расхождение чисел, нарушение глоссария, протечка
     # исходного языка, длина. Список проверок будет расти, и каждая новая
     # не должна требовать миграции.
-    quality: Mapped[dict | None] = mapped_column(JSONB)
+    quality: Mapped[dict[str, Any] | None] = mapped_column(postgresql.JSONB)
     quality_score: Mapped[float | None] = mapped_column(Float, index=True)
 
     # Откуда взялся перевод: имя модели или «memory» — чтобы через полгода

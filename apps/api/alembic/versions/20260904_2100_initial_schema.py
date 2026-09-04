@@ -23,8 +23,12 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
         sa.Column("slug", sa.String(length=80), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_organizations")),
         sa.UniqueConstraint("slug", name=op.f("uq_organizations_slug")),
     )
@@ -36,8 +40,12 @@ def upgrade() -> None:
         sa.Column("full_name", sa.String(length=200), nullable=True),
         sa.Column("password_hash", sa.String(length=255), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
         sa.UniqueConstraint("email", name=op.f("uq_users_email")),
     )
@@ -50,13 +58,22 @@ def upgrade() -> None:
         sa.Column(
             "role",
             sa.Enum(
-                "OWNER", "ADMIN", "MANAGER", "TRANSLATOR", "REVIEWER", "VIEWER",
+                "OWNER",
+                "ADMIN",
+                "MANAGER",
+                "TRANSLATOR",
+                "REVIEWER",
+                "VIEWER",
                 name="membership_role",
             ),
             nullable=False,
         ),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
@@ -70,7 +87,9 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_memberships")),
-        sa.UniqueConstraint("organization_id", "user_id", name=op.f("uq_memberships_organization_user")),
+        sa.UniqueConstraint(
+            "organization_id", "user_id", name=op.f("uq_memberships_organization_user")
+        ),
     )
 
     op.create_table(
@@ -82,8 +101,12 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("source_language", sa.String(length=20), nullable=False),
         sa.Column("target_language", sa.String(length=20), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
@@ -103,13 +126,28 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=500), nullable=False),
         sa.Column(
             "source_format",
-            sa.Enum("PDF", "DOCX", "HTML", "MARKDOWN", "XLIFF", "EPUB", "TXT", name="document_source_format"),
+            sa.Enum(
+                "PDF",
+                "DOCX",
+                "HTML",
+                "MARKDOWN",
+                "XLIFF",
+                "EPUB",
+                "TXT",
+                name="document_source_format",
+            ),
             nullable=False,
         ),
         sa.Column(
             "status",
             sa.Enum(
-                "UPLOADED", "PARSING", "PARSED", "TRANSLATING", "REVIEW", "DONE", "FAILED",
+                "UPLOADED",
+                "PARSING",
+                "PARSED",
+                "TRANSLATING",
+                "REVIEW",
+                "DONE",
+                "FAILED",
                 name="document_status",
             ),
             nullable=False,
@@ -118,8 +156,12 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.BigInteger(), nullable=True),
         sa.Column("content_hash", sa.String(length=64), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],
@@ -148,14 +190,22 @@ def upgrade() -> None:
         sa.Column(
             "kind",
             sa.Enum(
-                "PARAGRAPH", "HEADING", "LIST_ITEM", "TABLE_CELL", "CAPTION", "WARNING", "CODE",
+                "PARAGRAPH",
+                "HEADING",
+                "LIST_ITEM",
+                "TABLE_CELL",
+                "CAPTION",
+                "WARNING",
+                "CODE",
                 name="segment_kind",
             ),
             nullable=False,
         ),
         sa.Column(
             "status",
-            sa.Enum("NEW", "MACHINE", "MEMORY", "EDITED", "APPROVED", "FLAGGED", name="segment_status"),
+            sa.Enum(
+                "NEW", "MACHINE", "MEMORY", "EDITED", "APPROVED", "FLAGGED", name="segment_status"
+            ),
             nullable=False,
         ),
         sa.Column("source_text", sa.Text(), nullable=False),
@@ -164,8 +214,12 @@ def upgrade() -> None:
         sa.Column("quality", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("quality_score", sa.Float(), nullable=True),
         sa.Column("translation_source", sa.String(length=120), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["organization_id"],
             ["organizations.id"],

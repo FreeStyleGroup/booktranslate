@@ -41,6 +41,20 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
 
+[tool.ruff.lint.flake8-bugbear]
+# Depends в значении по умолчанию — не ошибка, а способ объявления
+# зависимостей во FastAPI: вызов исполняется фреймворком на каждый запрос,
+# а не один раз при импорте, поэтому обычная опасность изменяемых значений
+# по умолчанию здесь не возникает.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
+[tool.ruff.lint.isort]
+# Каталог миграций называется так же, как библиотека, поэтому ruff по
+# умолчанию считает «alembic» своим пакетом и требует переставить импорт
+# в блок первопартийных. Свой здесь только app.
+known-first-party = ["app"]
+known-third-party = ["alembic"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
