@@ -11,6 +11,8 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.schemas.document import DocumentPublic
 from app.services.documents import DocumentService
+from app.services.export import ExportFormat
+from app.services.exporting import ExportService
 from app.services.formats import media_type
 from app.services.storage import CHUNK_BYTES
 
@@ -101,6 +103,47 @@ async def download_document(
         service.stream(document),
         media_type=media_type(document.source_format),
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{name}"},
+    )
+
+
+@router.get("/documents/{document_id}/export")
+async def export_document(
+    document_id: uuid.UUID,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+    export_format: Annotated[
+        ExportFormat,
+        Query(alias="format", description="Формат выгрузки; source — как приносили"),
+    ] = ExportFormat.SOURCE,
+    allow_untranslated: Annotated[
+        bool,
+        Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом"),
+    ] = False,
+) -> Response:
+    """Забрать перевод файлом.
+
+    По умолчанию собирается в формате оригинала и только целиком:
+    недопереведённая книга, отданная молча, — худшее, что здесь можно
+    сделать, потому что заметят это позже всех. Черновик доступен явным
+    разрешением, и тогда число непереведённых блоков возвращается заголовком
+    `X-Untranslated-Blocks`.
+    """
+    result = await ExportService(session, context, storage).export(
+        document_id, export_format=export_format, allow_untranslated=allow_untranslated
+    )
+
+    # filename* с процентным кодированием: имя собирается из названия
+    # документа, а оно бывает русским.
+    name = quote(result.filename)
+
+    return Response(
+        content=result.rendered.content,
+        media_type=result.rendered.media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "X-Untranslated-Blocks": str(result.untranslated),
+        },
     )
 
 
