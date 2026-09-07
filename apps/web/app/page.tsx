@@ -313,7 +313,7 @@ export default function Home() {
                 </b>
                 <i aria-hidden="true">→</i>
                 <b>
-                  <span aria-hidden="true">📖</span> Тот же файл
+                  <span aria-hidden="true">📖</span> Файл
                 </b>
               </p>
               <div className="hero__actions">
