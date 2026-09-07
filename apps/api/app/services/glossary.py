@@ -82,6 +82,9 @@ class Term:
     # подсказкой, но не имеет права помечать сегмент ошибкой: иначе редактор
     # получит сотню претензий к переводу там, где спор идёт о самом словаре.
     settled: bool = True
+    # Раскрывать ли при первом употреблении: «маркет-мейкер (market maker,
+    # MM)», дальше просто MM.
+    expand_on_first_use: bool = False
 
 
 @dataclass(slots=True)
@@ -126,6 +129,10 @@ class Glossary:
 
     def __len__(self) -> int:
         return len(self._terms)
+
+    @property
+    def terms(self) -> list[Term]:
+        return list(self._terms)
 
     def match(self, text: str) -> list[Term]:
         """Термины, встретившиеся в тексте."""
@@ -193,6 +200,7 @@ class GlossaryService(TenantService):
                 kind=row.kind,
                 case_sensitive=row.case_sensitive,
                 settled=row.status is GlossaryTermStatus.CONFIRMED,
+                expand_on_first_use=row.expand_on_first_use,
             )
 
         return Glossary(list(chosen.values()))

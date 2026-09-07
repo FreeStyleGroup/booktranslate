@@ -23,6 +23,29 @@ from typing import Protocol
 from app.services.glossary import Term
 
 
+@dataclass(frozen=True, slots=True)
+class Neighbourhood:
+    """Окружение сегмента в документе.
+
+    Сегмент, отданный модели в одиночку, переводится наугад везде, где смысл
+    держится на соседях: «он», «указанный выше», «то же самое», опущенное
+    подлежащее. Модель при этом не сомневается — она выдаёт гладкую фразу,
+    в которой местоимение указывает не туда, и заметить это можно только
+    рядом с исходником.
+
+    Заголовок раздела идёт отдельно от соседей: он задаёт предметную
+    область на десятки сегментов вперёд, а `bank` в главе про гидравлику и
+    в главе про финансы — разные слова.
+    """
+
+    before: tuple[str, ...] = ()
+    after: tuple[str, ...] = ()
+    heading: str | None = None
+
+
+EMPTY_CONTEXT = Neighbourhood()
+
+
 @dataclass(slots=True)
 class TranslationRequest:
     source_text: str
@@ -37,6 +60,10 @@ class TranslationRequest:
     # Роль сегмента в документе: у заголовка свои требования к краткости,
     # у предупреждения цена ошибки выше всего.
     kind: str = "paragraph"
+
+    # Соседние сегменты и заголовок раздела. Переводу не подлежат — они
+    # нужны модели, чтобы понять, к чему относится «он» и о чём вообще речь.
+    context: Neighbourhood = EMPTY_CONTEXT
 
 
 class TranslationProvider(Protocol):
