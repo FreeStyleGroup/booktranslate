@@ -16,13 +16,13 @@ export function CreateUser() {
   const [state, action, busy] = useActionState(createUser, EMPTY);
 
   return (
-    <section className="panel panel--create">
-      <div className="panel__head">
-        <h2>Завести пользователя</h2>
+    <section className="adm-panel">
+      <div className="adm-panel__head">
+        <h2>Создать пользователя</h2>
         <span className="muted">Пароль сгенерируется — покажем его один раз</span>
       </div>
 
-      <form className="create" action={action}>
+      <form className="adm-create" action={action}>
         <label className="field">
           <span>Почта</span>
           <input name="email" type="email" required placeholder="colleague@company.ru" />
@@ -51,7 +51,7 @@ export function CreateUser() {
         </label>
 
         <button className="btn btn--primary" type="submit" disabled={busy}>
-          {busy ? "Заводим…" : "Завести"}
+          {busy ? "Создаём…" : "Создать"}
         </button>
       </form>
 

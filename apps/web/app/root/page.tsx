@@ -74,6 +74,19 @@ function moment(value: string | null): string {
   });
 }
 
+/** Только дата: в строке «кто и когда менял» время лишнее и рвёт вёрстку. */
+function day(value: string | null): string {
+  if (value === null) {
+    return "—";
+  }
+
+  return new Date(value).toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 export default async function RootPage({
   searchParams,
 }: {
@@ -124,7 +137,7 @@ export default async function RootPage({
       <main className="root__body">
         <CreateUser />
 
-        <section className="panel">
+        <section className="adm-panel">
           <form className="root__filters" method="get">
             <input
               type="search"
@@ -148,8 +161,8 @@ export default async function RootPage({
             </div>
           </form>
 
-          <div className="table" role="table">
-            <div className="table__head" role="row">
+          <div className="adm-table" role="table">
+            <div className="adm-table__head" role="row">
               <span>Пользователь</span>
               <span>Рабочие пространства</span>
               <span>Зарегистрирован</span>
@@ -159,40 +172,44 @@ export default async function RootPage({
             </div>
 
             {list.items.map((user) => (
-              <div className="table__row" role="row" key={user.id}>
+              <div className="adm-table__row" role="row" key={user.id}>
                 <span>
                   <b>{user.full_name ?? user.email}</b>
                   <small>{user.email}</small>
                 </span>
-                <span className="table__soft">
+                <span className="adm-table__soft">
                   {user.organizations.length === 0 ? "—" : user.organizations.join(", ")}
                 </span>
-                <span className="table__soft">{moment(user.created_at)}</span>
-                <span className="table__soft">{moment(user.last_login_at)}</span>
+                <span className="adm-table__soft">{moment(user.created_at)}</span>
+                <span className="adm-table__soft">{moment(user.last_login_at)}</span>
                 <span>
                   <span className={`tag tag--${user.status}`}>{STATUS_LABEL[user.status]}</span>
                   {user.status_changed_by !== null && (
-                    <small>
-                      {user.status_changed_by}, {moment(user.status_changed_at)}
+                    <small title={`${user.status_changed_by}, ${moment(user.status_changed_at)}`}>
+                      {user.status_changed_by}, {day(user.status_changed_at)}
                     </small>
                   )}
                 </span>
-                <span className="table__actions">
+                <span className="adm-table__actions">
                   {user.status !== "active" && (
                     <form action={changeStatus}>
                       <input type="hidden" name="id" value={user.id} />
                       <input type="hidden" name="status" value="active" />
                       <button className="btn btn--primary btn--small" type="submit">
-                        {user.status === "pending" ? "Одобрить" : "Открыть"}
+                        {user.status === "pending" ? "Одобрить" : "Возобновить"}
                       </button>
                     </form>
                   )}
+                  {/* Приостановка и отклонение — одно состояние, но разные
+                      поступки, и называться должны по-разному: отклоняют
+                      заявку, приостанавливают работающий доступ. Позже сюда
+                      же встанет автоматика окончания подписки. */}
                   {user.status !== "suspended" && !user.is_superuser && (
                     <form action={changeStatus}>
                       <input type="hidden" name="id" value={user.id} />
                       <input type="hidden" name="status" value="suspended" />
                       <button className="btn btn--ghost btn--small" type="submit">
-                        Закрыть
+                        {user.status === "pending" ? "Отклонить" : "Приостановить"}
                       </button>
                     </form>
                   )}
@@ -201,7 +218,7 @@ export default async function RootPage({
             ))}
 
             {list.items.length === 0 && (
-              <p className="table__empty">Ничего не нашлось по этому отбору.</p>
+              <p className="adm-table__empty">Ничего не нашлось по этому отбору.</p>
             )}
           </div>
         </section>

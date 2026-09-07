@@ -252,7 +252,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main>
+      <main className="page">
         <section>
           <div className="aurora" aria-hidden="true">
             <span />

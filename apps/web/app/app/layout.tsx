@@ -3,9 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { apiFetch, type CurrentUser } from "../lib/api";
-import { accessToken } from "../lib/session";
+import { accessToken, organizationId } from "../lib/session";
 import "./cabinet.css";
-import { SideNav } from "./side-nav";
+import { SideNav, type NavCounts } from "./side-nav";
 import { ThemeToggle } from "./theme-toggle";
 
 export const metadata: Metadata = {
@@ -30,8 +30,28 @@ async function currentUser(): Promise<CurrentUser | null> {
   }
 }
 
+/** Числа рядом с разделами меню — из той же сводки, что и обзор. */
+async function counts(): Promise<NavCounts | null> {
+  const token = await accessToken();
+
+  if (token === undefined) {
+    return null;
+  }
+
+  try {
+    return await apiFetch<NavCounts>("/overview", {
+      token,
+      organizationId: await organizationId(),
+    });
+  } catch {
+    // Меню без чисел лучше кабинета, который не открылся.
+    return null;
+  }
+}
+
 export default async function CabinetLayout({ children }: { children: ReactNode }) {
   const me = await currentUser();
+  const navCounts = await counts();
   const name = me?.user.full_name ?? me?.user.email ?? "Гость";
   const workspace = me?.memberships[0]?.organization_name ?? "Демонстрация";
 
@@ -47,7 +67,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
           </span>
         </Link>
 
-        <SideNav />
+        <SideNav counts={navCounts} />
       </aside>
 
       <div className="cab__main">

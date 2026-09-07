@@ -11,41 +11,61 @@ import { usePathname } from "next/navigation";
 
 type Item = { href: string; icon: string; label: string; count?: number };
 
-const GROUPS: { title: string; items: Item[] }[] = [
-  {
-    title: "Работа",
-    items: [
-      { href: "/app", icon: "📊", label: "Обзор" },
-      { href: "/app/queue", icon: "🧪", label: "Очередь замечаний", count: 128 },
-      { href: "/app/documents", icon: "📚", label: "Документы", count: 7 },
-      { href: "/app/projects", icon: "🗃", label: "Проекты", count: 3 },
-    ],
-  },
-  {
-    title: "Терминология",
-    items: [
-      { href: "/app/terms", icon: "🗂", label: "Термины книги", count: 24 },
-      { href: "/app/catalog", icon: "🔍", label: "Каталог справок" },
-      { href: "/app/glossary", icon: "📑", label: "Словарь" },
-      { href: "/app/memory", icon: "🧠", label: "Память переводов" },
-    ],
-  },
-  {
-    title: "Организация",
-    items: [
-      { href: "/app/usage", icon: "💸", label: "Расход" },
-      { href: "/app/team", icon: "👥", label: "Команда" },
-      { href: "/app/settings", icon: "⚙️", label: "Настройки" },
-    ],
-  },
-];
+/** Числа рядом с разделами — те же, что на обзоре. */
+export type NavCounts = {
+  flagged: number;
+  documents: number;
+  projects: number;
+  undecided_terms: number;
+};
 
-export function SideNav() {
+function groups(counts: NavCounts | null): { title: string; items: Item[] }[] {
+  return [
+    {
+      title: "Работа",
+      items: [
+        { href: "/app", icon: "📊", label: "Обзор" },
+        {
+          href: "/app/queue",
+          icon: "🧪",
+          label: "Очередь замечаний",
+          count: counts?.flagged,
+        },
+        { href: "/app/documents", icon: "📚", label: "Документы", count: counts?.documents },
+        { href: "/app/projects", icon: "🗃", label: "Проекты", count: counts?.projects },
+      ],
+    },
+    {
+      title: "Терминология",
+      items: [
+        {
+          href: "/app/terms",
+          icon: "🗂",
+          label: "Термины книги",
+          count: counts?.undecided_terms,
+        },
+        { href: "/app/catalog", icon: "🔍", label: "Каталог справок" },
+        { href: "/app/glossary", icon: "📑", label: "Словарь" },
+        { href: "/app/memory", icon: "🧠", label: "Память переводов" },
+      ],
+    },
+    {
+      title: "Организация",
+      items: [
+        { href: "/app/usage", icon: "💸", label: "Расход" },
+        { href: "/app/team", icon: "👥", label: "Команда" },
+        { href: "/app/settings", icon: "⚙️", label: "Настройки" },
+      ],
+    },
+  ];
+}
+
+export function SideNav({ counts }: { counts: NavCounts | null }) {
   const pathname = usePathname();
 
   return (
     <>
-      {GROUPS.map((group) => (
+      {groups(counts).map((group) => (
         <div className="cab__group" key={group.title}>
           <h4>{group.title}</h4>
           {group.items.map((item) => (
@@ -62,7 +82,9 @@ export function SideNav() {
             >
               <i aria-hidden="true">{item.icon}</i>
               <span>{item.label}</span>
-              {item.count !== undefined && <span className="cab__count">{item.count}</span>}
+              {item.count !== undefined && item.count > 0 && (
+                <span className="cab__count">{item.count.toLocaleString("ru-RU")}</span>
+              )}
             </Link>
           ))}
         </div>

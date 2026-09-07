@@ -66,7 +66,7 @@
   }
 }
 
-.panel {
+.adm-panel {
   border: 1px solid var(--line-soft);
   border-radius: 18px;
   background: var(--paper);
@@ -74,7 +74,7 @@
   padding: 22px 24px;
 }
 
-.panel__head {
+.adm-panel__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -83,7 +83,7 @@
   margin-bottom: 18px;
 }
 
-.panel__head h2 {
+.adm-panel__head h2 {
   margin: 0;
   font-size: 19px;
   letter-spacing: -0.02em;
@@ -120,30 +120,36 @@
 
 /* ── Заведение пользователя ── */
 
-.create {
+.adm-create {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 14px;
   align-items: end;
 }
 
+/* Серверное действие подкладывает в форму скрытые поля. В сетке они
+   занимают ячейки и сдвигают видимые — убираем их из потока. */
+.adm-create input[type="hidden"] {
+  display: none;
+}
+
 @media (max-width: 1100px) {
-  .create {
+  .adm-create {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .create .btn {
+  .adm-create .btn {
     grid-column: 1 / -1;
   }
 }
 
 @media (max-width: 620px) {
-  .create {
+  .adm-create {
     grid-template-columns: 1fr;
   }
 }
 
-.create select {
+.adm-create select {
   height: 50px;
   padding: 0 14px;
   border-radius: 12px;
@@ -229,20 +235,23 @@
 
 /* ── Таблица ── */
 
-.table {
+.adm-table {
   display: grid;
 }
 
-.table__head,
-.table__row {
+/* Последний столбец фиксированной ширины, а не `auto`: в шапке кнопок нет,
+   и от «по содержимому» она разъезжалась с рядами — заголовки вставали не
+   над своими значениями. */
+.adm-table__head,
+.adm-table__row {
   display: grid;
-  grid-template-columns: 1.4fr 1.2fr 0.9fr 0.9fr 1fr auto;
+  grid-template-columns: 1.4fr 1.1fr 0.85fr 0.85fr 1fr 240px;
   gap: 16px;
   padding: 14px 4px;
   align-items: center;
 }
 
-.table__head {
+.adm-table__head {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
@@ -251,52 +260,55 @@
   border-bottom: 1px solid var(--line);
 }
 
-.table__row + .table__row {
+.adm-table__row + .adm-table__row {
   border-top: 1px solid var(--line-soft);
 }
 
-.table__row b {
+.adm-table__row b {
   display: block;
   font-size: 15px;
   font-weight: 600;
 }
 
-.table__row small {
+.adm-table__row small {
   display: block;
   font-family: var(--mono);
   font-size: 12px;
   color: var(--ink-faint);
-  margin-top: 2px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.table__soft {
+.adm-table__soft {
   font-size: 14px;
   color: var(--ink-soft);
 }
 
-.table__actions {
+.adm-table__actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
 }
 
-.table__empty {
+.adm-table__empty {
   padding: 28px 4px;
   color: var(--ink-faint);
 }
 
 @media (max-width: 1100px) {
-  .table__head {
+  .adm-table__head {
     display: none;
   }
 
-  .table__row {
+  .adm-table__row {
     grid-template-columns: 1fr;
     gap: 8px;
     padding: 18px 4px;
   }
 
-  .table__actions {
+  .adm-table__actions {
     justify-content: flex-start;
   }
 }
