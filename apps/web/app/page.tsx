@@ -154,21 +154,6 @@ const FEATURES = [
     title: "Источник у каждого решения",
     text: "Адрес, по которому термин посмотрели, сохраняется вместе с решением. Спор о термине через месяц не начинается заново.",
   },
-  {
-    icon: "📑",
-    title: "Ваши словари",
-    text: "CSV, TBX и рабочие реестры терминологии в DOCX загружаются как есть. Заведённое человеком чужая база не перезаписывает.",
-  },
-  {
-    icon: "👥",
-    title: "Работа командой",
-    text: "Переводчик, редактор, менеджер и наблюдатель видят разное. Приёмка отделена от правки: «поправил» и «отвечаю за это» — разные действия.",
-  },
-  {
-    icon: "🔒",
-    title: "Ваш контур",
-    text: "Внешний поиск выключен по умолчанию, провайдер перевода выбирается настройкой. Там, где текст нельзя отдавать наружу, он и не уходит.",
-  },
 ];
 
 const CANDIDATES: {
@@ -558,6 +543,10 @@ export default function Home() {
           </div>
         </section>
 
+        <div className="divider" aria-hidden="true">
+          <span>📖</span>
+        </div>
+
         <section className="surface">
           <div className="wrap split split--flip">
             <Reveal className="split__text">
@@ -582,35 +571,7 @@ export default function Home() {
 
             <Reveal>
               <div className="grid">
-                {FEATURES.slice(0, 3).map((feature) => (
-                  <article className="card" key={feature.title}>
-                    <div className="card__mark" aria-hidden="true">
-                      {feature.icon}
-                    </div>
-                    <h3>{feature.title}</h3>
-                    <p>{feature.text}</p>
-                  </article>
-                ))}
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        <div className="divider" aria-hidden="true">
-          <span>📖</span>
-        </div>
-
-        <section>
-          <div className="wrap">
-            <Reveal>
-              <div className="section__head section__head--center">
-                <p className="eyebrow">
-                  <span aria-hidden="true">✨</span> Ещё
-                </p>
-                <h2>Из важного по мелочи</h2>
-              </div>
-              <div className="grid grid--3">
-                {FEATURES.slice(3).map((feature) => (
+                {FEATURES.map((feature) => (
                   <article className="card" key={feature.title}>
                     <div className="card__mark" aria-hidden="true">
                       {feature.icon}
