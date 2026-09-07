@@ -70,11 +70,14 @@ def upgrade() -> None:
         sa.Column("source", sa.String(length=120), nullable=False, server_default="manual"),
         # Вид записи. Аббревиатуры и непереводимое ведут себя иначе и при
         # подсказке модели, и при проверке результата.
+        # Значения перечисления — ИМЕНА членов заглавными, как у остальных
+        # перечислений схемы: SQLAlchemy по умолчанию пишет в базу `.name`,
+        # а не `.value`, и тип, созданный по значениям, отверг бы вставку.
         sa.Column(
             "kind",
-            sa.Enum("term", "abbreviation", "do_not_translate", name="glossary_entry_kind"),
+            sa.Enum("TERM", "ABBREVIATION", "DO_NOT_TRANSLATE", name="glossary_entry_kind"),
             nullable=False,
-            server_default="term",
+            server_default="TERM",
         ),
         # Регистр значим у аббревиатур: иначе «ИТ» найдётся внутри любого слова.
         sa.Column("case_sensitive", sa.Boolean(), nullable=False, server_default=sa.false()),
