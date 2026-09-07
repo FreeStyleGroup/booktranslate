@@ -19,6 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.session import get_session
 from app.main import create_app
+from app.services.providers import (
+    StubProvider,
+    TranslationProvider,
+    TranslationRequest,
+    get_provider,
+)
 from app.services.storage import LocalStorage, ObjectStorage, get_storage
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -76,8 +82,33 @@ def storage_root(tmp_path: Path) -> Path:
     return tmp_path / "storage"
 
 
+class RecordingProvider(StubProvider):
+    """Заглушка, запоминающая запросы.
+
+    Переводит ровно так же, как обычная, но сохраняет то, что ей пришло:
+    иначе про контекст и термины, уехавшие в модель, тест может судить
+    только по итоговому тексту — а там их не видно.
+    """
+
+    def __init__(self, log: list[TranslationRequest]) -> None:
+        self._log = log
+
+    async def translate(self, requests: list[TranslationRequest]) -> list[str]:
+        self._log.extend(requests)
+
+        return await super().translate(requests)
+
+
 @pytest.fixture
-async def db_client(session: AsyncSession, storage_root: Path) -> AsyncGenerator[AsyncClient]:
+def provider_log() -> list[TranslationRequest]:
+    """Запросы, ушедшие провайдеру за время теста."""
+    return []
+
+
+@pytest.fixture
+async def db_client(
+    session: AsyncSession, storage_root: Path, provider_log: list[TranslationRequest]
+) -> AsyncGenerator[AsyncClient]:
     """Клиент к приложению, работающему в транзакции теста.
 
     Отдельная фикстура, а не общая с `client`: тест, которому база не
@@ -91,8 +122,12 @@ async def db_client(session: AsyncSession, storage_root: Path) -> AsyncGenerator
     def override_storage() -> ObjectStorage:
         return LocalStorage(storage_root)
 
+    def override_provider() -> TranslationProvider:
+        return RecordingProvider(provider_log)
+
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_storage] = override_storage
+    app.dependency_overrides[get_provider] = override_provider
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

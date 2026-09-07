@@ -18,9 +18,12 @@
 3. **Память переводов.** То же самое между документами: вторая книга серии
    обязана называть вещи так же, как первая.
 4. **Модель получает термины, встретившиеся в этом сегменте** — как
-   ограничение, а не как справочный материал.
-5. **Проверка глоссария на выходе.** Сегмент, где обязательный термин не
-   употреблён, помечается и уходит к человеку.
+   ограничение, а не как справочный материал, — и соседние сегменты с
+   заголовком раздела: без них «он», «указанный выше» и опущенное
+   подлежащее переводятся наугад.
+5. **Проверки на выходе.** Числа, подстановки, употребление терминов,
+   раскрытие аббревиатуры при первом употреблении. Всё, что не сошлось,
+   помечает сегмент и уходит к человеку.
 
 Результат возвращается в память, поэтому следующий документ переводится
 не только дешевле, но и согласованно с предыдущим.
@@ -35,13 +38,19 @@ from app.core.config import get_settings
 from app.models.document import Document, DocumentStatus
 from app.models.organization import Role
 from app.models.project import Project
-from app.models.segment import Segment, SegmentStatus
+from app.models.segment import Segment, SegmentKind, SegmentStatus
+from app.services import checks
 from app.services.base import TenantService
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, NotFoundError
 from app.services.glossary import Glossary, GlossaryService
 from app.services.memory import TranslationMemory, fingerprint
-from app.services.providers import TranslationProvider, TranslationRequest
+from app.services.providers import (
+    EMPTY_CONTEXT,
+    Neighbourhood,
+    TranslationProvider,
+    TranslationRequest,
+)
 from app.services.terminology import TerminologyService
 
 TRANSLATING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
@@ -198,6 +207,10 @@ class TranslationService(TenantService):
         translated = await self._call_provider(
             pending,
             glossary=glossary,
+            # Соседи нужны только тому, что уходит модели: подстановка из
+            # памяти в контексте не нуждается, и лишний проход по документу
+            # ради неё делать незачем.
+            context=await self._neighbourhood(segments[0].document_id) if pending else {},
             source_language=source_language,
             target_language=target_language,
         )
@@ -209,6 +222,8 @@ class TranslationService(TenantService):
             target_language=target_language,
             origin=self._provider.name,
         )
+
+        await self._check_expansions(segments[0].document_id, glossary)
         await self._session.commit()
 
         from_provider = sum(len(group) for _, group in pending)
@@ -228,6 +243,7 @@ class TranslationService(TenantService):
         pending: list[tuple[str, list[Segment]]],
         *,
         glossary: Glossary,
+        context: dict[uuid.UUID, Neighbourhood],
         source_language: str,
         target_language: str,
     ) -> list[tuple[str, str]]:
@@ -248,6 +264,11 @@ class TranslationService(TenantService):
                     target_language=target_language,
                     terms=glossary.match(group[0].source_text),
                     kind=group[0].kind.value,
+                    # Контекст берётся у первого вхождения: у повторяющегося
+                    # сегмента соседи разные, а перевод обязан быть один.
+                    # Для повтора это и не потеря — предупреждение, которое
+                    # повторяется сорок раз, от соседей не зависит.
+                    context=context.get(group[0].id, EMPTY_CONTEXT),
                 )
                 for _, group in chunk
             ]
@@ -280,16 +301,102 @@ class TranslationService(TenantService):
         segment.target_text = target_text
         segment.translation_source = source
 
-        missing = glossary.missing_in(segment.source_text, target_text)
+        findings = checks.run_checks(
+            segment.source_text, target_text, glossary=glossary, kind=segment.kind
+        )
 
-        if missing:
-            # Помечаем, а не переспрашиваем модель на месте: решение, что
-            # делать с расхождением — показать человеку или отправить в
-            # модель подороже, — принимается не здесь.
-            segment.status = SegmentStatus.FLAGGED
-            segment.quality = {
-                "glossary": [{"source": term.source, "expected": term.target} for term in missing]
-            }
-        else:
-            segment.status = status
-            segment.quality = None
+        # Помечаем, а не переспрашиваем модель на месте: решение, что делать
+        # с находкой — поправить руками или перевести заново, — принимается
+        # не здесь.
+        segment.status = SegmentStatus.FLAGGED if findings else status
+        segment.quality = checks.as_json(findings)
+        segment.quality_score = checks.score(findings) if findings else None
+
+    async def _neighbourhood(self, document_id: uuid.UUID) -> dict[uuid.UUID, Neighbourhood]:
+        """Собрать окружение каждого сегмента документа.
+
+        Читается весь документ, а не только то, что переводится сейчас:
+        соседом непереведённого сегмента может быть давно готовый, и без
+        него контекст рвётся ровно на границе прошлого запуска.
+        """
+        size = get_settings().translation_context_segments
+
+        segments = list(
+            await self._session.scalars(
+                self.scoped(Segment)
+                .where(Segment.document_id == document_id)
+                .order_by(Segment.position)
+            )
+        )
+
+        context: dict[uuid.UUID, Neighbourhood] = {}
+        heading: str | None = None
+
+        for index, segment in enumerate(segments):
+            context[segment.id] = Neighbourhood(
+                before=tuple(item.source_text for item in segments[max(0, index - size) : index]),
+                after=tuple(item.source_text for item in segments[index + 1 : index + 1 + size]),
+                heading=heading,
+            )
+
+            # Заголовок обновляется после того, как записан контекст: для
+            # самого заголовка предметную область задаёт предыдущий, а не он
+            # сам.
+            if segment.kind is SegmentKind.HEADING:
+                heading = segment.source_text
+
+        return context
+
+    async def _check_expansions(self, document_id: uuid.UUID, glossary: Glossary) -> None:
+        """Проверить, что аббревиатуры раскрыты при первом употреблении.
+
+        Проверка документная, а не посегментная: «первое употребление»
+        существует только в масштабе всего документа, и по одному сегменту
+        сказать, первый он или сороковой, нельзя.
+
+        Идём по всему документу, а не по переведённому в этот раз: первое
+        вхождение могло достаться из памяти ещё в прошлый запуск, и
+        требовать раскрытия от сорокового по счёту сегмента было бы ровно
+        наоборот.
+        """
+        expandable = {term.source for term in glossary.terms if term.expand_on_first_use}
+        if not expandable:
+            return
+
+        segments = list(
+            await self._session.scalars(
+                self.scoped(Segment)
+                .where(Segment.document_id == document_id)
+                .order_by(Segment.position)
+            )
+        )
+
+        seen: set[str] = set()
+
+        for segment in segments:
+            if not segment.target_text:
+                continue
+
+            for term in glossary.match(segment.source_text):
+                if term.source not in expandable or term.source in seen:
+                    continue
+
+                seen.add(term.source)
+                finding = checks.first_use_finding(term, segment.target_text)
+
+                if finding is not None:
+                    self._add_finding(segment, finding)
+
+    @staticmethod
+    def _add_finding(segment: Segment, finding: checks.Finding) -> None:
+        """Добавить находку к сегменту, не потеряв прежние."""
+        previous = [
+            checks.Finding(check=str(item["check"]), message=str(item["message"]))
+            for item in (segment.quality or {}).get("findings", [])
+        ]
+
+        findings = [*previous, finding]
+
+        segment.status = SegmentStatus.FLAGGED
+        segment.quality = checks.as_json(findings)
+        segment.quality_score = checks.score(findings)
