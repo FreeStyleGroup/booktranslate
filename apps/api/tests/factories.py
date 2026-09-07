@@ -70,6 +70,74 @@ async def create_project(
     return project_id
 
 
+def real_docx_bytes() -> bytes:
+    """Настоящий DOCX со всеми обязательными частями.
+
+    Отличается от `docx_bytes` назначением: та подделка годится только для
+    определения формата, а разбору нужен документ, который открывается
+    библиотекой. Собирается самой python-docx — тогда тест проверяет разбор,
+    а не умение автора теста воспроизвести формат Word.
+    """
+    import docx
+
+    document = docx.Document()
+    document.add_heading("Глава первая", level=1)
+    document.add_paragraph("Первый абзац главы.")
+    document.add_paragraph("Пункт списка", style="List Bullet")
+
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Параметр"
+    table.cell(0, 1).text = "Значение"
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+
+    return buffer.getvalue()
+
+
+def epub_bytes(chapters: list[tuple[str, str]] | None = None) -> bytes:
+    """Минимальный EPUB: контейнер, опись и главы.
+
+    Имена файлов глав намеренно не совпадают с порядком чтения по алфавиту —
+    так тест ловит разбор, который сортирует главы по имени вместо описи.
+    """
+    chapters = chapters or [
+        ("part0010.xhtml", "<h1>Вторая глава</h1><p>Текст второй главы.</p>"),
+        ("part0002.xhtml", "<h1>Первая глава</h1><p>Текст первой главы.</p>"),
+    ]
+
+    manifest = "".join(
+        f'<item id="c{i}" href="{name}" media-type="application/xhtml+xml"/>'
+        for i, (name, _) in enumerate(chapters)
+    )
+    spine = "".join(f'<itemref idref="c{i}"/>' for i in range(len(chapters)))
+
+    buffer = io.BytesIO()
+
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr(
+            "META-INF/container.xml",
+            '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf"'
+            ' media-type="application/oebps-package+xml"/></rootfiles></container>',
+        )
+        archive.writestr(
+            "OEBPS/content.opf",
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+            f"<manifest>{manifest}</manifest><spine>{spine}</spine></package>",
+        )
+
+        for name, body in chapters:
+            archive.writestr(
+                f"OEBPS/{name}",
+                f'<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
+                f"<body>{body}</body></html>",
+            )
+
+    return buffer.getvalue()
+
+
 def docx_bytes(text: str = "Раздел первый") -> bytes:
     """Минимальный DOCX: ZIP с обязательной частью `word/document.xml`.
 

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import handle_domain_error
-from app.api.routes import auth, documents, health, projects
+from app.api.routes import auth, documents, health, projects, segments
 from app.core.config import get_settings
 from app.services.errors import DomainError
 
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(projects.router)
     app.include_router(documents.router)
+    app.include_router(segments.router)
 
     return app
 
