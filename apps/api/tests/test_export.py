@@ -5,12 +5,13 @@
 """
 
 import io
+import zipfile
 
 import docx
 from httpx import AsyncClient
 
 from tests.conftest import requires_database
-from tests.factories import Account, create_project, register
+from tests.factories import Account, create_project, epub_bytes, register
 
 MANUAL = (
     b"# Safety\n"
@@ -219,6 +220,65 @@ async def test_long_paragraph_comes_back_whole(db_client: AsyncClient) -> None:
 
     # Один блок — одна строка: части склеились обратно.
     assert len([line for line in response.text.splitlines() if line.strip()]) == 1
+
+
+@requires_database
+async def test_epub_comes_back_as_a_readable_book(db_client: AsyncClient) -> None:
+    """Книга — это архив с обложкой, стилями и описью; собрать её заново нельзя."""
+    account = await register(db_client)
+    document_id = await prepare(
+        db_client,
+        account,
+        data=epub_bytes(),
+        name="book.epub",
+        media="application/epub+zip",
+    )
+
+    response = await db_client.get(f"/documents/{document_id}/export", headers=account.headers)
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/epub+zip")
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as book:
+        names = book.namelist()
+
+        # Первая запись и без сжатия — по ней читалки опознают формат.
+        assert names[0] == "mimetype"
+        assert book.getinfo("mimetype").compress_type == zipfile.ZIP_STORED
+
+        # Опись и главы на месте, ничего не потерялось.
+        assert "META-INF/container.xml" in names
+        assert "OEBPS/content.opf" in names
+
+        chapter = book.read("OEBPS/part0002.xhtml").decode("utf-8")
+
+    assert "[ru] Первая глава" in chapter
+    # Разметка блока сохранилась: заголовок остался заголовком.
+    assert "<h1>[ru] Первая глава</h1>" in chapter
+
+
+@requires_database
+async def test_html_keeps_its_own_markup(db_client: AsyncClient) -> None:
+    account = await register(db_client)
+    page = (
+        b"<html><body><h2 class='chapter'>Safety</h2>"
+        b"<p>Open the valve before start.</p>"
+        b"<script>alert(1)</script></body></html>"
+    )
+
+    document_id = await prepare(db_client, account, data=page, name="page.html", media="text/html")
+
+    response = await db_client.get(f"/documents/{document_id}/export", headers=account.headers)
+
+    assert response.status_code == 200, response.text
+    body = response.text
+
+    # Класс и уровень заголовка остались; переведён только текст.
+    assert 'class="chapter"' in body
+    assert "[ru] Safety" in body
+    assert "[ru] Open the valve before start." in body
+    # Скрипт разбор не читал — значит и портить его при сборке незачем.
+    assert "alert(1)" in body
 
 
 @requires_database
