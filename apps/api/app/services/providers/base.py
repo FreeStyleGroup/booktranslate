@@ -71,6 +71,47 @@ class TranslationRequest:
     context: Neighbourhood = EMPTY_CONTEXT
 
 
+@dataclass(frozen=True, slots=True)
+class Usage:
+    """Сколько стоил вызов — в токенах, а не в деньгах.
+
+    Деньги считаются отдельно и по прейскуранту: цены меняются, а токены,
+    потраченные на эту книгу, — исторический факт, и пересчитывать его
+    задним числом нельзя.
+
+    Прочитанное из кэша учитывается отдельно от обычного ввода: оно стоит
+    примерно десятую часть, и складывать их в одно число значит потерять
+    ровно то, ради чего кэш заводили.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_input_tokens: int = 0
+    # Записанное в кэш: дороже обычного ввода, но платится один раз.
+    cache_write_tokens: int = 0
+
+    def __add__(self, other: "Usage") -> "Usage":
+        return Usage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cached_input_tokens=self.cached_input_tokens + other.cached_input_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class Translated:
+    """Ответ провайдера: переводы и цена вопроса.
+
+    Расход возвращается вместе с переводом, а не собирается провайдером у
+    себя: провайдер один на процесс и обслуживает несколько переводов
+    сразу, и счётчик внутри него смешал бы чужие книги.
+    """
+
+    texts: list[str]
+    usage: Usage = Usage()
+
+
 class TranslationProvider(Protocol):
     """Источник перевода: модель, сервис или заглушка."""
 
@@ -83,7 +124,7 @@ class TranslationProvider(Protocol):
         """
         ...
 
-    async def translate(self, requests: list[TranslationRequest]) -> list[str]:
+    async def translate(self, requests: list[TranslationRequest]) -> Translated:
         """Перевести пачку. Порядок ответов совпадает с порядком запросов."""
         ...
 
@@ -100,8 +141,10 @@ class StubProvider:
     def name(self) -> str:
         return "stub"
 
-    async def translate(self, requests: list[TranslationRequest]) -> list[str]:
-        return [self._one(request) for request in requests]
+    async def translate(self, requests: list[TranslationRequest]) -> Translated:
+        # Расход нулевой, и это не заглушка ради заглушки: заглушка ничего
+        # не тратит, и показывать иное было бы враньём в отчёте.
+        return Translated(texts=[self._one(request) for request in requests])
 
     @staticmethod
     def _one(request: TranslationRequest) -> str:

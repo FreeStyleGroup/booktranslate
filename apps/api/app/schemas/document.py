@@ -27,5 +27,17 @@ class DocumentPublic(BaseModel):
     # что загрузка вернула уже существующий документ, а не завела новый.
     content_hash: str | None
     error: str | None
+
+    # Потрачено на перевод документа нарастающим итогом по всем запускам.
+    # Токены, а не деньги: цены меняются, а потраченное на эту книгу —
+    # исторический факт, и пересчитывать его задним числом нельзя.
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+    cache_write_tokens: int
+    # Чем переведён документ: по нему считается стоимость и понятно, что
+    # перепроверять после смены модели.
+    translated_by: str | None
+
     created_at: datetime
     updated_at: datetime

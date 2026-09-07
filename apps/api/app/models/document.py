@@ -86,3 +86,20 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
 
     error: Mapped[str | None] = mapped_column(Text)
+
+    # Потрачено на перевод этого документа, нарастающим итогом по всем
+    # запускам. Токены, а не деньги: цены меняются, а потраченное — факт,
+    # и пересчитывать его задним числом по новому прейскуранту значит
+    # подделывать отчёт. Стоимость собирается на лету (app/services/pricing.py).
+    #
+    # Прочитанное из кэша отдельной колонкой: оно стоит примерно десятую
+    # часть обычного ввода, и сложенное с ним потеряло бы ровно то, ради
+    # чего кэш заводили.
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+    # Чем переведён документ. По нему считается стоимость и понятно, что
+    # перепроверять после смены модели.
+    translated_by: Mapped[str | None] = mapped_column(String(120))

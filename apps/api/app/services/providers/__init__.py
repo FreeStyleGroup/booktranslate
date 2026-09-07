@@ -18,8 +18,10 @@ from app.services.providers.base import (
     Neighbourhood,
     ProviderError,
     StubProvider,
+    Translated,
     TranslationProvider,
     TranslationRequest,
+    Usage,
 )
 from app.services.providers.claude import ClaudeProvider, ClaudeSettings
 
@@ -73,7 +75,9 @@ __all__ = [
     "Neighbourhood",
     "ProviderError",
     "StubProvider",
+    "Translated",
     "TranslationProvider",
     "TranslationRequest",
+    "Usage",
     "get_provider",
 ]
