@@ -6,7 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import ContextDep, ProviderDep, SessionDep
-from app.schemas.glossary import GlossaryTermCreate, GlossaryTermPublic, TranslationResult
+from app.schemas.glossary import (
+    GlossaryTermCreate,
+    GlossaryTermPublic,
+    GlossaryTermUpdate,
+    TranslationResult,
+)
 from app.services.glossary import GlossaryService
 from app.services.translation import TranslationService
 
@@ -23,6 +28,10 @@ async def translate_document(
         bool,
         Query(description="Переводить заново, включая отредактированные и принятые сегменты"),
     ] = False,
+    ignore_terminology: Annotated[
+        bool,
+        Query(description="Переводить, не дожидаясь решений по кандидатам в словарь"),
+    ] = False,
 ) -> TranslationResult:
     """Перевести сегменты документа.
 
@@ -30,9 +39,13 @@ async def translate_document(
     правку человека. Ответ — не список сегментов, а сводка: их могут быть
     десятки тысяч, а по сводке видно, сколько закрыто памятью и сколько
     пришлось отдать модели.
+
+    Незаконченный терминологический проход останавливает перевод: словарь,
+    решённый наполовину, даёт в книге два названия для одной вещи. Обойти
+    это можно (`ignore_terminology`), но это осознанный шаг, а не умолчание.
     """
     summary = await TranslationService(session, context, provider).translate(
-        document_id, force=force
+        document_id, force=force, ignore_terminology=ignore_terminology
     )
 
     return TranslationResult(
@@ -80,6 +93,29 @@ async def add_glossary_term(
         mandatory=payload.mandatory,
         kind=payload.kind,
         case_sensitive=payload.case_sensitive,
+        status=payload.status,
+        reference=payload.reference,
+        expand_on_first_use=payload.expand_on_first_use,
+    )
+
+    return GlossaryTermPublic.model_validate(term)
+
+
+@router.patch("/glossary/{term_id}", response_model=GlossaryTermPublic)
+async def update_glossary_term(
+    term_id: uuid.UUID,
+    payload: GlossaryTermUpdate,
+    context: ContextDep,
+    session: SessionDep,
+) -> GlossaryTermPublic:
+    """Поправить запись словаря.
+
+    Этим живёт перепроверка: второй проход не заводит термины заново, он
+    подтверждает, исправляет перевод и снимает дубликаты. Меняется только
+    присланное — правка одного поля не должна затирать остальные.
+    """
+    term = await GlossaryService(session, context).update(
+        term_id, payload.model_dump(exclude_unset=True)
     )
 
     return GlossaryTermPublic.model_validate(term)
