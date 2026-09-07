@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # фразы, поэтому пачка обязательна; верхняя граница — окно модели.
     translation_batch_size: int = 20
 
+    # Потолок на одну загрузку словаря. Термбаза на сотни тысяч строк — это
+    # не глоссарий книги, а чужая база целиком: грузить её одним запросом
+    # значит держать транзакцию открытой минутами.
+    max_import_terms: int = 20000
+
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
