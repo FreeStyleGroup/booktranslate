@@ -1,0 +1,77 @@
+/* Сеанс пользователя.
+
+   Токены живут в httpOnly-печеньях, а не в localStorage: любая чужая
+   вставка на странице читает localStorage целиком, а httpOnly-печенье
+   скрипту не видно вовсе. Проставляет их серверный обработчик
+   `app/api/session/route.ts` — браузер токенов не касается.
+
+   Печенья помечены `sameSite: lax` (переход по внешней ссылке не должен
+   выглядеть как действие пользователя) и `secure` вне разработки: по HTTP
+   `secure`-печенье просто не установится, и локальная разработка сломалась
+   бы на ровном месте. */
+
+import { cookies } from "next/headers";
+
+export const ACCESS_COOKIE = "bt_access";
+export const REFRESH_COOKIE = "bt_refresh";
+export const ORGANIZATION_COOKIE = "bt_org";
+
+const SECURE = process.env.NODE_ENV === "production";
+
+/** Токен доступа текущего пользователя, если он вошёл. */
+export async function accessToken(): Promise<string | undefined> {
+  const jar = await cookies();
+
+  return jar.get(ACCESS_COOKIE)?.value;
+}
+
+export async function organizationId(): Promise<string | undefined> {
+  const jar = await cookies();
+
+  return jar.get(ORGANIZATION_COOKIE)?.value;
+}
+
+export async function saveSession(
+  tokens: { access_token: string; refresh_token: string; expires_in: number },
+  organization?: string,
+): Promise<void> {
+  const jar = await cookies();
+
+  jar.set(ACCESS_COOKIE, tokens.access_token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: SECURE,
+    path: "/",
+    maxAge: tokens.expires_in,
+  });
+
+  // Обновление живёт дольше доступа — на нём и держится сеанс между
+  // визитами. Срок задан с запасом относительно срока на стороне API:
+  // просроченное обновление отвергнет сам API, и это честнее, чем
+  // расходиться с ним на клиенте.
+  jar.set(REFRESH_COOKIE, tokens.refresh_token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: SECURE,
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+
+  if (organization !== undefined) {
+    jar.set(ORGANIZATION_COOKIE, organization, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: SECURE,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
+}
+
+export async function clearSession(): Promise<void> {
+  const jar = await cookies();
+
+  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ORGANIZATION_COOKIE]) {
+    jar.delete(name);
+  }
+}
