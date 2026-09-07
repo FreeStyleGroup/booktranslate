@@ -25,6 +25,11 @@ CACHE_READ_RATIO = 0.1
 # Запись в кэш дороже обычного ввода, но платится один раз.
 CACHE_WRITE_RATIO = 1.25
 
+# Веб-поиск оплачивается запросами, а не токенами: 10 долларов за тысячу
+# запросов. Сверено 07.09.2026. В счётчиках токенов его не видно вовсе, и
+# отчёт без него занижал бы стоимость наполнения каталога.
+WEB_SEARCH_USD_PER_1000 = 10.0
+
 
 @dataclass(frozen=True, slots=True)
 class Price:
@@ -52,8 +57,9 @@ def estimate_usd(
     output_tokens: int,
     cached_input_tokens: int = 0,
     cache_write_tokens: int = 0,
+    searches: int = 0,
 ) -> float | None:
-    """Оценка стоимости перевода.
+    """Оценка стоимости перевода или справки.
 
     `None` означает «модель не в прейскуранте» — и это честнее нуля:
     заглушка ничего не стоит, а неизвестная модель стоит неизвестно
@@ -64,11 +70,11 @@ def estimate_usd(
     if price is None:
         return None
 
-    total = (
+    tokens = (
         input_tokens * price.input_usd
         + cached_input_tokens * price.input_usd * CACHE_READ_RATIO
         + cache_write_tokens * price.input_usd * CACHE_WRITE_RATIO
         + output_tokens * price.output_usd
     )
 
-    return round(total / MILLION, 4)
+    return round(tokens / MILLION + searches * WEB_SEARCH_USD_PER_1000 / 1000, 4)

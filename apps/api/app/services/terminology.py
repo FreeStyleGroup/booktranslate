@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from app.models.catalog import CatalogEntry
 from app.models.document import Document
 from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
 from app.models.project import Project
@@ -22,6 +23,7 @@ from app.models.segment import Segment
 from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.services import extraction
 from app.services.base import TenantService
+from app.services.catalog import first_url
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 from app.services.glossary import EDITING_ROLES, GlossaryService, normalize_term
 
@@ -204,6 +206,15 @@ class TerminologyService(TenantService):
             raise NotFoundError("Проект не найден")
 
         glossary = GlossaryService(self._session, self._context)
+        # Адреса, по которым термины смотрели в каталоге. Забираются заранее
+        # одним запросом: справка, добытая поиском, обязана уехать в словарь
+        # вместе с решением — потерять её в этот момент значит через месяц
+        # начать спор о термине заново.
+        sources = await self._catalog_sources(
+            document.id,
+            source_language=project.source_language,
+            target_language=project.target_language,
+        )
         accepted = 0
         rejected = 0
 
@@ -239,7 +250,9 @@ class TerminologyService(TenantService):
                 source=EXTRACTED,
                 kind=kind,
                 status=decision.status,
-                reference=decision.reference,
+                # Присланное человеком важнее: он мог посмотреть термин в
+                # бумажном справочнике, которого в каталоге нет.
+                reference=decision.reference or sources.get(row.source_term_normalized),
                 expand_on_first_use=self._expand_for(decision, kind),
                 commit=False,
             )
@@ -251,6 +264,39 @@ class TerminologyService(TenantService):
         await self._session.commit()
 
         return DecisionReport(accepted, rejected, await self.undecided(document.id))
+
+    async def _catalog_sources(
+        self, document_id: uuid.UUID, *, source_language: str, target_language: str
+    ) -> dict[str, str]:
+        """Адреса источников из каталога по терминам этого документа.
+
+        Один запрос на всю пачку решений, а не по запросу на кандидата:
+        решений двести, и двести походов в базу ради поля «источник» — это
+        секунды на ровном месте.
+        """
+        rows = await self._session.scalars(
+            self.scoped(CatalogEntry)
+            .join(
+                TermCandidate,
+                TermCandidate.source_term_normalized == CatalogEntry.source_term_normalized,
+            )
+            .where(
+                TermCandidate.document_id == document_id,
+                CatalogEntry.source_language == source_language,
+                CatalogEntry.target_language == target_language,
+                CatalogEntry.found.is_(True),
+            )
+        )
+
+        found = {}
+
+        for row in rows:
+            url = first_url(row)
+
+            if url is not None:
+                found[row.source_term_normalized] = url
+
+        return found
 
     async def undecided(self, document_id: uuid.UUID) -> int:
         """Сколько кандидатов ждёт решения."""

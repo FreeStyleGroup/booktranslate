@@ -17,7 +17,12 @@ from app.core.security import TokenError, decode_access_token
 from app.db.session import get_session
 from app.models.organization import Membership, User
 from app.services.context import RequestContext
-from app.services.providers import TranslationProvider, get_provider
+from app.services.providers import (
+    TermLookupProvider,
+    TranslationProvider,
+    get_lookup,
+    get_provider,
+)
 from app.services.storage import ObjectStorage, get_storage
 
 # auto_error=False: без заголовка отвечаем своей ошибкой на русском,
@@ -116,3 +121,4 @@ ContextDep = Annotated[RequestContext, Depends(get_context)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
 ProviderDep = Annotated[TranslationProvider, Depends(get_provider)]
+LookupDep = Annotated[TermLookupProvider, Depends(get_lookup)]

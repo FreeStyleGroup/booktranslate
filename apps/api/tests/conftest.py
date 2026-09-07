@@ -20,10 +20,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.db.session import get_session
 from app.main import create_app
 from app.services.providers import (
+    Explanation,
+    LookupRequest,
+    Reference,
     StubProvider,
+    TermLookupProvider,
     Translated,
     TranslationProvider,
     TranslationRequest,
+    Usage,
+    get_lookup,
     get_provider,
 )
 from app.services.storage import LocalStorage, ObjectStorage, get_storage
@@ -106,9 +112,54 @@ def provider_log() -> list[TranslationRequest]:
     return []
 
 
+class ScriptedLookup:
+    """Внешний источник справок, отвечающий по сценарию теста.
+
+    В сеть не ходит и ходить не должен: проверяется каталог — то, что
+    справка спрашивается один раз и переживает документ, — а не умение
+    модели искать.
+    """
+
+    def __init__(self, log: list[LookupRequest], answers: dict[str, Explanation]) -> None:
+        self._log = log
+        self._answers = answers
+
+    @property
+    def name(self) -> str:
+        return "test-lookup"
+
+    async def lookup(self, request: LookupRequest) -> Explanation:
+        self._log.append(request)
+
+        return self._answers.get(request.source_term.casefold()) or Explanation(
+            found=True,
+            suggested_target=f"перевод:{request.source_term}",
+            definition=f"Справка про {request.source_term}",
+            references=(Reference(title="Отраслевой справочник", url="https://example.org/term"),),
+            usage=Usage(input_tokens=1000, output_tokens=200),
+            searches=1,
+        )
+
+
+@pytest.fixture
+def lookup_log() -> list[LookupRequest]:
+    """Термины, ушедшие во внешний источник за время теста."""
+    return []
+
+
+@pytest.fixture
+def lookup_answers() -> dict[str, Explanation]:
+    """Заготовленные ответы источника по терминам (ключ — в нижнем регистре)."""
+    return {}
+
+
 @pytest.fixture
 async def db_client(
-    session: AsyncSession, storage_root: Path, provider_log: list[TranslationRequest]
+    session: AsyncSession,
+    storage_root: Path,
+    provider_log: list[TranslationRequest],
+    lookup_log: list[LookupRequest],
+    lookup_answers: dict[str, Explanation],
 ) -> AsyncGenerator[AsyncClient]:
     """Клиент к приложению, работающему в транзакции теста.
 
@@ -126,9 +177,13 @@ async def db_client(
     def override_provider() -> TranslationProvider:
         return RecordingProvider(provider_log)
 
+    def override_lookup() -> TermLookupProvider:
+        return ScriptedLookup(lookup_log, lookup_answers)
+
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_storage] = override_storage
     app.dependency_overrides[get_provider] = override_provider
+    app.dependency_overrides[get_lookup] = override_lookup
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

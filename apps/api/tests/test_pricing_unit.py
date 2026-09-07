@@ -5,7 +5,7 @@
 выдаётся за бесплатную.
 """
 
-from app.services.pricing import PRICES, estimate_usd
+from app.services.pricing import PRICES, WEB_SEARCH_USD_PER_1000, estimate_usd
 from app.services.providers import Usage
 
 
@@ -44,6 +44,17 @@ def test_cache_writes_cost_more_than_plain_input() -> None:
 
     assert plain is not None and written is not None
     assert written > plain
+
+
+def test_web_searches_are_paid_apart_from_tokens() -> None:
+    """В счётчиках токенов поиска не видно вовсе — а платить за него надо."""
+    without = estimate_usd("claude-opus-5", input_tokens=1000, output_tokens=1000)
+    with_searches = estimate_usd(
+        "claude-opus-5", input_tokens=1000, output_tokens=1000, searches=10
+    )
+
+    assert without is not None and with_searches is not None
+    assert round(with_searches - without, 4) == round(10 * WEB_SEARCH_USD_PER_1000 / 1000, 4)
 
 
 def test_unknown_model_is_not_free() -> None:
