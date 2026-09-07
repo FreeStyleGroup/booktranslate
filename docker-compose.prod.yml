@@ -1,0 +1,84 @@
+# Рабочая среда: база, API и обратный прокси с сертификатом.
+#
+# Отдельным файлом, а не профилем в общем: в docker-compose.yml код
+# смонтирован томом, включён --reload и стоит DEBUG. Один файл с условиями
+# рано или поздно уезжает на сервер целиком — и увозит туда всё это.
+#
+# Витрина здесь не описана: она живёт на Vercel и общается с API по адресу
+# из NEXT_PUBLIC_API_URL. Переезд любой половины не трогает вторую.
+#
+# Запуск:
+#   cp apps/api/.env.production.example .env
+#   $EDITOR .env                       # секреты, домены, ключ модели
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml exec api \
+#       python -m app.cli create-superuser --email you@example.com
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-booktranslate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-booktranslate}
+    # Порт наружу не публикуется вовсе. База нужна только API, который
+    # ходит к ней по внутренней сети; опубликованный 5432 — это приглашение
+    # подбирать пароль из любой точки мира.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-booktranslate}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  api:
+    # Образ, а не сборка: он собран из тега, проверен и дальше только
+    # продвигается по окружениям. Пересборка «того же» кода перед выкатом
+    # означала бы, что в бой уезжает не то, что проверяли.
+    image: ${API_IMAGE:-ghcr.io/freestylegroup/booktranslate/api:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booktranslate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-booktranslate}
+      STORAGE_ROOT: /var/booktranslate/storage
+      # Заголовкам источника верим только от своего прокси: подставить
+      # X-Forwarded-For может кто угодно, и с открытым списком ограничитель
+      # частоты считает всех одним клиентом либо каждого — новым.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
+    volumes:
+      - api_storage:/var/booktranslate/storage
+    # Миграции накатываются при старте: на одной машине это надёжнее
+    # ручного шага, про который забывают, а откат остаётся отдельной
+    # осознанной командой.
+    command: >-
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  proxy:
+    # Caddy сам получает и продлевает сертификат Let's Encrypt: отдельного
+    # certbot по расписанию не нужно, а забытое продление — самая частая
+    # причина «сайт вдруг перестал открываться».
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?задайте API_DOMAIN в .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  api_storage:
+  caddy_data:
+  caddy_config:

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenError, decode_access_token
 from app.db.session import get_session
-from app.models.organization import Membership, User
+from app.models.organization import Membership, User, UserStatus
 from app.services.context import RequestContext
 from app.services.providers import (
     TermLookupProvider,
@@ -59,11 +59,27 @@ async def get_current_user(
 
     user = await session.get(User, user_id)
 
-    # Пользователь мог быть удалён или отключён уже после выдачи токена:
-    # подпись всё ещё верна, а пускать его больше нельзя.
-    if user is None or not user.is_active:
+    # Пользователь мог быть удалён, а доступ — закрыт уже после выдачи
+    # токена: подпись всё ещё верна, а пускать его больше нельзя. Проверка
+    # здесь, а не в каждом обработчике: забыть её в одном месте — значит
+    # оставить отключённому человеку рабочую дверь.
+    if user is None or user.status is not UserStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Учётная запись недоступна"
+        )
+
+    return user
+
+
+async def get_superuser(user: Annotated[User, Depends(get_current_user)]) -> User:
+    """Администратор площадки.
+
+    Отдельно от ролей организации: роль говорит, что человек может у себя,
+    а это — что он распоряжается доступом на всей площадке.
+    """
+    if not user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Нужны права администратора площадки"
         )
 
     return user
@@ -117,6 +133,7 @@ async def get_context(
 
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+SuperuserDep = Annotated[User, Depends(get_superuser)]
 ContextDep = Annotated[RequestContext, Depends(get_context)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]

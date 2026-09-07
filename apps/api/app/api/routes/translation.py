@@ -6,6 +6,8 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import ContextDep, ProviderDep, SessionDep
+from app.api.uploads import read_capped
+from app.core.config import get_settings
 from app.schemas.glossary import (
     DictionaryImportResult,
     GlossaryTermCreate,
@@ -140,7 +142,10 @@ async def import_glossary(
     сразу видно, тот ли файл загрузили и не перепутаны ли колонки местами.
     """
     contents = read_dictionary(
-        await file.read(),
+        # Не `file.read()`: он берёт в память столько, сколько принесли, и
+        # многогигабайтный «словарь» кладёт процесс раньше, чем дело дойдёт
+        # до разбора.
+        await read_capped(file, limit_bytes=get_settings().max_upload_bytes),
         file.filename or "",
         source_language=source_language,
         target_language=target_language,

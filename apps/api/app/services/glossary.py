@@ -29,7 +29,7 @@ from app.models.memory import GlossaryEntryKind, GlossaryTerm, GlossaryTermStatu
 from app.models.organization import Role
 from app.services.base import TenantService
 from app.services.dictionaries import ImportedTerm
-from app.services.errors import InvalidInputError, NotFoundError
+from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 
 EDITING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
 
@@ -182,7 +182,20 @@ class GlossaryService(TenantService):
             GlossaryTerm.status != GlossaryTermStatus.RETIRED,
         )
 
-        rows = list(await self._session.scalars(query))
+        # Потолок на то, что попадёт в работу. Каждый термин превращается в
+        # регулярное выражение и прогоняется по каждому сегменту: двадцать
+        # тысяч терминов на книге в десять тысяч сегментов — это двести
+        # миллионов поисков за прогон. Загруженная целиком чужая термбаза
+        # именно так и выглядит.
+        limit = get_settings().glossary_max_active_terms
+        rows = list(await self._session.scalars(query.limit(limit + 1)))
+
+        if len(rows) > limit:
+            raise ConflictError(
+                f"В словаре больше {limit} действующих терминов. Ограничьте его "
+                "проектом или снимите лишние: иначе каждый сегмент проверяется "
+                "по всей базе."
+            )
 
         # Термин проекта важнее общего для организации: заказчик уточняет
         # словарь бюро под себя, и его вариант должен вытеснять, а не

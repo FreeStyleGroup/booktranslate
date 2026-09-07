@@ -36,6 +36,7 @@ from app.services.context import RequestContext
 from app.services.errors import InvalidInputError, NotFoundError
 from app.services.glossary import EDITING_ROLES, normalize_term
 from app.services.providers import Explanation, LookupRequest, TermLookupProvider, Usage
+from app.services.search import ESCAPE, contains
 
 # Сколько знаков отрывка уходит в запрос. Отрывок нужен, чтобы отличить
 # отрасль, а не чтобы пересказать главу.
@@ -201,12 +202,12 @@ class CatalogService(TenantService):
         statement = self.scoped(CatalogEntry)
 
         if query:
-            pattern = f"%{query.strip()}%"
+            pattern = contains(query)
             statement = statement.where(
                 or_(
-                    CatalogEntry.source_term_normalized.ilike(pattern),
-                    CatalogEntry.suggested_target.ilike(pattern),
-                    CatalogEntry.definition.ilike(pattern),
+                    CatalogEntry.source_term_normalized.ilike(pattern, escape=ESCAPE),
+                    CatalogEntry.suggested_target.ilike(pattern, escape=ESCAPE),
+                    CatalogEntry.definition.ilike(pattern, escape=ESCAPE),
                 )
             )
 

@@ -13,11 +13,17 @@ import posixpath
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup, Tag
 
+# Не штатный xml.etree: описи приходят из чужого файла, а штатный разбор
+# разворачивает рекурсивно вложенные сущности («billion laughs») в гигабайты
+# памяти. Термбазы разбираются так же (services/dictionaries/tbx.py).
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
+
 from app.models.segment import SegmentKind
+from app.services.parsers.archives import ArchiveTooLargeError, check_archive, read_member
 from app.services.parsers.base import ParsedBlock, ParsingError
 from app.services.parsers.plain import read_text
 
@@ -101,9 +107,14 @@ class EpubParser:
     def parse(self, path: Path) -> Iterator[ParsedBlock]:
         try:
             with zipfile.ZipFile(path) as archive:
+                # Оглавление проверяется до первого чтения: пятьдесят
+                # мегабайт по правилам загрузки разворачиваются в десятки
+                # гигабайт, и узнавать об этом по памяти процесса поздно.
+                check_archive(archive)
+
                 for order, name in enumerate(_spine(archive)):
                     try:
-                        markup = archive.read(name).decode("utf-8", errors="replace")
+                        markup = read_member(archive, name).decode("utf-8", errors="replace")
                     except KeyError:
                         # Опись ссылается на файл, которого в архиве нет.
                         # Пропускаем главу, но книгу не роняем: остальные
@@ -113,6 +124,8 @@ class EpubParser:
                     yield from blocks_from_html(markup, {"chapter": order, "href": name})
         except zipfile.BadZipFile as error:
             raise ParsingError("Файл не читается как EPUB: повреждён архив") from error
+        except ArchiveTooLargeError as error:
+            raise ParsingError(str(error)) from error
 
 
 def _spine(archive: zipfile.ZipFile) -> list[str]:
@@ -122,8 +135,11 @@ def _spine(archive: zipfile.ZipFile) -> list[str]:
     `OEBPS/content.opf`, и у части издателей он другой.
     """
     try:
-        container = ElementTree.fromstring(archive.read("META-INF/container.xml"))
-    except (KeyError, ElementTree.ParseError) as error:
+        container = ElementTree.fromstring(read_member(archive, "META-INF/container.xml"))
+    except (KeyError, ElementTree.ParseError, DefusedXmlException) as error:
+        # DefusedXmlException — это отбитая попытка развернуть сущности или
+        # утянуть внешний файл. Для читающего это просто «опись не читается»:
+        # подробности ему не помогут, а нападающему подскажут.
         raise ParsingError("EPUB без META-INF/container.xml") from error
 
     rootfile = container.find(".//{urn:oasis:names:tc:opendocument:xmlns:container}rootfile")
@@ -132,8 +148,8 @@ def _spine(archive: zipfile.ZipFile) -> list[str]:
         raise ParsingError("В EPUB не указан путь к описи (rootfile)")
 
     try:
-        opf = ElementTree.fromstring(archive.read(opf_path))
-    except (KeyError, ElementTree.ParseError) as error:
+        opf = ElementTree.fromstring(read_member(archive, opf_path))
+    except (KeyError, ElementTree.ParseError, DefusedXmlException) as error:
         raise ParsingError("Опись EPUB не читается") from error
 
     ns = {"opf": "http://www.idpf.org/2007/opf"}

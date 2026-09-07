@@ -13,7 +13,7 @@ from app.models.memory import (
     GlossaryTermStatus,
     TranslationUnit,
 )
-from app.models.organization import Membership, Organization, Role, User
+from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.project import Project
 from app.models.segment import Segment, SegmentKind, SegmentStatus
 from app.models.session import RefreshSession
@@ -39,4 +39,5 @@ __all__ = [
     "TermCandidateStatus",
     "TranslationUnit",
     "User",
+    "UserStatus",
 ]

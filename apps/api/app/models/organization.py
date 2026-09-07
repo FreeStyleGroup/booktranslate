@@ -8,8 +8,9 @@
 
 import enum
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +31,20 @@ class Role(str, enum.Enum):
     TRANSLATOR = "translator"
     REVIEWER = "reviewer"
     VIEWER = "viewer"
+
+
+class UserStatus(str, enum.Enum):
+    """Состояние доступа учётной записи.
+
+    Три состояния, а не флаг «включён»: «ещё не рассмотрели» и «закрыли
+    доступ» — разные вещи и для человека, и для того, кто разбирает список.
+    Флагом их не различить, а по нему потом невозможно ответить на вопрос
+    «эту заявку отклонили или до неё просто не дошли руки».
+    """
+
+    PENDING = "pending"  # заявка подана, ждёт решения администратора
+    ACTIVE = "active"  # доступ открыт
+    SUSPENDED = "suspended"  # доступ закрыт: отклонён или приостановлен
 
 
 class Organization(UUIDPrimaryKey, TimestampMixin, Base):
@@ -53,7 +68,35 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     # Хеш, а не пароль. Колонка допускает пустоту: вход по внешнему провайдеру
     # или по приглашению обходится без пароля вовсе.
     password_hash: Mapped[str | None] = mapped_column(String(255))
-    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+
+    # Доступ открывает администратор. Умолчание — «ждёт решения»: регистрация
+    # это заявка, а не пропуск, и сама по себе она никого внутрь не пускает.
+    status: Mapped[UserStatus] = mapped_column(
+        Enum(UserStatus, name="user_status", native_enum=True),
+        nullable=False,
+        default=UserStatus.PENDING,
+        index=True,
+    )
+
+    # Администратор площадки — не роль в организации. Роль говорит, что
+    # человек может в своём рабочем пространстве; это — что он распоряжается
+    # доступом на всей площадке, и смешивать их нельзя.
+    is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Кто и когда менял состояние доступа. Без этого список пользователей
+    # отвечает на «кто закрыт», но не на «кто закрыл и когда» — а спрашивают
+    # обычно второе.
+    status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_changed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        # SET NULL: уход администратора не должен стирать след того, что
+        # решение принималось.
+        ForeignKey("users.id", ondelete="SET NULL"),
+    )
+
+    # Последний вход. Отвечает на «пользуется ли человек доступом» — вопрос,
+    # который возникает при первой же чистке списка.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     memberships: Mapped[list["Membership"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

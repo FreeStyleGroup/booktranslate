@@ -1,0 +1,736 @@
+/* Кабинет.
+
+   Мягкая светлая подложка, белые карточки со скруглением и пастельные
+   плитки показателей. Цвета и тени берутся из общих токенов
+   (`app/globals.css`), поэтому тёмная тема работает сама. */
+
+.cab {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  min-height: 100svh;
+  background: var(--paper-tint);
+}
+
+@media (max-width: 1080px) {
+  .cab {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Боковое меню ── */
+
+.cab__side {
+  border-right: 1px solid var(--line-soft);
+  background: var(--paper);
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow-y: auto;
+}
+
+@media (max-width: 1080px) {
+  .cab__side {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+}
+
+.cab__brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-weight: 650;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  padding: 6px 10px;
+}
+
+.cab__group {
+  display: grid;
+  gap: 3px;
+}
+
+.cab__group h4 {
+  margin: 0 0 8px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+.cab__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  font-size: 15px;
+  color: var(--ink-soft);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.cab__link i {
+  font-style: normal;
+  font-size: 17px;
+  line-height: 1;
+  width: 22px;
+  text-align: center;
+}
+
+.cab__link:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+}
+
+.cab__link.is-active {
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+
+.cab__count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-soft);
+}
+
+.cab__link.is-active .cab__count {
+  background: color-mix(in srgb, var(--brand) 20%, transparent);
+  color: var(--brand-dark);
+}
+
+/* ── Верхняя полоса ── */
+
+.cab__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cab__top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+}
+
+.cab__search {
+  flex: 1;
+  max-width: 460px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-tint);
+  color: var(--ink-faint);
+  font-size: 14.5px;
+}
+
+.cab__tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cab__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s var(--ease), color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+
+.cab__icon:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+}
+
+/* Выход стоит рядом с именем, а не в меню разделов: это не раздел. */
+.cab__exit {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.cab__exit:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+}
+
+/* Значок темы выбирается стилями, а не состоянием кнопки: на сервере темы
+   не видно, и любая попытка угадать её в разметке кончается вспышкой. */
+.theme-light,
+.theme-dark {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-dark {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-light {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-dark {
+    display: block;
+  }
+
+  :root:not([data-theme="light"]) .theme-light {
+    display: none;
+  }
+}
+
+.cab__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 8px;
+}
+
+.cab__avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  background: linear-gradient(140deg, var(--brand), var(--accent));
+  color: #fff;
+  font-weight: 600;
+}
+
+.cab__who {
+  display: grid;
+  line-height: 1.25;
+}
+
+.cab__who b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.cab__who span {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 720px) {
+  .cab__who {
+    display: none;
+  }
+}
+
+/* ── Полотно ── */
+
+.cab__body {
+  padding: 26px 28px 48px;
+  display: grid;
+  gap: 22px;
+}
+
+@media (max-width: 620px) {
+  .cab__body,
+  .cab__top {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+.cab__row {
+  display: grid;
+  gap: 22px;
+}
+
+.cab__row--hero {
+  grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr));
+}
+
+.cab__row--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cab__row--split {
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1240px) {
+  .cab__row--hero,
+  .cab__row--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .cab__row--split {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .cab__row--hero,
+  .cab__row--4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Карточки ── */
+
+.tile {
+  border-radius: 20px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+  padding: 22px 24px;
+}
+
+.tile__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.tile__head h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.tile__note {
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.tile__empty {
+  margin: 0;
+  padding: 22px 0 6px;
+  color: var(--ink-faint);
+  font-size: 15px;
+  max-width: 48ch;
+}
+
+.tile__foot {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* Приветствие: единственная цветная плитка на экране — на неё и смотрят
+   первой. */
+.welcome {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(135deg, #2f6bff, #7b5cf6 70%, #9b6bff);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.welcome h2 {
+  margin: 0 0 6px;
+  font-size: clamp(20px, 2vw, 26px);
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.welcome p {
+  margin: 0 0 20px;
+  font-size: 14.5px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.welcome__stats {
+  display: flex;
+  gap: 26px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  width: fit-content;
+}
+
+.welcome__stat b {
+  display: block;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.welcome__stat span {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.welcome__art {
+  font-size: 84px;
+  line-height: 1;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.25));
+}
+
+@media (max-width: 900px) {
+  .welcome__art {
+    display: none;
+  }
+}
+
+/* Плитки показателей: пастельная подложка вместо рамки — так их видно
+   боковым зрением, а глаз не спотыкается о шесть одинаковых прямоугольников. */
+.stat {
+  border-radius: 20px;
+  padding: 20px 22px;
+  border: 1px solid transparent;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.stat--blue {
+  background: color-mix(in srgb, var(--brand) 12%, var(--paper));
+}
+
+.stat--violet {
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+}
+
+.stat--green {
+  background: color-mix(in srgb, var(--ok) 13%, var(--paper));
+}
+
+.stat--amber {
+  background: color-mix(in srgb, var(--warn) 15%, var(--paper));
+}
+
+.stat__mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+}
+
+.stat__value {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stat__delta {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  color: var(--ink-soft);
+}
+
+.stat__delta--up {
+  color: var(--ok);
+}
+
+.stat__delta--down {
+  color: var(--danger);
+}
+
+.stat__label {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+/* ── График ── */
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.switch {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--paper-tint);
+  border: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.switch span {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+
+.switch span.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: var(--shadow-soft);
+}
+
+/* ── Кольцо состояний ── */
+
+.donut {
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.donut__value {
+  position: absolute;
+  text-align: center;
+}
+
+.donut__value b {
+  display: block;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.donut__value span {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+.legend {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.legend div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.legend b {
+  margin-left: auto;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Списки и таблицы ── */
+
+.rows {
+  display: grid;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 128px;
+  gap: 16px;
+  padding: 14px 0;
+  align-items: start;
+  font-size: 14.5px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.row__no {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+.row__src {
+  color: var(--ink-soft);
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: 40px minmax(0, 1fr) 118px;
+  }
+
+  .row__src {
+    display: none;
+  }
+}
+
+.docs {
+  display: grid;
+  gap: 18px;
+}
+
+.doc {
+  display: grid;
+  gap: 8px;
+}
+
+.doc__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14.5px;
+}
+
+.doc__top span {
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+}
+
+.terms {
+  display: grid;
+  gap: 12px;
+}
+
+.term {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--paper-tint);
+  font-size: 14.5px;
+}
+
+.term b {
+  font-weight: 600;
+}
+
+/* Только последняя подпись уезжает вправо: общее правило по `span`
+   утащило бы туда и значок в начале строки. */
+.term > span:last-child {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.soon {
+  max-width: 720px;
+  padding: 34px;
+  display: grid;
+  gap: 4px;
+}
+
+.soon__mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  background: var(--paper-tint);
+  border: 1px solid var(--line-soft);
+  margin-bottom: 14px;
+}
+
+.soon h2 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.soon .lead {
+  margin-bottom: 22px;
+  font-size: 16.5px;
+}
+
+.soon .points {
+  margin-bottom: 24px;
+}
+
+.demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 500;
+}

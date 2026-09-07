@@ -9,7 +9,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.organization import Role
+from app.models.organization import Role, UserStatus
 
 
 class RegisterRequest(BaseModel):
@@ -44,12 +44,32 @@ class TokenPair(BaseModel):
     expires_in: int = Field(description="Срок жизни токена доступа в секундах")
 
 
+class AccessRequestPublic(BaseModel):
+    """Ответ на регистрацию: заявка принята, доступ откроет администратор.
+
+    Ответ один и тот же для свободной и для занятой почты — и потому в нём
+    нет ни номера записи, ни состояния: любое поле, отличающееся в двух
+    случаях, вернуло бы форме регистрации возможность проверять, кто здесь
+    зарегистрирован.
+    """
+
+    status: str = "pending"
+    message: str = (
+        "Если почта свободна, заявка отправлена администратору. "
+        "О решении сообщим на указанный адрес."
+    )
+
+
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
+    status: UserStatus
+    # Администратор площадки. Витрине это нужно, чтобы показать вход в
+    # раздел управления доступом — и не показывать его остальным.
+    is_superuser: bool
 
 
 class MembershipPublic(BaseModel):

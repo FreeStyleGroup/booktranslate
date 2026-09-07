@@ -17,6 +17,27 @@ RUN pip install --upgrade pip && pip install .
 
 COPY . .
 
+# Работа не от root. Внутри контейнера разбираются чужие DOCX, EPUB и
+# термбазы — файлы, которые прислал кто угодно; ошибка разбора под нулевым
+# идентификатором отдаёт нападающему весь контейнер. Каталог хранилища
+# заводится здесь же: том монтируется с правами хозяина, и без явного
+# владельца приложение не сможет в него писать.
+RUN useradd --system --uid 1000 --create-home app \
+    && mkdir -p /var/booktranslate/storage \
+    && chown -R app:app /app /var/booktranslate
+
+USER app
+
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Проверка живости внутри образа: оркестратор узнаёт о зависшем процессе
+# сам, не дожидаясь жалоб. Запрос идёт мимо базы — её недоступность
+# перезапуском не лечится.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+
+# proxy-headers: за обратным прокси адрес соединения — это адрес прокси, и
+# без разбора заголовков весь мир окажется одним клиентом для ограничителя
+# частоты и одной строкой в списке сессий. Кому верить — задаётся
+# переменной FORWARDED_ALLOW_IPS.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
