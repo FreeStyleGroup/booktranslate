@@ -32,6 +32,7 @@
 import uuid
 from dataclasses import dataclass, field
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -135,27 +136,68 @@ class TranslationService(TenantService):
         if not segments:
             return TranslationSummary(0, 0, 0, 0, 0, 0)
 
+        limit = get_settings().translation_max_segments_per_run
+        if len(segments) > limit:
+            # Потолок на один запуск. Не от злого умысла — от повторного
+            # нажатия и от цикла в чужом скрипте: каждый прогон стоит денег,
+            # и «перевести всё заново» на книге в четыреста страниц должно
+            # упираться в явный предел, а не в счёт от поставщика.
+            raise ConflictError(
+                f"К переводу {len(segments)} сегментов, разрешено {limit} за запуск. "
+                "Переводите частями или поднимите TRANSLATION_MAX_SEGMENTS_PER_RUN."
+            )
+
         glossary = await GlossaryService(self._session, self._context).load(
             project_id=document.project_id,
             source_language=project.source_language,
             target_language=project.target_language,
         )
 
-        document.status = DocumentStatus.TRANSLATING
-        await self._session.commit()
+        previous = document.status
+        await self._claim(document)
 
-        summary = await self._run(
-            segments,
-            glossary=glossary,
-            source_language=project.source_language,
-            target_language=project.target_language,
-        )
+        try:
+            summary = await self._run(
+                segments,
+                glossary=glossary,
+                source_language=project.source_language,
+                target_language=project.target_language,
+            )
+        except BaseException:
+            # Отметку «переводится» надо снять, иначе сорвавшийся прогон
+            # запирает документ навсегда: следующий запуск будет натыкаться
+            # на собственную же метку.
+            document.status = previous
+            await self._session.commit()
+            raise
 
         # REVIEW, а не DONE: перевод сделан, но принимает его человек.
         document.status = DocumentStatus.REVIEW
         await self._session.commit()
 
         return summary
+
+    async def _claim(self, document: Document) -> None:
+        """Занять документ под перевод.
+
+        Условным обновлением, а не присваиванием: два одновременных запроса
+        прочитали бы одно и то же состояние и принялись бы переводить одни и
+        те же сегменты — счёт двойной, а правки затрут друг друга. Условие
+        проверяет сама база, и выигрывает ровно один.
+        """
+        claimed = await self._session.execute(
+            update(Document)
+            .where(Document.id == document.id, Document.status != DocumentStatus.TRANSLATING)
+            .values(status=DocumentStatus.TRANSLATING)
+        )
+
+        if claimed.rowcount == 0:
+            raise ConflictError("Документ уже переводится: дождитесь окончания прогона")
+
+        await self._session.commit()
+        # Объект в сессии не знает про обновление, сделанное запросом мимо
+        # него: без этого дальше он отдаст прежнее состояние.
+        await self._session.refresh(document)
 
     async def _segments(self, document_id: uuid.UUID, *, force: bool) -> list[Segment]:
         query = self.scoped(Segment).where(Segment.document_id == document_id)

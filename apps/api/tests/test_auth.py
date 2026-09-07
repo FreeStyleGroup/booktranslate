@@ -8,7 +8,7 @@
 from httpx import AsyncClient
 
 from tests.conftest import requires_database
-from tests.factories import admin_headers
+from tests.factories import admin_headers, find_user
 
 REGISTRATION = {
     "email": "editor@example.com",
@@ -30,7 +30,7 @@ async def _register(db_client: AsyncClient, **overrides: str) -> dict[str, str]:
     assert response.status_code == 202, response.text
 
     approved = await db_client.patch(
-        f"/admin/users/{response.json()['id']}/status",
+        f"/admin/users/{await find_user(db_client, payload['email'])}/status",
         headers=await admin_headers(db_client),
         json={"status": "active"},
     )
@@ -63,12 +63,30 @@ async def test_registration_creates_owner_of_new_organization(db_client: AsyncCl
 
 
 @requires_database
-async def test_registration_rejects_duplicate_email(db_client: AsyncClient) -> None:
+async def test_repeated_registration_does_not_reveal_the_email_is_taken(
+    db_client: AsyncClient,
+) -> None:
+    """Ответ на занятую почту неотличим от ответа на свободную.
+
+    Иначе форма регистрации отвечает на вопрос «работает ли здесь такой-то»,
+    который вход отвечать отказывается, — и вся осторожность входа
+    обесценивается соседней формой.
+    """
     await _register(db_client)
 
-    response = await db_client.post("/auth/register", json=REGISTRATION)
+    free = await db_client.post(
+        "/auth/register", json={**REGISTRATION, "email": "nobody@example.com"}
+    )
+    taken = await db_client.post("/auth/register", json={**REGISTRATION, "password": "other-one"})
 
-    assert response.status_code == 409
+    assert taken.status_code == free.status_code == 202
+    assert taken.json() == free.json()
+
+    # И вторая заявка ничего не переписала: пароль остался прежним.
+    entered = await db_client.post(
+        "/auth/login", json={"email": REGISTRATION["email"], "password": "other-one"}
+    )
+    assert entered.status_code == 401
 
 
 @requires_database

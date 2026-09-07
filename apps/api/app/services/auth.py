@@ -22,7 +22,7 @@ from app.core.security import (
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.session import RefreshSession
 from app.schemas.auth import TokenPair
-from app.services.errors import AccessDeniedError, AuthError, ConflictError
+from app.services.errors import AccessDeniedError, AuthError
 from app.services.slug import slugify
 
 # Что отвечают человеку, чей доступ ещё не открыт или уже закрыт. Сообщения
@@ -43,22 +43,33 @@ class AuthService:
         password: str,
         full_name: str | None,
         organization_name: str,
-    ) -> User:
+    ) -> User | None:
         """Заявка на доступ.
 
         Регистрация не пускает внутрь и не выдаёт токенов: доступ открывает
         администратор. Рабочее пространство при этом создаётся сразу —
         человек назвал его при подаче заявки, и заводить его потом заново,
         уточняя название, значит потерять то, что уже сказано.
+
+        Занятая почта — не ошибка наружу, а `None`. Ответ «такой уже есть»
+        превращает форму регистрации в проверку, работает ли здесь человек
+        с известным адресом. Вход это скрывает — одинаковый ответ на
+        неверную почту и на неверный пароль, — и отдавать то же самое даром
+        через соседнюю форму бессмысленно.
         """
+        # Хеш считается до проверки, а не после: иначе занятая почта
+        # отвечает заметно быстрее свободной, и разница во времени говорит
+        # ровно то, что мы только что перестали говорить словами.
+        password_hash = hash_password(password)
+
         existing = await self._session.scalar(select(User).where(User.email == email))
         if existing is not None:
-            raise ConflictError("Пользователь с такой почтой уже зарегистрирован")
+            return None
 
         user = User(
             email=email,
             full_name=full_name,
-            password_hash=hash_password(password),
+            password_hash=password_hash,
             status=UserStatus.PENDING,
         )
         organization = Organization(

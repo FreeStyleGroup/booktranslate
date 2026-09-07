@@ -26,6 +26,7 @@ from app.core.security import generate_password, hash_password
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.session import RefreshSession
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
+from app.services.search import ESCAPE, contains
 from app.services.slug import slugify
 
 
@@ -89,9 +90,12 @@ class AdminService:
             statement = statement.where(User.status == status)
 
         if query:
-            pattern = f"%{query.strip()}%"
+            pattern = contains(query)
             statement = statement.where(
-                or_(User.email.ilike(pattern), User.full_name.ilike(pattern))
+                or_(
+                    User.email.ilike(pattern, escape=ESCAPE),
+                    User.full_name.ilike(pattern, escape=ESCAPE),
+                )
             )
 
         statement = statement.order_by(

@@ -1,7 +1,6 @@
 """Загрузка, просмотр и выдача документов."""
 
 import uuid
-from collections.abc import AsyncIterator
 from typing import Annotated
 from urllib.parse import quote
 
@@ -9,25 +8,14 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
+from app.api.uploads import chunks
 from app.schemas.document import DocumentPublic
 from app.services.documents import DocumentService
 from app.services.export import ExportFormat
 from app.services.exporting import ExportService
 from app.services.formats import media_type
-from app.services.storage import CHUNK_BYTES
 
 router = APIRouter(tags=["documents"])
-
-
-async def _chunks(upload: UploadFile) -> AsyncIterator[bytes]:
-    """Содержимое загрузки кусками.
-
-    Файл читается порциями, а не целиком: руководство на восемьсот страниц
-    в памяти процесса — это отказ сервера при нескольких одновременных
-    загрузках.
-    """
-    while chunk := await upload.read(CHUNK_BYTES):
-        yield chunk
 
 
 @router.post(
@@ -53,7 +41,7 @@ async def upload_document(
     document, created = await DocumentService(session, context, storage).upload(
         project_id=project_id,
         filename=file.filename or "document",
-        stream=_chunks(file),
+        stream=chunks(file),
         title=title,
     )
 

@@ -50,6 +50,12 @@ export async function apiFetch<T>(path: string, options: Options = {}): Promise<
     throw new ApiError(response.status, await readError(response));
   }
 
+  // Пустой ответ — тоже ответ: отзыв сеанса возвращает 204, и попытка
+  // разобрать пустое тело как JSON сорвала бы удавшийся запрос.
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return (await response.json()) as T;
 }
 

@@ -9,6 +9,7 @@
 является, даже если выглядит как обычный. Стиль задаёт автор осознанно.
 """
 
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from app.models.segment import SegmentKind
+from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 from app.services.parsers.base import ParsedBlock, ParsingError
 
 # Имена стилей заголовков в русской и английской сборках Word. Сравнение по
@@ -29,6 +31,17 @@ _LIST_PREFIXES = ("list paragraph", "абзац списка", "list bullet", "l
 
 class DocxParser:
     def parse(self, path: Path) -> Iterator[ParsedBlock]:
+        # DOCX — это ZIP, и приходит он от клиента: пятьдесят мегабайт по
+        # правилам загрузки разворачиваются в десятки гигабайт. Оглавление
+        # проверяется до того, как за файл возьмётся библиотека.
+        try:
+            with zipfile.ZipFile(path) as archive:
+                check_archive(archive)
+        except zipfile.BadZipFile as error:
+            raise ParsingError("Файл не читается как DOCX: повреждён архив") from error
+        except ArchiveTooLargeError as error:
+            raise ParsingError(str(error)) from error
+
         try:
             document = docx.Document(str(path))
         except Exception as error:  # библиотека бросает собственные типы ошибок

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { apiFetch, type CurrentUser } from "../lib/api";
 import { accessToken, organizationId } from "../lib/session";
+import { SignOut } from "../sign-out";
 import "./cabinet.css";
 import { SideNav, type NavCounts } from "./side-nav";
 import { ThemeToggle } from "./theme-toggle";
@@ -92,6 +93,8 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
                 <span>{workspace}</span>
               </span>
             </div>
+
+            <SignOut className="cab__exit" />
           </div>
         </header>
 

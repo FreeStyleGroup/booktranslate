@@ -10,7 +10,7 @@ import { useState, type FormEvent } from "react";
    правами. Ответ на неверные данные тоже общий: раздел не подсказывает,
    существует ли он для того, кто в него стучится. */
 
-export function AdminLogin() {
+export function AdminLogin({ unreachable = false }: { unreachable?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,7 +54,11 @@ export function AdminLogin() {
           🛡️
         </span>
         <h1>Управление доступом</h1>
-        <p className="muted">Раздел для администратора площадки.</p>
+        <p className="muted">
+          {unreachable
+            ? "API не отвечает — список пользователей сейчас недоступен."
+            : "Раздел для администратора площадки."}
+        </p>
 
         <label className="field">
           <span>Почта</span>

@@ -6,7 +6,6 @@
 """
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -46,15 +45,19 @@ class TokenPair(BaseModel):
 
 
 class AccessRequestPublic(BaseModel):
-    """Ответ на регистрацию: заявка принята, доступ откроет администратор."""
+    """Ответ на регистрацию: заявка принята, доступ откроет администратор.
 
-    model_config = ConfigDict(from_attributes=True)
+    Ответ один и тот же для свободной и для занятой почты — и потому в нём
+    нет ни номера записи, ни состояния: любое поле, отличающееся в двух
+    случаях, вернуло бы форме регистрации возможность проверять, кто здесь
+    зарегистрирован.
+    """
 
-    id: uuid.UUID
-    email: EmailStr
-    full_name: str | None
-    status: UserStatus
-    created_at: datetime
+    status: str = "pending"
+    message: str = (
+        "Если почта свободна, заявка отправлена администратору. "
+        "О решении сообщим на указанный адрес."
+    )
 
 
 class UserPublic(BaseModel):

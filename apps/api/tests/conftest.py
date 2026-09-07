@@ -17,6 +17,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.config import get_settings
 from app.core.security import hash_password
 from app.db.session import get_session
 from app.main import create_app
@@ -41,8 +42,18 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # Администратор площадки для тестов. Заводится прямо в базе — ровно так же,
 # как в жизни его заводит консольная команда: первого администратора
 # неоткуда одобрить, иначе площадка не открылась бы никогда.
-ROOT_EMAIL = "root@booktranslate.test"
+# Домен именно example.com: зона .test зарезервирована, и проверка адреса
+# отвергает её раньше, чем дело доходит до самого теста.
+ROOT_EMAIL = "root@example.com"
 ROOT_PASSWORD = "root-password-for-tests"
+
+# Ограничитель частоты в тестах поднят до недостижимого: тест на вход и
+# одобрение — это несколько запросов подряд с одного адреса, и обычная мера
+# завалила бы половину набора отказом «слишком часто». Сам ограничитель
+# проверяется отдельно, на приложении со своими настройками
+# (tests/test_throttle.py).
+get_settings().rate_limit_per_minute = 100_000
+get_settings().auth_rate_limit_per_minute = 100_000
 
 requires_database = pytest.mark.skipif(
     DATABASE_URL is None,

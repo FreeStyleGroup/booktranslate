@@ -40,6 +40,26 @@ async def admin_headers(client: AsyncClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
+async def find_user(client: AsyncClient, email: str) -> str:
+    """Найти заявку по почте глазами администратора.
+
+    Регистрация номера записи не возвращает — ответ одинаков для свободной
+    и занятой почты, иначе форма подсказывала бы, кто здесь зарегистрирован.
+    Значит, одобрять заявку надо так же, как это делает живой
+    администратор: найдя её в списке.
+    """
+    response = await client.get(
+        "/admin/users", params={"query": email}, headers=await admin_headers(client)
+    )
+    assert response.status_code == 200, response.text
+
+    items = [item for item in response.json()["items"] if item["email"] == email]
+    assert len(items) == 1, response.text
+
+    user_id: str = items[0]["id"]
+    return user_id
+
+
 async def register(
     client: AsyncClient,
     *,
@@ -63,7 +83,7 @@ async def register(
         },
     )
     assert response.status_code == 202, response.text
-    user_id = response.json()["id"]
+    user_id = await find_user(client, email)
 
     approved = await client.patch(
         f"/admin/users/{user_id}/status",

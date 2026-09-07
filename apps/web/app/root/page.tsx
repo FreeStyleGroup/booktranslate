@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { apiFetch, type CurrentUser } from "../lib/api";
 import { accessToken } from "../lib/session";
+import { SignOut } from "../sign-out";
 import { changeStatus } from "./actions";
 import { AdminLogin } from "./admin-login";
 import { CreateUser } from "./create-user";
@@ -112,9 +113,17 @@ export default async function RootPage({
   }
 
   const suffix = parameters.toString();
-  const list = await apiFetch<UserList>(`/admin/users${suffix === "" ? "" : `?${suffix}`}`, {
-    token: await accessToken(),
-  });
+  let list: UserList;
+
+  try {
+    list = await apiFetch<UserList>(`/admin/users${suffix === "" ? "" : `?${suffix}`}`, {
+      token: await accessToken(),
+    });
+  } catch {
+    // Недоступный API — не повод показать страницу ошибки на весь экран:
+    // администратор должен видеть, что дело в связи, а не в его правах.
+    return <AdminLogin unreachable />;
+  }
 
   return (
     <div className="root">
@@ -131,6 +140,7 @@ export default async function RootPage({
           <span className="tag tag--pending">Ждут решения: {list.counts.pending}</span>
           <span className="tag tag--active">С доступом: {list.counts.active}</span>
           <span className="tag tag--suspended">Закрыты: {list.counts.suspended}</span>
+          <SignOut className="btn btn--ghost btn--small" />
         </div>
       </header>
 

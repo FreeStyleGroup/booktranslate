@@ -54,14 +54,29 @@ def _client() -> Any:
     # свой HTTP-клиент, а при работе с заглушкой он не нужен вовсе.
     from anthropic import AsyncAnthropic
 
+    common: dict[str, Any] = {
+        # Перевод книги — сотни запросов подряд; сетевой сбой на середине не
+        # должен ронять весь документ.
+        "max_retries": settings.anthropic_max_retries,
+        "timeout": settings.anthropic_timeout_seconds,
+    }
+
+    if settings.anthropic_base_url:
+        # Шлюз принимает те же запросы, но ключ ждёт в «Authorization:
+        # Bearer» — за это в клиенте отвечает auth_token, а не api_key.
+        # Перепутанный заголовок выглядит как неверный ключ, и искать это
+        # потом дольше, чем написать здесь правильно.
+        return AsyncAnthropic(
+            base_url=settings.anthropic_base_url,
+            auth_token=settings.anthropic_api_key,
+            **common,
+        )
+
     return AsyncAnthropic(
         # Ключ читается из окружения самим клиентом, если не задан явно:
         # ANTHROPIC_API_KEY, либо профиль, настроенный на машине.
         api_key=settings.anthropic_api_key or None,
-        # Перевод книги — сотни запросов подряд; сетевой сбой на середине не
-        # должен ронять весь документ.
-        max_retries=settings.anthropic_max_retries,
-        timeout=settings.anthropic_timeout_seconds,
+        **common,
     )
 
 
@@ -83,7 +98,12 @@ def get_provider() -> TranslationProvider:
             model=settings.anthropic_model,
             max_tokens=settings.anthropic_max_tokens,
             effort=settings.anthropic_effort or None,
-            use_fallbacks=settings.anthropic_use_fallbacks,
+            # Запасная модель — возможность самой Anthropic, объявляемая
+            # бета-заголовком. Шлюз её не проксирует и отвечает отказом на
+            # весь запрос, поэтому через шлюз она выключена независимо от
+            # настройки: иначе первая же пачка падает, и виноватым выглядит
+            # ключ.
+            use_fallbacks=settings.anthropic_use_fallbacks and not settings.anthropic_base_url,
         ),
     )
 

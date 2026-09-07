@@ -46,15 +46,19 @@ async def register(payload: RegisterRequest, session: SessionDep) -> AccessReque
     открывает администратор. Токенов в ответе нет намеренно, иначе
     одобрение оказалось бы формальностью, которую можно обойти, просто не
     перезагрузив страницу.
+
+    Ответ один и тот же независимо от того, была ли почта свободна: иначе
+    форма регистрации отвечала бы на вопрос «а работает ли здесь такой-то»,
+    который вход отвечать отказывается.
     """
-    user = await AuthService(session).register(
+    await AuthService(session).register(
         email=payload.email,
         password=payload.password,
         full_name=payload.full_name,
         organization_name=payload.organization_name,
     )
 
-    return AccessRequestPublic.model_validate(user)
+    return AccessRequestPublic()
 
 
 @router.post("/login", response_model=TokenPair)

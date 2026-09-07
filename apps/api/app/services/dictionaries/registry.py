@@ -21,10 +21,12 @@
 
 import io
 import re
+import zipfile
 from typing import Any
 
 from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
 from app.services.dictionaries.base import DictionaryContents, DictionaryError, ImportedTerm
+from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 
 MAX_TERM_LENGTH = 300
 
@@ -79,6 +81,17 @@ def read_registry(data: bytes) -> DictionaryContents:
         import docx
     except ImportError as error:  # pragma: no cover — зависимость обязательная
         raise DictionaryError("Разбор DOCX недоступен") from error
+
+    # Реестр — тоже ZIP из чужих рук: до разбора проверяется, во что он
+    # разворачивается. Иначе «словарь» на пару мегабайт кладёт процесс
+    # раньше, чем дойдёт до первой строки.
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            check_archive(archive)
+    except zipfile.BadZipFile as error:
+        raise DictionaryError("Файл не открылся как DOCX: повреждён архив") from error
+    except ArchiveTooLargeError as error:
+        raise DictionaryError(str(error)) from error
 
     try:
         document = docx.Document(io.BytesIO(data))

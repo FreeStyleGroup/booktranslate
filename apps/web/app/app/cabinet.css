@@ -175,14 +175,39 @@
   border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
 }
 
+/* Выход стоит рядом с именем, а не в меню разделов: это не раздел. */
+.cab__exit {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.cab__exit:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+}
+
 /* Значок темы выбирается стилями, а не состоянием кнопки: на сервере темы
    не видно, и любая попытка угадать её в разметке кончается вспышкой. */
+.theme-light,
+.theme-dark {
+  width: 18px;
+  height: 18px;
+}
+
 .theme-dark {
   display: none;
 }
 
 :root[data-theme="dark"] .theme-dark {
-  display: inline;
+  display: block;
 }
 
 :root[data-theme="dark"] .theme-light {
@@ -191,7 +216,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .theme-dark {
-    display: inline;
+    display: block;
   }
 
   :root:not([data-theme="light"]) .theme-light {

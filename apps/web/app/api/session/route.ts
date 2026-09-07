@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 
 import { ApiError, apiFetch, type CurrentUser, type TokenPair } from "../../lib/api";
-import { clearSession, saveSession } from "../../lib/session";
+import { clearSession, refreshToken, saveSession } from "../../lib/session";
 
 type Payload = {
   mode?: unknown;
@@ -18,7 +18,36 @@ type Payload = {
   organization_name?: unknown;
 };
 
+/* Обработчик маршрута — не серверное действие, и встроенной защиты от
+   запроса с чужой страницы у него нет. Без проверки источника чужой сайт
+   отправляет сюда форму и получает в браузере жертвы сеанс, открытый под
+   учётной записью нападающего: дальше жертва загружает свою книгу в чужое
+   рабочее пространство. `SameSite` от этого не спасает — она ограничивает
+   отправку уже имеющихся печений, а не установку новых.
+
+   Проверяются оба признака: заголовок источника и тип содержимого. Форма
+   со страницы не может отправить `application/json`, а запрос без источника
+   к делу отношения не имеет — обе двери закрываются одной проверкой. */
+function foreign(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+
+  if (origin === null || host === null) {
+    return true;
+  }
+
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
+  if (foreign(request) || !(request.headers.get("content-type") ?? "").includes("json")) {
+    return NextResponse.json({ error: "Запрос с чужой страницы" }, { status: 403 });
+  }
+
   const payload = (await request.json()) as Payload;
 
   const email = text(payload.email);
@@ -80,7 +109,25 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 }
 
-export async function DELETE(): Promise<NextResponse> {
+export async function DELETE(request: Request): Promise<NextResponse> {
+  if (foreign(request)) {
+    return NextResponse.json({ error: "Запрос с чужой страницы" }, { status: 403 });
+  }
+
+  const refresh = await refreshToken();
+
+  // Печенья стереть мало: обновление живёт в базе API месяц и после
+  // «выхода» продолжает открывать сеансы. Выход — это отзыв на стороне
+  // API, а очистка браузера лишь его следствие.
+  if (refresh !== undefined) {
+    try {
+      await apiFetch("/auth/logout", { method: "POST", body: { refresh_token: refresh } });
+    } catch {
+      // Недоступный API не повод оставить человека внутри: печенья стираем
+      // в любом случае, отзыв догонит при следующей попытке обновиться.
+    }
+  }
+
   await clearSession();
 
   return NextResponse.json({ ok: true });

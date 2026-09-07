@@ -13,6 +13,17 @@ import { accessToken } from "../lib/session";
 
 type Result = { error?: string };
 
+// Идентификатор из формы уходит в адрес запроса, а серверное действие можно
+// вызвать и в обход отрисованной страницы. Непроверенное значение вида
+// «../../projects/…» схлопнется при разборе адреса и превратит запрос в
+// обращение по чужому пути. Прав это не добавляет — API проверяет их по
+// тому же токену, — но подставлять в адрес что попало нельзя.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Состояние — из списка, а не любая строка: опечатка должна остановиться
+// здесь, а не уехать в API.
+const STATUSES = new Set(["active", "suspended"]);
+
 export type CreatedUser = {
   email: string;
   password: string;
@@ -27,12 +38,12 @@ export async function changeStatus(formData: FormData): Promise<void> {
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
 
-  if (token === undefined || id === "" || status === "") {
+  if (token === undefined || !UUID.test(id) || !STATUSES.has(status)) {
     return;
   }
 
   try {
-    await apiFetch(`/admin/users/${id}/status`, {
+    await apiFetch(`/admin/users/${encodeURIComponent(id)}/status`, {
       method: "PATCH",
       token,
       body: { status },

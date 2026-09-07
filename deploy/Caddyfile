@@ -1,0 +1,38 @@
+# Обратный прокси перед API.
+#
+# Сертификат Caddy получает и продлевает сам — при условии, что домен
+# указывает на эту машину и порты 80 и 443 открыты.
+
+{$API_DOMAIN} {
+	# Загрузка книги — это десятки мегабайт; умолчание прокси обрезало бы
+	# её раньше, чем до неё дойдёт проверка размера в приложении.
+	request_body {
+		max_size 60MB
+	}
+
+	# Перевод книги идёт синхронно и занимает минуты: короткий таймаут
+	# оборвал бы прогон на середине, оставив документ наполовину
+	# переведённым.
+	reverse_proxy api:8000 {
+		transport http {
+			read_timeout 15m
+			write_timeout 15m
+		}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		# API отдаёт JSON и файлы, показывать его в кадре незачем.
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

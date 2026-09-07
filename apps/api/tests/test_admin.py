@@ -8,7 +8,7 @@
 from httpx import AsyncClient, Response
 
 from tests.conftest import requires_database
-from tests.factories import PASSWORD, admin_headers, register
+from tests.factories import PASSWORD, admin_headers, find_user, register
 
 APPLICANT = {
     "email": "applicant@example.com",
@@ -18,12 +18,17 @@ APPLICANT = {
 }
 
 
-async def apply(client: AsyncClient, **overrides: str) -> dict:
+async def apply(client: AsyncClient, **overrides: str) -> str:
+    """Подать заявку и вернуть её номер.
+
+    Номер берётся из списка администратора, а не из ответа: ответ на
+    регистрацию одинаков для свободной и занятой почты и потому не содержит
+    ничего опознавательного. Живой администратор находит заявку так же.
+    """
     response = await client.post("/auth/register", json={**APPLICANT, **overrides})
     assert response.status_code == 202, response.text
 
-    body: dict = response.json()
-    return body
+    return await find_user(client, overrides.get("email", str(APPLICANT["email"])))
 
 
 async def set_status(client: AsyncClient, user_id: str, status: str) -> Response:
@@ -37,9 +42,7 @@ async def set_status(client: AsyncClient, user_id: str, status: str) -> Response
 @requires_database
 async def test_registration_is_only_a_request(db_client: AsyncClient) -> None:
     """Регистрация не пускает внутрь: иначе одобрение — формальность."""
-    applicant = await apply(db_client)
-
-    assert applicant["status"] == "pending"
+    await apply(db_client)
 
     entered = await db_client.post(
         "/auth/login", json={"email": APPLICANT["email"], "password": PASSWORD}
@@ -66,7 +69,7 @@ async def test_wrong_password_does_not_reveal_the_state(db_client: AsyncClient) 
 async def test_approval_opens_the_door(db_client: AsyncClient) -> None:
     applicant = await apply(db_client)
 
-    approved = await set_status(db_client, applicant["id"], "active")
+    approved = await set_status(db_client, applicant, "active")
 
     assert approved.status_code == 200, approved.text
     body = approved.json()
@@ -106,14 +109,14 @@ async def test_suspension_stops_work_at_once(db_client: AsyncClient) -> None:
 @requires_database
 async def test_suspension_revokes_refresh_sessions(db_client: AsyncClient) -> None:
     applicant = await apply(db_client)
-    await set_status(db_client, applicant["id"], "active")
+    await set_status(db_client, applicant, "active")
 
     entered = await db_client.post(
         "/auth/login", json={"email": APPLICANT["email"], "password": PASSWORD}
     )
     refresh_token = entered.json()["refresh_token"]
 
-    await set_status(db_client, applicant["id"], "suspended")
+    await set_status(db_client, applicant, "suspended")
 
     response = await db_client.post("/auth/refresh", json={"refresh_token": refresh_token})
 
@@ -125,10 +128,10 @@ async def test_suspension_revokes_refresh_sessions(db_client: AsyncClient) -> No
 @requires_database
 async def test_restored_access_works_again(db_client: AsyncClient) -> None:
     applicant = await apply(db_client)
-    await set_status(db_client, applicant["id"], "active")
-    await set_status(db_client, applicant["id"], "suspended")
+    await set_status(db_client, applicant, "active")
+    await set_status(db_client, applicant, "suspended")
 
-    restored = await set_status(db_client, applicant["id"], "active")
+    restored = await set_status(db_client, applicant, "active")
     assert restored.status_code == 200
 
     entered = await db_client.post(
@@ -142,7 +145,7 @@ async def test_pending_cannot_be_restored_as_state(db_client: AsyncClient) -> No
     """Решение уже принято, и делать вид, что его не было, — врать журналу."""
     applicant = await apply(db_client)
 
-    response = await set_status(db_client, applicant["id"], "pending")
+    response = await set_status(db_client, applicant, "pending")
 
     assert response.status_code == 400
 

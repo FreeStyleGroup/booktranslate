@@ -25,6 +25,13 @@ export async function accessToken(): Promise<string | undefined> {
   return jar.get(ACCESS_COOKIE)?.value;
 }
 
+/** Обновление сеанса. Читается только на сервере — в браузер не попадает. */
+export async function refreshToken(): Promise<string | undefined> {
+  const jar = await cookies();
+
+  return jar.get(REFRESH_COOKIE)?.value;
+}
+
 export async function organizationId(): Promise<string | undefined> {
   const jar = await cookies();
 
