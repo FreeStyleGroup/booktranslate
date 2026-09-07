@@ -29,8 +29,15 @@ def read_text(path: Path) -> str:
     Кодировка не хранится: её никто не спрашивает при загрузке, а угадывание
     по содержимому даёт ошибку ровно там, где текст короткий.
     """
-    data = path.read_bytes()
+    return decode_text(path.read_bytes())
 
+
+def decode_text(data: bytes) -> str:
+    """Разобрать байты как текст, подобрав кодировку.
+
+    Отдельно от чтения файла: то же самое нужно загруженному словарю,
+    который до диска не доходит.
+    """
     for encoding in _ENCODINGS:
         try:
             return data.decode(encoding)

@@ -3,16 +3,18 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
 from app.api.deps import ContextDep, ProviderDep, SessionDep
 from app.schemas.glossary import (
+    DictionaryImportResult,
     GlossaryTermCreate,
     GlossaryTermPublic,
     GlossaryTermUpdate,
     TranslationResult,
 )
-from app.services.glossary import GlossaryService
+from app.services.dictionaries import read_dictionary
+from app.services.glossary import MAX_REASONS, GlossaryService
 from app.services.translation import TranslationService
 
 router = APIRouter(tags=["translation"])
@@ -99,6 +101,58 @@ async def add_glossary_term(
     )
 
     return GlossaryTermPublic.model_validate(term)
+
+
+@router.post("/glossary/import", response_model=DictionaryImportResult)
+async def import_glossary(
+    context: ContextDep,
+    session: SessionDep,
+    file: Annotated[UploadFile, File(description="CSV, TSV, TBX или реестр в DOCX")],
+    source_language: Annotated[str, Form(min_length=2, max_length=10)],
+    target_language: Annotated[str, Form(min_length=2, max_length=10)],
+    project_id: Annotated[uuid.UUID | None, Form()] = None,
+    origin: Annotated[
+        str, Form(max_length=100, description="Откуда словарь: имя базы или заказчика")
+    ] = "файл",
+    overwrite_manual: Annotated[
+        bool, Form(description="Перезаписывать записи, заведённые вручную")
+    ] = False,
+) -> DictionaryImportResult:
+    """Загрузить словарь из файла.
+
+    Заведённое человеком не перезаписывается: тот, кто правил термин, знает
+    про эту книгу больше, чем чужая база на двадцать тысяч строк. Такие
+    записи попадают в пропущенные с причиной, а не молча теряются.
+
+    Ответ — сводка, а не список: по числу добавленных и причинам пропуска
+    сразу видно, тот ли файл загрузили и не перепутаны ли колонки местами.
+    """
+    contents = read_dictionary(
+        await file.read(),
+        file.filename or "",
+        source_language=source_language,
+        target_language=target_language,
+    )
+
+    report = await GlossaryService(session, context).import_terms(
+        contents.terms,
+        source_language=source_language,
+        target_language=target_language,
+        project_id=project_id,
+        source=f"import:{origin}",
+        overwrite_manual=overwrite_manual,
+    )
+
+    # Причины из разбора файла и из записи в базу — это одно и то же для
+    # того, кто загружает: он хочет видеть, что не доехало, а не где именно
+    # оно потерялось.
+    return DictionaryImportResult(
+        total=report.total + len(contents.skipped),
+        added=report.added,
+        updated=report.updated,
+        skipped=report.skipped + len(contents.skipped),
+        reasons=[*contents.skipped[:MAX_REASONS], *report.reasons][:MAX_REASONS],
+    )
 
 
 @router.patch("/glossary/{term_id}", response_model=GlossaryTermPublic)

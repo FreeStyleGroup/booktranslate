@@ -76,6 +76,18 @@ class GlossaryTermPublic(BaseModel):
     updated_at: datetime
 
 
+class DictionaryImportResult(BaseModel):
+    """Чем закончилась загрузка словаря."""
+
+    total: int
+    added: int
+    updated: int
+    skipped: int
+    # Причины пропуска, а не одно число: по ним видно, перепутаны ли колонки
+    # местами и тот ли файл загрузили.
+    reasons: list[str]
+
+
 class TranslationResult(BaseModel):
     """Чем закончился перевод документа.
 

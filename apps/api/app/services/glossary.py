@@ -17,18 +17,33 @@ UNTERM, WIPO Pearl, глоссарий заказчика): у термина е
 
 import re
 import uuid
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
+from sqlalchemy.dialects.postgresql import insert
 
+from app.core.config import get_settings
 from app.models.memory import GlossaryEntryKind, GlossaryTerm, GlossaryTermStatus
 from app.models.organization import Role
 from app.services.base import TenantService
+from app.services.dictionaries import ImportedTerm
 from app.services.errors import InvalidInputError, NotFoundError
 
 EDITING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
+
+# Метка записи, заведённой человеком. Загруженная пачка её не перезаписывает.
+MANUAL = "manual"
+
+# Сколько строк уходит в базу одним оператором. Двадцать тысяч отдельных
+# вставок — это минуты вместо секунд.
+INSERT_BATCH = 500
+LOOKUP_BATCH = 1000
+
+# Сколько причин пропуска показывать. Полный список на десять тысяч строк
+# никто не читает, а первых достаточно, чтобы понять, что колонки перепутаны.
+MAX_REASONS = 20
 
 # Что разрешено менять правкой. Исходный термин и языковая пара в список не
 # входят: смена любого из них — это другая запись, а не правка этой, и
@@ -67,6 +82,23 @@ class Term:
     # подсказкой, но не имеет права помечать сегмент ошибкой: иначе редактор
     # получит сотню претензий к переводу там, где спор идёт о самом словаре.
     settled: bool = True
+
+
+@dataclass(slots=True)
+class ImportReport:
+    """Чем закончилась загрузка словаря."""
+
+    total: int
+    added: int = 0
+    updated: int = 0
+    skipped: int = 0
+    # Причины пропуска, а не одно число: «пропущено 240» ничего не говорит,
+    # а «нет перевода» говорит, что колонки перепутаны местами.
+    reasons: list[str] = field(default_factory=list)
+
+    def reason(self, text: str) -> None:
+        if len(self.reasons) < MAX_REASONS:
+            self.reasons.append(text)
 
 
 class Glossary:
@@ -287,6 +319,216 @@ class GlossaryService(TenantService):
             # идентификатор, но транзакцию закрывает вызывающий.
             await self._session.flush()
 
+    async def import_terms(
+        self,
+        terms: Sequence[ImportedTerm],
+        *,
+        source_language: str,
+        target_language: str,
+        source: str,
+        project_id: uuid.UUID | None = None,
+        overwrite_manual: bool = False,
+    ) -> ImportReport:
+        """Загрузить пачку записей из внешнего словаря.
+
+        Главное правило: загруженное не затирает ручную работу. Человек,
+        поправивший термин, знает про эту книгу больше, чем чужая база на
+        двадцать тысяч строк, и молча переписать его правку — это потерять
+        работу, о которой никто не узнает. Такие записи пропускаются, а
+        `overwrite_manual` включается осознанно.
+
+        Запись идёт одним оператором на пачку, а не строкой за строкой:
+        двадцать тысяч отдельных вставок — это минуты вместо секунд.
+        """
+        self._context.require(*EDITING_ROLES)
+
+        limit = get_settings().max_import_terms
+        if len(terms) > limit:
+            raise InvalidInputError(f"За раз загружается не больше {limit} записей")
+
+        report = ImportReport(total=len(terms))
+        prepared: dict[str, dict[str, Any]] = {}
+
+        for term in terms:
+            row = self._import_row(
+                term,
+                source_language=source_language,
+                target_language=target_language,
+                source=source,
+                project_id=project_id,
+                report=report,
+            )
+            if row is not None:
+                # Повтор внутри файла — это уточнение ниже по списку, а не
+                # ошибка. Побеждает последнее: иначе вставка упала бы на
+                # «ON CONFLICT DO UPDATE command cannot affect row a second
+                # time», и не загрузилось бы вообще ничего.
+                prepared[str(row["source_term_normalized"])] = row
+
+        if not prepared:
+            return report
+
+        existing = await self._existing_sources(
+            list(prepared),
+            source_language=source_language,
+            target_language=target_language,
+            project_id=project_id,
+        )
+
+        writable = []
+
+        for key, row in prepared.items():
+            previous = existing.get(key)
+
+            if previous is None:
+                report.added += 1
+            elif previous == MANUAL and not overwrite_manual:
+                report.skipped += 1
+                report.reason(f"{row['source_term']}: заведён вручную, не перезаписан")
+                continue
+            else:
+                report.updated += 1
+
+            writable.append(row)
+
+        await self._write_imported(
+            writable, project_id=project_id, overwrite_manual=overwrite_manual
+        )
+        await self._session.commit()
+
+        return report
+
+    def _import_row(
+        self,
+        term: ImportedTerm,
+        *,
+        source_language: str,
+        target_language: str,
+        source: str,
+        project_id: uuid.UUID | None,
+        report: ImportReport,
+    ) -> dict[str, Any] | None:
+        normalized = normalize_term(term.source_term)
+
+        if not normalized or not term.target_term.strip():
+            report.skipped += 1
+            report.reason(f"пустая запись: {term.source_term[:60]}")
+            return None
+
+        if term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE and (
+            normalize_term(term.target_term) != normalized
+        ):
+            # Отдельная строка файла не должна ронять загрузку целиком:
+            # человек увидит причину и поправит именно её.
+            report.skipped += 1
+            report.reason(f"{term.source_term}: помечен непереводимым, но перевод отличается")
+            return None
+
+        return {
+            "id": uuid.uuid4(),
+            "organization_id": self.organization_id,
+            "project_id": project_id,
+            "source_language": source_language,
+            "target_language": target_language,
+            "source_term": term.source_term.strip(),
+            "source_term_normalized": normalized,
+            "target_term": term.target_term.strip(),
+            "note": term.note,
+            "reference": term.reference,
+            "mandatory": True,
+            "source": source,
+            "kind": term.kind,
+            "status": term.status,
+            "case_sensitive": term.kind
+            in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
+            "expand_on_first_use": term.expand_on_first_use,
+        }
+
+    async def _existing_sources(
+        self,
+        keys: Sequence[str],
+        *,
+        source_language: str,
+        target_language: str,
+        project_id: uuid.UUID | None,
+    ) -> "dict[str, str]":
+        """Что из загружаемого уже есть в словаре и откуда оно там взялось."""
+        found: dict[str, str] = {}
+
+        for start in range(0, len(keys), LOOKUP_BATCH):
+            query = self.scoped(GlossaryTerm).where(
+                GlossaryTerm.source_language == source_language,
+                GlossaryTerm.target_language == target_language,
+                GlossaryTerm.project_id.is_(None)
+                if project_id is None
+                else GlossaryTerm.project_id == project_id,
+                GlossaryTerm.source_term_normalized.in_(keys[start : start + LOOKUP_BATCH]),
+            )
+
+            for row in await self._session.scalars(query):
+                found[row.source_term_normalized] = row.source
+
+        return found
+
+    async def _write_imported(
+        self,
+        rows: Sequence[dict[str, Any]],
+        *,
+        project_id: uuid.UUID | None,
+        overwrite_manual: bool,
+    ) -> None:
+        if not rows:
+            return
+
+        # Уникальность в базе держат два частичных индекса — для терминов
+        # проекта и для общих. Цель конфликта указывается тем же условием,
+        # иначе Postgres не находит индекс и отвергает запрос целиком.
+        if project_id is None:
+            elements = [
+                "organization_id",
+                "source_language",
+                "target_language",
+                "source_term_normalized",
+            ]
+            index_where = text("project_id IS NULL")
+        else:
+            elements = [
+                "organization_id",
+                "project_id",
+                "source_language",
+                "target_language",
+                "source_term_normalized",
+            ]
+            index_where = text("project_id IS NOT NULL")
+
+        for start in range(0, len(rows), INSERT_BATCH):
+            statement = insert(GlossaryTerm).values(rows[start : start + INSERT_BATCH])
+            updates = {
+                name: statement.excluded[name]
+                for name in (
+                    "source_term",
+                    "target_term",
+                    "note",
+                    "reference",
+                    "source",
+                    "kind",
+                    "status",
+                    "case_sensitive",
+                    "expand_on_first_use",
+                )
+            }
+
+            statement = statement.on_conflict_do_update(
+                index_elements=elements,
+                index_where=index_where,
+                set_=updates,
+                # Тот же запрет, что и выше, но на стороне базы: между
+                # проверкой и записью термин мог поправить человек.
+                where=None if overwrite_manual else GlossaryTerm.source != MANUAL,
+            )
+
+            await self._session.execute(statement)
+
     async def update(self, term_id: uuid.UUID, changes: Mapping[str, Any]) -> GlossaryTerm:
         """Правка записи — то, чем живёт перепроверка словаря.
 
@@ -307,8 +549,8 @@ class GlossaryService(TenantService):
         if term is None:
             raise NotFoundError("Термин не найден")
 
-        for field, value in changes.items():
-            setattr(term, field, value)
+        for name, value in changes.items():
+            setattr(term, name, value)
 
         if not term.target_term.strip():
             raise InvalidInputError("Перевод термина не может быть пустым")
