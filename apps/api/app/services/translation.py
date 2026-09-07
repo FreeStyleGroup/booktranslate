@@ -30,7 +30,7 @@
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,7 @@ from app.services.providers import (
     Neighbourhood,
     TranslationProvider,
     TranslationRequest,
+    Usage,
 )
 from app.services.terminology import TerminologyService
 
@@ -71,6 +72,9 @@ class TranslationSummary:
     # from_provider: тот считает СЕГМЕНТЫ, получившие перевод от модели, а
     # повторяющийся сегмент получает его, не стоив отдельного обращения.
     provider_calls: int
+
+    # Потрачено на этот запуск. Ноль у заглушки — она ничего и не тратит.
+    usage: Usage = field(default_factory=Usage)
 
     @property
     def saved_calls(self) -> int:
@@ -204,7 +208,7 @@ class TranslationService(TenantService):
 
             used_units.append(unit.id)
 
-        translated = await self._call_provider(
+        translated, spent = await self._call_provider(
             pending,
             glossary=glossary,
             # Соседи нужны только тому, что уходит модели: подстановка из
@@ -224,6 +228,7 @@ class TranslationService(TenantService):
         )
 
         await self._check_expansions(segments[0].document_id, glossary)
+        await self._add_usage(segments[0].document_id, spent)
         await self._session.commit()
 
         from_provider = sum(len(group) for _, group in pending)
@@ -236,6 +241,7 @@ class TranslationService(TenantService):
             flagged=flagged,
             unique_texts=len(groups),
             provider_calls=len(pending),
+            usage=spent,
         )
 
     async def _call_provider(
@@ -246,13 +252,18 @@ class TranslationService(TenantService):
         context: dict[uuid.UUID, Neighbourhood],
         source_language: str,
         target_language: str,
-    ) -> list[tuple[str, str]]:
-        """Перевести то, чего не нашлось в памяти. Возвращает пары для памяти."""
+    ) -> tuple[list[tuple[str, str]], Usage]:
+        """Перевести то, чего не нашлось в памяти.
+
+        Возвращает пары для памяти и расход: считать его выше по стеку не
+        по чему — пачки формируются здесь.
+        """
         if not pending:
-            return []
+            return [], Usage()
 
         batch_size = get_settings().translation_batch_size
         pairs: list[tuple[str, str]] = []
+        spent = Usage()
 
         for start in range(0, len(pending), batch_size):
             chunk = pending[start : start + batch_size]
@@ -273,14 +284,16 @@ class TranslationService(TenantService):
                 for _, group in chunk
             ]
 
-            answers = await self._provider.translate(requests)
-            if len(answers) != len(requests):
+            batch = await self._provider.translate(requests)
+            spent = spent + batch.usage
+
+            if len(batch.texts) != len(requests):
                 raise ConflictError(
                     "Провайдер вернул другое число переводов: "
-                    f"ожидалось {len(requests)}, получено {len(answers)}"
+                    f"ожидалось {len(requests)}, получено {len(batch.texts)}"
                 )
 
-            for (_, group), answer in zip(chunk, answers, strict=True):
+            for (_, group), answer in zip(chunk, batch.texts, strict=True):
                 for segment in group:
                     self._apply(
                         segment, answer, self._provider.name, SegmentStatus.MACHINE, glossary
@@ -288,7 +301,29 @@ class TranslationService(TenantService):
 
                 pairs.append((group[0].source_text, answer))
 
-        return pairs
+        return pairs, spent
+
+    async def _add_usage(self, document_id: uuid.UUID, spent: Usage) -> None:
+        """Прибавить расход запуска к итогу документа.
+
+        Нарастающим итогом, а не заменой: книгу переводят в несколько
+        заходов — сначала целиком, потом добавленную главу, — и стоимость
+        документа складывается из всех.
+        """
+        if spent == Usage():
+            return
+
+        document = await self._session.scalar(
+            self.scoped(Document).where(Document.id == document_id)
+        )
+        if document is None:
+            return
+
+        document.input_tokens += spent.input_tokens
+        document.output_tokens += spent.output_tokens
+        document.cached_input_tokens += spent.cached_input_tokens
+        document.cache_write_tokens += spent.cache_write_tokens
+        document.translated_by = self._provider.name
 
     def _apply(
         self,

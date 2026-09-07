@@ -21,6 +21,7 @@ from app.db.session import get_session
 from app.main import create_app
 from app.services.providers import (
     StubProvider,
+    Translated,
     TranslationProvider,
     TranslationRequest,
     get_provider,
@@ -93,7 +94,7 @@ class RecordingProvider(StubProvider):
     def __init__(self, log: list[TranslationRequest]) -> None:
         self._log = log
 
-    async def translate(self, requests: list[TranslationRequest]) -> list[str]:
+    async def translate(self, requests: list[TranslationRequest]) -> Translated:
         self._log.extend(requests)
 
         return await super().translate(requests)

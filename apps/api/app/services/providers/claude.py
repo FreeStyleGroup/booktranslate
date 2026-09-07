@@ -26,7 +26,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.providers.base import ProviderError, TranslationRequest
+from app.services.providers.base import ProviderError, Translated, TranslationRequest, Usage
 
 # Схема ответа. Номер обязателен: по нему перевод возвращается на своё место,
 # а не по порядку строк.
@@ -115,23 +115,28 @@ class ClaudeProvider:
         """
         return self._settings.model
 
-    async def translate(self, requests: list[TranslationRequest]) -> list[str]:
+    async def translate(self, requests: list[TranslationRequest]) -> Translated:
         if not requests:
-            return []
+            return Translated(texts=[])
 
         message = await self._ask(requests)
         stop = getattr(message, "stop_reason", None)
+        usage = _usage_of(message)
 
         if stop == "refusal":
             raise ProviderError(self._refusal_message(message))
 
         if stop == "max_tokens":
-            return await self._split(requests)
+            return await self._split(requests, usage)
 
-        return self._parse(_text_of(message), len(requests))
+        return Translated(texts=self._parse(_text_of(message), len(requests)), usage=usage)
 
-    async def _split(self, requests: list[TranslationRequest]) -> list[str]:
+    async def _split(self, requests: list[TranslationRequest], spent: Usage) -> Translated:
         """Пачка не уместилась в ответ — перевести половинами.
+
+        Расход неудачной попытки не выбрасывается, а прибавляется к итогу:
+        обрезанный ответ оплачен так же, как удачный, и отчёт, в котором его
+        нет, занижает стоимость книги.
 
         Один сегмент разделить уже нельзя: значит, потолок ответа меньше,
         чем нужно этому абзацу, и молчать об этом нельзя — обрезанный
@@ -145,7 +150,13 @@ class ClaudeProvider:
 
         middle = len(requests) // 2
 
-        return await self.translate(requests[:middle]) + await self.translate(requests[middle:])
+        head = await self.translate(requests[:middle])
+        tail = await self.translate(requests[middle:])
+
+        return Translated(
+            texts=head.texts + tail.texts,
+            usage=spent + head.usage + tail.usage,
+        )
 
     async def _ask(self, requests: list[TranslationRequest]) -> Any:
         payload: dict[str, Any] = {
@@ -268,6 +279,31 @@ def _segment(number: int, request: TranslationRequest) -> dict[str, Any]:
         ]
 
     return item
+
+
+def _usage_of(message: Any) -> Usage:
+    """Расход из ответа модели.
+
+    Поля читаются мягко: отсутствие счётчика — не повод уронить перевод,
+    который уже получен и оплачен.
+    """
+    usage = getattr(message, "usage", None)
+
+    if usage is None:
+        return Usage()
+
+    return Usage(
+        input_tokens=_number(usage, "input_tokens"),
+        output_tokens=_number(usage, "output_tokens"),
+        cached_input_tokens=_number(usage, "cache_read_input_tokens"),
+        cache_write_tokens=_number(usage, "cache_creation_input_tokens"),
+    )
+
+
+def _number(source: Any, field: str) -> int:
+    value = getattr(source, field, 0)
+
+    return value if isinstance(value, int) else 0
 
 
 def _text_of(message: Any) -> str:

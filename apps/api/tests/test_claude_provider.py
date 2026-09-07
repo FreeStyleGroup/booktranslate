@@ -92,7 +92,7 @@ async def test_translations_return_in_order_of_request() -> None:
 
     result = await provider(client).translate([request("first"), request("second")])
 
-    assert result == ["первый", "второй"]
+    assert result.texts == ["первый", "второй"]
 
 
 async def test_missing_translation_is_an_error() -> None:
@@ -115,7 +115,7 @@ async def test_thinking_blocks_do_not_hide_the_answer() -> None:
         ]
     )
 
-    assert await provider(client).translate([request("first")]) == ["первый"]
+    assert (await provider(client).translate([request("first")])).texts == ["первый"]
 
 
 async def test_truncated_batch_is_split_in_half() -> None:
@@ -130,7 +130,7 @@ async def test_truncated_batch_is_split_in_half() -> None:
 
     result = await provider(client).translate([request("first"), request("second")])
 
-    assert result == ["первый", "второй"]
+    assert result.texts == ["первый", "второй"]
     assert len(client.messages.calls) == 3
 
 
@@ -181,6 +181,58 @@ async def test_fallbacks_go_through_beta_endpoint() -> None:
 
     assert payload["fallbacks"] == "default"
     assert payload["betas"] == ["server-side-fallback-2026-07-01"]
+
+
+async def test_usage_comes_back_with_the_translation() -> None:
+    """Без этого книгу переводят вслепую и узнают цену из счёта."""
+    message = answer(["первый"])
+    message.usage = type(
+        "Usage",
+        (),
+        {
+            "input_tokens": 120,
+            "output_tokens": 45,
+            "cache_read_input_tokens": 900,
+            "cache_creation_input_tokens": 30,
+        },
+    )()
+
+    result = await provider(Client([message])).translate([request("first")])
+
+    assert result.usage.input_tokens == 120
+    assert result.usage.output_tokens == 45
+    assert result.usage.cached_input_tokens == 900
+    assert result.usage.cache_write_tokens == 30
+
+
+async def test_usage_of_a_truncated_attempt_is_not_lost() -> None:
+    """Обрезанный ответ оплачен так же, как удачный."""
+
+    def spent(tokens: int) -> Any:
+        return type("Usage", (), {"input_tokens": tokens, "output_tokens": 0})()
+
+    first = answer(["", ""], stop_reason="max_tokens")
+    first.usage = spent(100)
+
+    head = answer(["первый"])
+    head.usage = spent(10)
+
+    tail = answer(["второй"])
+    tail.usage = spent(20)
+
+    result = await provider(Client([first, head, tail])).translate(
+        [request("first"), request("second")]
+    )
+
+    assert result.usage.input_tokens == 130
+
+
+async def test_missing_usage_does_not_break_the_translation() -> None:
+    """Отсутствие счётчика — не повод потерять уже оплаченный перевод."""
+    result = await provider(Client([answer(["первый"])])).translate([request("first")])
+
+    assert result.texts == ["первый"]
+    assert result.usage.input_tokens == 0
 
 
 async def test_provider_name_is_the_model() -> None:

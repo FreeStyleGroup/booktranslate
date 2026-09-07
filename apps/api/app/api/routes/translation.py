@@ -15,6 +15,7 @@ from app.schemas.glossary import (
 )
 from app.services.dictionaries import read_dictionary
 from app.services.glossary import MAX_REASONS, GlossaryService
+from app.services.pricing import estimate_usd
 from app.services.translation import TranslationService
 
 router = APIRouter(tags=["translation"])
@@ -58,6 +59,17 @@ async def translate_document(
         unique_texts=summary.unique_texts,
         provider_calls=summary.provider_calls,
         saved_calls=summary.saved_calls,
+        input_tokens=summary.usage.input_tokens,
+        output_tokens=summary.usage.output_tokens,
+        cached_input_tokens=summary.usage.cached_input_tokens,
+        cache_write_tokens=summary.usage.cache_write_tokens,
+        estimated_usd=estimate_usd(
+            provider.name,
+            input_tokens=summary.usage.input_tokens,
+            output_tokens=summary.usage.output_tokens,
+            cached_input_tokens=summary.usage.cached_input_tokens,
+            cache_write_tokens=summary.usage.cache_write_tokens,
+        ),
     )
 
 
