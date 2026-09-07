@@ -194,7 +194,9 @@ a {
   padding: 7px 7px 7px 22px;
   border-radius: 16px;
   border: 1px solid var(--glass-line);
-  background: var(--glass-strong);
+  /* Плотнее обычного стекла: полоса проплывает и над тёмными разворотами,
+     где полупрозрачная белая подложка делает подписи нечитаемыми. */
+  background: color-mix(in srgb, var(--paper) 93%, transparent);
   backdrop-filter: blur(26px) saturate(180%);
   -webkit-backdrop-filter: blur(26px) saturate(180%);
   box-shadow: var(--shadow-soft), inset 0 1px 0 var(--glass-top);
@@ -214,7 +216,7 @@ a {
   margin-left: -16px;
   border-radius: 14px;
   border: 1px solid var(--glass-line);
-  background: var(--glass-strong);
+  background: color-mix(in srgb, var(--paper) 93%, transparent);
   backdrop-filter: blur(26px) saturate(180%);
   -webkit-backdrop-filter: blur(26px) saturate(180%);
   box-shadow: var(--shadow-soft), inset 0 1px 0 var(--glass-top);
@@ -604,10 +606,15 @@ h3 {
 
 /* Значок между разделами: страница дышит, а взгляд получает точку опоры на
    переходе. */
+/* Значок сидит верхом на стыке разделов: высота у полосы нулевая, а сам
+   значок поднят на свою половину — так его центр совпадает с границей, а
+   отступы соседних разделов не сдвигаются. */
 .divider {
   position: relative;
+  z-index: 5;
   display: flex;
   justify-content: center;
+  height: 0;
   max-width: var(--maxw);
   margin: 0 auto;
   padding: 0 28px;
@@ -626,12 +633,13 @@ h3 {
   border: 1px solid var(--glass-line);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
-  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--glass-top);
+  box-shadow: var(--shadow-lift), inset 0 1px 0 var(--glass-top);
+  transform: translateY(-50%);
   transition: transform 0.4s var(--ease);
 }
 
 .divider:hover span {
-  transform: translateY(-3px) rotate(-6deg);
+  transform: translateY(calc(-50% - 4px)) rotate(-6deg);
 }
 
 .hero__actions {
