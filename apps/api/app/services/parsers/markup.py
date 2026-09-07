@@ -23,7 +23,11 @@ from app.services.parsers.plain import read_text
 
 # Теги, дающие отдельный блок. Всё, что не перечислено (span, em, a),
 # остаётся внутри блока — это оформление внутри предложения, а не граница.
-_BLOCK_KINDS = {
+#
+# Перечень открыт наружу намеренно: сборка переведённого документа обходит
+# разметку тем же списком, и разойтись они не могут — иначе переводы встанут
+# не в свои абзацы.
+BLOCK_KINDS = {
     "h1": SegmentKind.HEADING,
     "h2": SegmentKind.HEADING,
     "h3": SegmentKind.HEADING,
@@ -42,7 +46,11 @@ _BLOCK_KINDS = {
 
 # Служебное содержимое: разметка, стили, скрипты. Переводить его нечего, а
 # попав в сегменты, оно ломает и оценку объёма, и счёт денег.
-_IGNORED = {"script", "style", "head", "title", "meta", "link", "noscript"}
+IGNORED_TAGS = {"script", "style", "head", "title", "meta", "link", "noscript"}
+
+# Список для поиска по разметке. Отдельным именем, чтобы вызывающему не
+# приходилось помнить, что ключи словаря — это и есть теги.
+BLOCK_TAGS = list(BLOCK_KINDS)
 
 _XHTML_SUFFIXES = (".xhtml", ".html", ".htm")
 
@@ -58,19 +66,19 @@ def blocks_from_html(
     """
     soup = BeautifulSoup(markup, "html.parser")
 
-    for tag in soup.find_all(_IGNORED):
+    for tag in soup.find_all(IGNORED_TAGS):
         tag.decompose()
 
     root = soup.body or soup
     index = 0
 
-    for element in root.find_all(list(_BLOCK_KINDS)):
+    for element in root.find_all(BLOCK_TAGS):
         if not isinstance(element, Tag):
             continue
 
         # Вложенный блок отдаётся сам по себе; родитель, который его
         # содержит, не должен выдать его текст второй раз.
-        if element.find(list(_BLOCK_KINDS)) is not None:
+        if element.find(BLOCK_TAGS) is not None:
             continue
 
         text = element.get_text(" ", strip=True)
@@ -81,7 +89,7 @@ def blocks_from_html(
         place["block"] = index
         index += 1
 
-        yield ParsedBlock(text=text, kind=_BLOCK_KINDS[element.name], location=place)
+        yield ParsedBlock(text=text, kind=BLOCK_KINDS[element.name], location=place)
 
 
 class HtmlParser:

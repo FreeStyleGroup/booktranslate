@@ -1,9 +1,10 @@
 """Форматы выгрузки перевода.
 
-Их два рода. **Текстовые** (простой текст и Markdown) доступны для любого
-исходника: перевод книги, разобранной из EPUB, обратно в EPUB не соберётся,
-но забрать результат заказчик должен в любом случае. **Формат оригинала**
-доступен там, где документ можно переписать по месту, — сейчас это DOCX.
+Их два рода. **Формат оригинала** — там, где документ переписывается по
+месту: DOCX, HTML и EPUB. Только так остаётся всё, чего разбор не видел, —
+стили, картинки, опись книги, оглавление. **Текстовые** (простой текст и
+Markdown) доступны для любого исходника: PDF обратно не соберётся, а забрать
+результат заказчик должен в любом случае.
 
 Реестр явный, как и у разборщиков: формат, которого здесь нет, честно
 отвечает «не поддерживается» вместо того, чтобы выдать пустой файл.
@@ -14,6 +15,7 @@ import enum
 from app.models.document import SourceFormat
 from app.services.export.base import ExportError, Rendered, Renderer, TranslatedBlock
 from app.services.export.docx_writer import DocxRenderer
+from app.services.export.markup_writer import EpubRenderer, HtmlRenderer
 from app.services.export.text import MarkdownRenderer, TextRenderer
 
 
@@ -29,6 +31,8 @@ class ExportFormat(str, enum.Enum):
 # Форматы исходника, которые собираются обратно в себя.
 _IN_PLACE: dict[SourceFormat, Renderer] = {
     SourceFormat.DOCX: DocxRenderer(),
+    SourceFormat.HTML: HtmlRenderer(),
+    SourceFormat.EPUB: EpubRenderer(),
 }
 
 _RENDERERS: dict[ExportFormat, Renderer] = {
