@@ -613,30 +613,14 @@ h3 {
   padding: 0 28px;
 }
 
-.divider::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 28px;
-  right: 28px;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--line) 22%,
-    var(--line) 78%,
-    transparent
-  );
-}
-
 .divider span {
   position: relative;
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
   display: grid;
   place-items: center;
-  font-size: 25px;
+  font-size: 32px;
   line-height: 1;
   background: var(--glass-strong);
   border: 1px solid var(--glass-line);
