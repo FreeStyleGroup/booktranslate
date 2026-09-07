@@ -6,6 +6,7 @@
 """
 
 from app.models.document import Document, DocumentStatus, SourceFormat
+from app.models.memory import GlossaryEntryKind, GlossaryTerm, TranslationUnit
 from app.models.organization import Membership, Organization, Role, User
 from app.models.project import Project
 from app.models.segment import Segment, SegmentKind, SegmentStatus
@@ -14,6 +15,8 @@ from app.models.session import RefreshSession
 __all__ = [
     "Document",
     "DocumentStatus",
+    "GlossaryEntryKind",
+    "GlossaryTerm",
     "Membership",
     "Organization",
     "Project",
@@ -23,5 +26,6 @@ __all__ = [
     "SegmentKind",
     "SegmentStatus",
     "SourceFormat",
+    "TranslationUnit",
     "User",
 ]

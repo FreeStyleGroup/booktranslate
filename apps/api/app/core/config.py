@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     segment_target_chars: int = 1200
     segment_hard_limit_chars: int = 3000
 
+    # Сколько сегментов уходит провайдеру одним вызовом. У любого настоящего
+    # провайдера накладные расходы на вызов сопоставимы с переводом короткой
+    # фразы, поэтому пачка обязательна; верхняя граница — окно модели.
+    translation_batch_size: int = 20
+
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
