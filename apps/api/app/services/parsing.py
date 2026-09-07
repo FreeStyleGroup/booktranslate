@@ -15,7 +15,9 @@ import asyncio
 import os
 import tempfile
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,23 +104,42 @@ class ParsingService(TenantService):
         return document
 
     async def list_segments(
-        self, document_id: uuid.UUID, *, limit: int = 100, offset: int = 0
+        self,
+        document_id: uuid.UUID,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        statuses: Sequence[SegmentStatus] | None = None,
+        worst_first: bool = False,
     ) -> list[Segment]:
+        """Сегменты документа — целиком или отобранные для правки.
+
+        `worst_first` меняет порядок с документного на «сначала спорное»:
+        редактор разбирает не книгу подряд, а список замечаний, и начинать
+        должен с худшего. Сегменты без находок в этом порядке идут
+        последними — оценки у них нет вовсе.
+        """
         # Документ запрашивается ради проверки принадлежности: пустой список
         # на чужой документ выглядел бы как «сегментов нет».
         await DocumentService(self._session, self._context, self._storage).get(document_id)
 
-        query = (
-            self.scoped(Segment)
-            .where(Segment.document_id == document_id)
-            .order_by(Segment.position)
-            .limit(limit)
-            .offset(offset)
+        query = self._filtered(
+            self.scoped(Segment).where(Segment.document_id == document_id), statuses
         )
 
-        return list(await self._session.scalars(query))
+        if worst_first:
+            # NULLS LAST задано явно: в Postgres при сортировке по
+            # возрастанию NULL и так уходят в конец, но порядок здесь несёт
+            # смысл, и полагаться на умолчание базы в таком месте не стоит.
+            query = query.order_by(Segment.quality_score.asc().nulls_last(), Segment.position)
+        else:
+            query = query.order_by(Segment.position)
 
-    async def count_segments(self, document_id: uuid.UUID) -> int:
+        return list(await self._session.scalars(query.limit(limit).offset(offset)))
+
+    async def count_segments(
+        self, document_id: uuid.UUID, *, statuses: Sequence[SegmentStatus] | None = None
+    ) -> int:
         query = (
             select(func.count())
             .select_from(Segment)
@@ -128,7 +149,19 @@ class ParsingService(TenantService):
             )
         )
 
-        return int(await self._session.scalar(query) or 0)
+        return int(await self._session.scalar(self._filtered(query, statuses)) or 0)
+
+    @staticmethod
+    def _filtered(query: Any, statuses: Sequence[SegmentStatus] | None) -> Any:
+        """Отбор по статусу — общий для страницы и для счётчика.
+
+        Общий намеренно: разойдясь, они дадут страницу из десяти строк при
+        заявленной тысяче, и полоса прокрутки станет врать.
+        """
+        if not statuses:
+            return query
+
+        return query.where(Segment.status.in_(list(statuses)))
 
     async def _read_blocks(self, document: Document, parser: DocumentParser) -> list[ParsedBlock]:
         """Забрать файл из хранилища во временный и разобрать его.
