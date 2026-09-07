@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.memory import GlossaryEntryKind
+from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
 
 
 class GlossaryTermCreate(BaseModel):
@@ -23,6 +23,34 @@ class GlossaryTermCreate(BaseModel):
     # None означает «по умолчанию для вида»: у аббревиатур регистр значим,
     # у обычных терминов — нет.
     case_sensitive: bool | None = None
+    # Заведённое руками считается решённым: человек, набравший перевод, уже
+    # договорился с собой. Бюро, ведущее два прохода по словарю, ставит
+    # PROPOSED и подтверждает вторым проходом.
+    status: GlossaryTermStatus = GlossaryTermStatus.CONFIRMED
+    # Чем решение обосновано: справочник, стандарт, адрес страницы, где
+    # термин посмотрели.
+    reference: str | None = None
+    # Раскрывать при первом употреблении: «маркет-мейкер (market maker, MM)»,
+    # дальше просто MM.
+    expand_on_first_use: bool = False
+
+
+class GlossaryTermUpdate(BaseModel):
+    """Правка записи. Присылается только то, что меняется.
+
+    Все поля необязательны, и различие «не прислано» и «прислано пустым»
+    здесь значимое: первое оставляет значение как есть, второе стирает
+    примечание или источник.
+    """
+
+    target_term: str | None = Field(default=None, min_length=1, max_length=300)
+    kind: GlossaryEntryKind | None = None
+    status: GlossaryTermStatus | None = None
+    note: str | None = None
+    reference: str | None = None
+    mandatory: bool | None = None
+    case_sensitive: bool | None = None
+    expand_on_first_use: bool | None = None
 
 
 class GlossaryTermPublic(BaseModel):
@@ -35,9 +63,12 @@ class GlossaryTermPublic(BaseModel):
     source_term: str
     target_term: str
     kind: GlossaryEntryKind
+    status: GlossaryTermStatus
     note: str | None
+    reference: str | None
     mandatory: bool
     case_sensitive: bool
+    expand_on_first_use: bool
     # Откуда запись: «manual», «extracted», «import:<источник>». Нужна в
     # интерфейсе, чтобы отличить загруженную пачку от ручной работы.
     source: str
