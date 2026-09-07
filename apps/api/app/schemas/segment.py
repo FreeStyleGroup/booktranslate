@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.segment import SegmentKind, SegmentStatus
 
@@ -30,6 +30,36 @@ class SegmentPublic(BaseModel):
     translation_source: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class SegmentEdit(BaseModel):
+    """Правка перевода редактором."""
+
+    target_text: str = Field(min_length=1, max_length=20000)
+
+
+class SegmentEdited(BaseModel):
+    segment: SegmentPublic
+    # Сколько повторов того же текста подтянулось за правкой. Редактор
+    # поправил одну строку, а изменилось сорок — знать об этом он должен
+    # до того, как увидит это в готовой книге.
+    propagated: int
+
+
+class ReviewProgress(BaseModel):
+    """Состояние документа: полоса выполнения и очередь редактора."""
+
+    total: int
+    translated: int
+    flagged: int
+    edited: int
+    approved: int
+    untouched: int
+    is_complete: bool
+
+
+class ApprovedCount(BaseModel):
+    approved: int
 
 
 class SegmentPage(BaseModel):
