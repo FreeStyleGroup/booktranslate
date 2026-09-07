@@ -5,6 +5,7 @@
 Модель, забытая в этом списке, молча не попадёт в миграцию.
 """
 
+from app.models.catalog import CatalogEntry
 from app.models.document import Document, DocumentStatus, SourceFormat
 from app.models.memory import (
     GlossaryEntryKind,
@@ -19,6 +20,7 @@ from app.models.session import RefreshSession
 from app.models.terminology import TermCandidate, TermCandidateStatus
 
 __all__ = [
+    "CatalogEntry",
     "Document",
     "DocumentStatus",
     "GlossaryEntryKind",

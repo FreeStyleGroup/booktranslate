@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.errors import handle_domain_error
 from app.api.routes import (
     auth,
+    catalog,
     documents,
     health,
     projects,
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router)
     app.include_router(segments.router)
     app.include_router(terminology.router)
+    app.include_router(catalog.router)
     app.include_router(translation.router)
 
     return app
