@@ -41,6 +41,7 @@ async def translate_document(
         from_provider=summary.from_provider,
         flagged=summary.flagged,
         unique_texts=summary.unique_texts,
+        provider_calls=summary.provider_calls,
         saved_calls=summary.saved_calls,
     )
 

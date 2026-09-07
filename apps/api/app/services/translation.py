@@ -50,15 +50,20 @@ class TranslationSummary:
     from_provider: int
     flagged: int
     unique_texts: int
+    # Сколько текстов реально ушло провайдеру. Не то же самое, что
+    # from_provider: тот считает СЕГМЕНТЫ, получившие перевод от модели, а
+    # повторяющийся сегмент получает его, не стоив отдельного обращения.
+    provider_calls: int
 
     @property
     def saved_calls(self) -> int:
         """Сколько обращений к модели не понадобилось.
 
-        Считается от общего числа сегментов: повторы внутри документа и
-        совпадения с памятью — это ровно то, за что не заплачено.
+        Наивный перевод стоил бы одного обращения на сегмент. Разница с
+        реальным числом обращений — это и есть то, за что не заплачено:
+        повторы внутри документа плюс совпадения с памятью.
         """
-        return self.total - self.from_provider
+        return self.total - self.provider_calls
 
 
 class TranslationService(TenantService):
@@ -88,7 +93,7 @@ class TranslationService(TenantService):
 
         segments = await self._segments(document_id, force=force)
         if not segments:
-            return TranslationSummary(0, 0, 0, 0, 0)
+            return TranslationSummary(0, 0, 0, 0, 0, 0)
 
         glossary = await GlossaryService(self._session, self._context).load(
             project_id=document.project_id,
@@ -188,6 +193,7 @@ class TranslationService(TenantService):
             from_provider=from_provider,
             flagged=flagged,
             unique_texts=len(groups),
+            provider_calls=len(pending),
         )
 
     async def _call_provider(

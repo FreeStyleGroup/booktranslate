@@ -58,4 +58,7 @@ class TranslationResult(BaseModel):
     from_provider: int
     flagged: int
     unique_texts: int
+    # Обращений к провайдеру — против числа сегментов: разница и есть
+    # экономия на повторах и памяти.
+    provider_calls: int
     saved_calls: int
