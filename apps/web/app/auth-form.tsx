@@ -13,6 +13,7 @@ const MIN_PASSWORD = 12;
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const register = mode === "register";
@@ -37,10 +38,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         }),
       });
 
-      if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; pending?: boolean };
 
+      if (!response.ok) {
         setError(payload.error ?? "Не получилось. Попробуйте ещё раз.");
+        return;
+      }
+
+      // Регистрация никуда не ведёт: она заявка, и доступ по ней открывает
+      // администратор. Отправить человека в кабинет, из которого его
+      // выставят, — худшее, что тут можно сделать.
+      if (payload.pending === true) {
+        setSent(true);
         return;
       }
 
@@ -53,6 +62,19 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (sent) {
+    return (
+      <div className="sent" role="status">
+        <span aria-hidden="true">📬</span>
+        <h2>Заявка отправлена</h2>
+        <p>
+          Доступ открывает администратор. Как только заявку одобрят, вы
+          войдёте той же почтой и паролем — на странице входа.
+        </p>
+      </div>
+    );
   }
 
   return (

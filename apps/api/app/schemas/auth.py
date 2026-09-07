@@ -6,10 +6,11 @@
 """
 
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.organization import Role
+from app.models.organization import Role, UserStatus
 
 
 class RegisterRequest(BaseModel):
@@ -44,12 +45,28 @@ class TokenPair(BaseModel):
     expires_in: int = Field(description="Срок жизни токена доступа в секундах")
 
 
+class AccessRequestPublic(BaseModel):
+    """Ответ на регистрацию: заявка принята, доступ откроет администратор."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: EmailStr
+    full_name: str | None
+    status: UserStatus
+    created_at: datetime
+
+
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
+    status: UserStatus
+    # Администратор площадки. Витрине это нужно, чтобы показать вход в
+    # раздел управления доступом — и не показывать его остальным.
+    is_superuser: bool
 
 
 class MembershipPublic(BaseModel):

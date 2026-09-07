@@ -19,11 +19,17 @@ from app.core.security import (
     needs_rehash,
     verify_password,
 )
-from app.models.organization import Membership, Organization, Role, User
+from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.session import RefreshSession
 from app.schemas.auth import TokenPair
-from app.services.errors import AuthError, ConflictError
+from app.services.errors import AccessDeniedError, AuthError, ConflictError
 from app.services.slug import slugify
+
+# Что отвечают человеку, чей доступ ещё не открыт или уже закрыт. Сообщения
+# разные: «вас ещё не рассмотрели» и «вам закрыли доступ» требуют разных
+# действий, и общая формулировка заставила бы писать в поддержку обоих.
+PENDING_MESSAGE = "Заявка на доступ отправлена администратору и ещё не одобрена"
+SUSPENDED_MESSAGE = "Доступ к учётной записи приостановлен администратором"
 
 
 class AuthService:
@@ -37,14 +43,24 @@ class AuthService:
         password: str,
         full_name: str | None,
         organization_name: str,
-        user_agent: str | None = None,
-        ip_address: str | None = None,
-    ) -> TokenPair:
+    ) -> User:
+        """Заявка на доступ.
+
+        Регистрация не пускает внутрь и не выдаёт токенов: доступ открывает
+        администратор. Рабочее пространство при этом создаётся сразу —
+        человек назвал его при подаче заявки, и заводить его потом заново,
+        уточняя название, значит потерять то, что уже сказано.
+        """
         existing = await self._session.scalar(select(User).where(User.email == email))
         if existing is not None:
             raise ConflictError("Пользователь с такой почтой уже зарегистрирован")
 
-        user = User(email=email, full_name=full_name, password_hash=hash_password(password))
+        user = User(
+            email=email,
+            full_name=full_name,
+            password_hash=hash_password(password),
+            status=UserStatus.PENDING,
+        )
         organization = Organization(
             name=organization_name,
             slug=await self._unique_slug(slugify(organization_name, fallback="org")),
@@ -54,17 +70,10 @@ class AuthService:
         membership = Membership(organization=organization, user=user, role=Role.OWNER)
 
         self._session.add_all([user, organization, membership])
-        await self._session.flush()
-
-        tokens = await self._issue_tokens(
-            user=user,
-            organization_id=organization.id,
-            user_agent=user_agent,
-            ip_address=ip_address,
-        )
         await self._session.commit()
+        await self._session.refresh(user)
 
-        return tokens
+        return user
 
     async def login(
         self,
@@ -76,19 +85,27 @@ class AuthService:
     ) -> TokenPair:
         user = await self._session.scalar(select(User).where(User.email == email))
 
-        # Один и тот же ответ на «нет такого пользователя», «неверный
-        # пароль» и «учётная запись отключена»: разные ответы позволяют
-        # выяснить, кто здесь зарегистрирован.
-        if user is None or user.password_hash is None or not user.is_active:
+        # Один и тот же ответ на «нет такого пользователя» и «неверный
+        # пароль»: разные ответы позволяют выяснить перебором, кто здесь
+        # зарегистрирован.
+        if user is None or user.password_hash is None:
             raise AuthError("Неверная почта или пароль")
 
         if not verify_password(password, user.password_hash):
             raise AuthError("Неверная почта или пароль")
 
+        # Состояние доступа сообщается только после верного пароля. До него
+        # это подсказка перебирающему, после — ответ человеку, который свою
+        # учётную запись и так знает: иначе он будет считать, что ошибся
+        # паролем, и писать в поддержку об этом.
+        self._require_active(user)
+
         # Единственный момент, когда пароль известен в открытом виде, —
         # здесь. Если параметры Argon2 ужесточились, пересчитываем сейчас.
         if needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
+
+        user.last_login_at = datetime.now(UTC)
 
         organization_id = await self._session.scalar(
             select(Membership.organization_id).where(Membership.user_id == user.id).limit(1)
@@ -133,8 +150,12 @@ class AuthService:
             raise AuthError("Срок действия токена обновления истёк")
 
         user = await self._session.get(User, session_row.user_id)
-        if user is None or not user.is_active:
+        if user is None:
             raise AuthError("Учётная запись недоступна")
+
+        # Доступ мог быть закрыт уже после входа: обновление — единственное
+        # место, где длинная сессия сверяется с текущим состоянием.
+        self._require_active(user)
 
         organization_id = await self._session.scalar(
             select(Membership.organization_id).where(Membership.user_id == user.id).limit(1)
@@ -167,6 +188,14 @@ class AuthService:
         if session_row is not None and session_row.revoked_at is None:
             session_row.revoked_at = datetime.now(UTC)
             await self._session.commit()
+
+    @staticmethod
+    def _require_active(user: User) -> None:
+        if user.status is UserStatus.PENDING:
+            raise AccessDeniedError(PENDING_MESSAGE)
+
+        if user.status is UserStatus.SUSPENDED:
+            raise AccessDeniedError(SUSPENDED_MESSAGE)
 
     async def _issue_tokens(
         self,

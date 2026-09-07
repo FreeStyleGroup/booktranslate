@@ -8,6 +8,7 @@
 from httpx import AsyncClient
 
 from tests.conftest import requires_database
+from tests.factories import admin_headers
 
 REGISTRATION = {
     "email": "editor@example.com",
@@ -18,10 +19,29 @@ REGISTRATION = {
 
 
 async def _register(db_client: AsyncClient, **overrides: str) -> dict[str, str]:
-    response = await db_client.post("/auth/register", json={**REGISTRATION, **overrides})
-    assert response.status_code == 201, response.text
+    """Заявка, одобрение и вход.
 
-    tokens: dict[str, str] = response.json()
+    Регистрация сама по себе внутрь не пускает, поэтому здесь проходится
+    весь порядок: тестам ниже нужен работающий пользователь, а не
+    ожидающий решения.
+    """
+    payload = {**REGISTRATION, **overrides}
+    response = await db_client.post("/auth/register", json=payload)
+    assert response.status_code == 202, response.text
+
+    approved = await db_client.patch(
+        f"/admin/users/{response.json()['id']}/status",
+        headers=await admin_headers(db_client),
+        json={"status": "active"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    entered = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert entered.status_code == 200, entered.text
+
+    tokens: dict[str, str] = entered.json()
     return tokens
 
 

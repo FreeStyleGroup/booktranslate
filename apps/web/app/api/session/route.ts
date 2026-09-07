@@ -38,16 +38,25 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const tokens = await apiFetch<TokenPair>(register ? "/auth/register" : "/auth/login", {
+    // Регистрация — заявка: сеанса она не открывает, потому что доступ
+    // открывает администратор. Форме отвечаем этим же словом.
+    if (register) {
+      await apiFetch<{ status: string }>("/auth/register", {
+        method: "POST",
+        body: {
+          email,
+          password,
+          full_name: text(payload.full_name) ?? null,
+          organization_name: text(payload.organization_name),
+        },
+      });
+
+      return NextResponse.json({ ok: true, pending: true });
+    }
+
+    const tokens = await apiFetch<TokenPair>("/auth/login", {
       method: "POST",
-      body: register
-        ? {
-            email,
-            password,
-            full_name: text(payload.full_name) ?? null,
-            organization_name: text(payload.organization_name),
-          }
-        : { email, password },
+      body: { email, password },
     });
 
     // Организация запоминается сразу: человек работает в нескольких, и без

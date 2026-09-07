@@ -1343,6 +1343,33 @@ h3 {
   cursor: progress;
 }
 
+/* Заявка отправлена: экран вместо формы. Оставлять форму заполненной и
+   приписывать к ней строчку «отправлено» — верный способ отправить второй
+   раз. */
+.sent {
+  padding: 26px;
+  border-radius: var(--radius);
+  border: 1px solid var(--glass-line);
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.sent span[aria-hidden] {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.sent h2 {
+  margin: 14px 0 10px;
+  font-size: 23px;
+}
+
+.sent p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 15.5px;
+}
+
 .form__error {
   margin: 0;
   padding: 12px 14px;

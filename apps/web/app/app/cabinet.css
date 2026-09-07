@@ -322,6 +322,21 @@
   color: var(--ink-faint);
 }
 
+.tile__empty {
+  margin: 0;
+  padding: 22px 0 6px;
+  color: var(--ink-faint);
+  font-size: 15px;
+  max-width: 48ch;
+}
+
+.tile__foot {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
 /* Приветствие: единственная цветная плитка на экране — на неё и смотрят
    первой. */
 .welcome {

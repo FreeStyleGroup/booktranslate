@@ -26,8 +26,35 @@ class TokenError(Exception):
     """Токен не разобран: истёк, подделан или не того типа."""
 
 
+# Алфавит для выданных паролей: без пар, которые путают при диктовке и при
+# наборе — 0/O, 1/l/I. Пароль всё равно длинный, а разбирать его человеку
+# придётся вслух или с бумажки.
+_PASSWORD_ALPHABET: Final = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+# Длина групп и их число: 4-4-4 читается и диктуется, а по стойкости это
+# 12 знаков из 55 — примерно 69 бит, чего для выданного пароля достаточно.
+_PASSWORD_GROUP: Final = 4
+_PASSWORD_GROUPS: Final = 3
+
+
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
+
+
+def generate_password() -> str:
+    """Пароль для учётной записи, заведённой администратором.
+
+    Случайный и одноразовый по смыслу: его показывают один раз при выдаче и
+    в базе не хранят — там только хеш. Сгенерировать пароль на стороне
+    сервера честнее, чем просить администратора придумать его за человека:
+    придуманные вручную повторяются от учётной записи к учётной записи.
+    """
+    groups = [
+        "".join(secrets.choice(_PASSWORD_ALPHABET) for _ in range(_PASSWORD_GROUP))
+        for _ in range(_PASSWORD_GROUPS)
+    ]
+
+    return "-".join(groups)
 
 
 def verify_password(password: str, password_hash: str) -> bool:

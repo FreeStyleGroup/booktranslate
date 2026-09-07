@@ -10,6 +10,10 @@ import zipfile
 
 from httpx import AsyncClient
 
+from tests.conftest import ROOT_EMAIL, ROOT_PASSWORD
+
+PASSWORD = "correct-horse-battery"
+
 
 class Account:
     """Зарегистрированный пользователь: заголовки, он сам и его организация."""
@@ -26,24 +30,52 @@ class Account:
         return {**self.headers, "X-Organization-Id": str(organization_id)}
 
 
+async def admin_headers(client: AsyncClient) -> dict[str, str]:
+    """Заголовки администратора площадки."""
+    response = await client.post(
+        "/auth/login", json={"email": ROOT_EMAIL, "password": ROOT_PASSWORD}
+    )
+    assert response.status_code == 200, response.text
+
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 async def register(
     client: AsyncClient,
     *,
     email: str = "owner@example.com",
     organization_name: str = "Бюро переводов",
 ) -> Account:
+    """Зарегистрировать пользователя и открыть ему доступ.
+
+    Регистрация — только заявка, поэтому здесь же её одобряет администратор
+    площадки: тестам почти всегда нужен работающий пользователь, а не
+    ожидающий решения. Сам порядок «заявка — одобрение — вход» при этом
+    проходится по-настоящему, а не обходится записью в базу.
+    """
     response = await client.post(
         "/auth/register",
         json={
             "email": email,
-            "password": "correct-horse-battery",
+            "password": PASSWORD,
             "full_name": "Владелец",
             "organization_name": organization_name,
         },
     )
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
+    user_id = response.json()["id"]
 
-    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    approved = await client.patch(
+        f"/admin/users/{user_id}/status",
+        headers=await admin_headers(client),
+        json={"status": "active"},
+    )
+    assert approved.status_code == 200, approved.text
+
+    entered = await client.post("/auth/login", json={"email": email, "password": PASSWORD})
+    assert entered.status_code == 200, entered.text
+
+    headers = {"Authorization": f"Bearer {entered.json()['access_token']}"}
 
     me = await client.get("/auth/me", headers=headers)
     assert me.status_code == 200, me.text

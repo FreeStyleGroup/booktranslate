@@ -5,10 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import handle_domain_error
 from app.api.routes import (
+    admin,
     auth,
     catalog,
     documents,
     health,
+    overview,
     projects,
     segments,
     terminology,
@@ -50,6 +52,8 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(admin.router)
+    app.include_router(overview.router)
     app.include_router(projects.router)
     app.include_router(documents.router)
     app.include_router(segments.router)

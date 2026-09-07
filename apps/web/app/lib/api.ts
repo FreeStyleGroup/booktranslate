@@ -95,6 +95,14 @@ export type Membership = {
 };
 
 export type CurrentUser = {
-  user: { id: string; email: string; full_name: string | null };
+  user: {
+    id: string;
+    email: string;
+    full_name: string | null;
+    status: "pending" | "active" | "suspended";
+    // Администратор площадки — не роль в организации: он распоряжается
+    // доступом, а не работой в чужом рабочем пространстве.
+    is_superuser: boolean;
+  };
   memberships: Membership[];
 };

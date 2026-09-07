@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.api.deps import CurrentUserDep, SessionDep
 from app.models.organization import Membership, Organization
 from app.schemas.auth import (
+    AccessRequestPublic,
     CurrentUser,
     LoginRequest,
     MembershipPublic,
@@ -37,18 +38,23 @@ def _client_info(request: Request) -> tuple[str | None, str | None]:
     return user_agent, ip_address
 
 
-@router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, request: Request, session: SessionDep) -> TokenPair:
-    user_agent, ip_address = _client_info(request)
+@router.post("/register", response_model=AccessRequestPublic, status_code=status.HTTP_202_ACCEPTED)
+async def register(payload: RegisterRequest, session: SessionDep) -> AccessRequestPublic:
+    """Подать заявку на доступ.
 
-    return await AuthService(session).register(
+    202, а не 201: учётная запись создана, но внутрь не пускает — доступ
+    открывает администратор. Токенов в ответе нет намеренно, иначе
+    одобрение оказалось бы формальностью, которую можно обойти, просто не
+    перезагрузив страницу.
+    """
+    user = await AuthService(session).register(
         email=payload.email,
         password=payload.password,
         full_name=payload.full_name,
         organization_name=payload.organization_name,
-        user_agent=user_agent,
-        ip_address=ip_address,
     )
+
+    return AccessRequestPublic.model_validate(user)
 
 
 @router.post("/login", response_model=TokenPair)

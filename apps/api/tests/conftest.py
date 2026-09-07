@@ -17,8 +17,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.security import hash_password
 from app.db.session import get_session
 from app.main import create_app
+from app.models.organization import User, UserStatus
 from app.services.providers import (
     Explanation,
     LookupRequest,
@@ -35,6 +37,12 @@ from app.services.providers import (
 from app.services.storage import LocalStorage, ObjectStorage, get_storage
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Администратор площадки для тестов. Заводится прямо в базе — ровно так же,
+# как в жизни его заводит консольная команда: первого администратора
+# неоткуда одобрить, иначе площадка не открылась бы никогда.
+ROOT_EMAIL = "root@booktranslate.test"
+ROOT_PASSWORD = "root-password-for-tests"
 
 requires_database = pytest.mark.skipif(
     DATABASE_URL is None,
@@ -154,8 +162,31 @@ def lookup_answers() -> dict[str, Explanation]:
 
 
 @pytest.fixture
+async def root(session: AsyncSession) -> User:
+    """Администратор площадки.
+
+    Нужен почти каждому тесту: регистрация теперь только заявка, и доступ
+    новому пользователю открывает он. Заводится записью в базу, потому что
+    первого администратора одобрить некому.
+    """
+    user = User(
+        email=ROOT_EMAIL,
+        full_name="Администратор площадки",
+        password_hash=hash_password(ROOT_PASSWORD),
+        status=UserStatus.ACTIVE,
+        is_superuser=True,
+    )
+
+    session.add(user)
+    await session.commit()
+
+    return user
+
+
+@pytest.fixture
 async def db_client(
     session: AsyncSession,
+    root: User,
     storage_root: Path,
     provider_log: list[TranslationRequest],
     lookup_log: list[LookupRequest],
