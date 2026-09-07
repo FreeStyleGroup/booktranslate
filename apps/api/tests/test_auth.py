@@ -77,14 +77,17 @@ async def test_repeated_registration_does_not_reveal_the_email_is_taken(
     free = await db_client.post(
         "/auth/register", json={**REGISTRATION, "email": "nobody@example.com"}
     )
-    taken = await db_client.post("/auth/register", json={**REGISTRATION, "password": "other-one"})
+    taken = await db_client.post(
+        "/auth/register", json={**REGISTRATION, "password": "another-password-entirely"}
+    )
 
     assert taken.status_code == free.status_code == 202
     assert taken.json() == free.json()
 
     # И вторая заявка ничего не переписала: пароль остался прежним.
     entered = await db_client.post(
-        "/auth/login", json={"email": REGISTRATION["email"], "password": "other-one"}
+        "/auth/login",
+        json={"email": REGISTRATION["email"], "password": "another-password-entirely"},
     )
     assert entered.status_code == 401
 
