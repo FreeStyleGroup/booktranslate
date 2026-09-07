@@ -196,6 +196,14 @@ def _report_usage(model: str, usage: Usage, searches: int = 0) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Консоль Windows работает в однобайтовой кодировке, и стрелка «→» в
+    # ней невыразима: без этой строки команда падает на печати результата,
+    # уже сделав (и оплатив) запрос к модели. Кодировку не меняем — русский
+    # в этой консоли выводится верно, — только перестаём падать на знаках,
+    # которых в ней нет.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
+
     parser = argparse.ArgumentParser(prog="app.cli", description="Служебные команды BookTranslate")
     commands = parser.add_subparsers(dest="command", required=True)
 
