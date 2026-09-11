@@ -268,8 +268,8 @@ app() {
     if [[ -f .env ]]; then
         warn ".env уже есть — не трогаю. Править: nano $APP_DIR/.env"
     else
-        ask WEB_DOMAIN "Домен витрины (например app.example.ru)"
-        ask API_DOMAIN "Домен API (например api.example.ru)"
+        ask WEB_DOMAIN "Домен сайта — как его набирает посетитель (например booktranslate.ru)"
+        ask API_DOMAIN "Домен API — отдельное имя, обычно поддомен" "api.${WEB_DOMAIN}"
         ask ANTHROPIC_API_KEY "Ключ модели — Anthropic или шлюза" "" secret
         ask ANTHROPIC_BASE_URL "Адрес шлюза; пусто — напрямую в Anthropic (AITunnel: https://api.aitunnel.ru)" "" optional
         ask IMAGE_TAG "Версия образов — тег репозитория без «v»" "0.1.0"
@@ -282,6 +282,18 @@ app() {
         set_env POSTGRES_PASSWORD "$(openssl rand -hex 24)"
         set_env WEB_DOMAIN "$WEB_DOMAIN"
         set_env API_DOMAIN "$API_DOMAIN"
+        # На голом домене сертификат нужен и на «www»: его набирают по
+        # привычке, и без сертификата такой посетитель видит не сайт, а
+        # предупреждение браузера. Перенаправление на голый домен делает
+        # прокси (deploy/Caddyfile). Признак голого домена — одна точка;
+        # у доменов вида example.co.uk он даст промах, там имя для
+        # сертификата правится в .env руками.
+        if [[ "$WEB_DOMAIN" == *.*.* ]]; then
+            set_env WEB_SITE "$WEB_DOMAIN"
+        else
+            set_env WEB_SITE "$WEB_DOMAIN, www.$WEB_DOMAIN"
+            ok "К сертификату добавлено www.$WEB_DOMAIN — нужна A-запись и на него"
+        fi
         # «api» — имя сервиса: по нему витрина ходит в API внутри докера.
         set_env ALLOWED_HOSTS "[\"$API_DOMAIN\",\"api\"]"
         set_env CORS_ORIGINS "[\"https://$WEB_DOMAIN\"]"
@@ -300,7 +312,10 @@ app() {
     say "DNS"
     local my_ip domain resolved bad=0
     my_ip=$(curl -4fsS --max-time 10 https://ifconfig.me 2>/dev/null || curl -4fsS --max-time 10 https://api.ipify.org 2>/dev/null || true)
-    for domain in "$WEB_DOMAIN" "$API_DOMAIN"; do
+    # Проверяются все имена, на которые прокси будет просить сертификат,
+    # включая «www»: запись, про которую забыли, выясняется здесь, а не
+    # через час в журнале прокси.
+    for domain in $(read_env WEB_SITE | tr ',' ' ') "$API_DOMAIN"; do
         resolved=$(getent ahostsv4 "$domain" 2>/dev/null | awk 'NR == 1 {print $1}')
         if [[ -n "$my_ip" && "$resolved" == "$my_ip" ]]; then
             ok "$domain → $resolved"

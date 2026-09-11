@@ -98,6 +98,10 @@ services:
     environment:
       API_DOMAIN: ${API_DOMAIN:?задайте API_DOMAIN в .env}
       WEB_DOMAIN: ${WEB_DOMAIN:?задайте WEB_DOMAIN в .env}
+      # Имена, на которые прокси получает сертификат витрины. Обычно это
+      # сам домен; на голом домене сюда же добавляется «www» — см.
+      # deploy/Caddyfile. Не задано — берётся один WEB_DOMAIN.
+      WEB_SITE: ${WEB_SITE:-${WEB_DOMAIN}}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
