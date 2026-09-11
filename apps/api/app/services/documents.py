@@ -151,6 +151,25 @@ class DocumentService(TenantService):
 
         return document, True
 
+    async def list_all(
+        self, *, project_id: uuid.UUID | None = None, limit: int = 50, offset: int = 0
+    ) -> list[Document]:
+        """Документы всего пространства, при необходимости одного проекта.
+
+        Проект здесь не запрашивается отдельно, в отличие от `list`: там он
+        часть адреса, и его отсутствие — ошибка в ссылке; здесь он
+        необязательный отбор, и пустой список читается как «ничего не
+        нашлось», а не скрывает промах.
+        """
+        query = self.scoped(Document)
+
+        if project_id is not None:
+            query = query.where(Document.project_id == project_id)
+
+        query = query.order_by(Document.updated_at.desc()).limit(limit).offset(offset)
+
+        return list(await self._session.scalars(query))
+
     async def list(
         self, *, project_id: uuid.UUID, limit: int = 50, offset: int = 0
     ) -> list[Document]:

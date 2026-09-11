@@ -1,0 +1,569 @@
+/* Работа с книгами: проекты, документы, карточка документа.
+
+   Отдельным файлом от `cabinet.css`: тот описывает раму кабинета —
+   боковое меню, шапку, плитки, — а здесь живут только экраны работы.
+   Общие токены цветов и теней берутся из `globals.css`, поэтому тёмная
+   тема работает сама.
+
+   🔥 Базовые правила идут до медиазапросов, а не после: правило, стоящее
+   ниже своего медиазапроса, молча его отменяет. На этом проекте так уже
+   ловились три раза. */
+
+/* ── Заголовок раздела ── */
+
+.wk-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.wk-head h1 {
+  margin: 0 0 6px;
+  font-size: clamp(22px, 2.4vw, 30px);
+  letter-spacing: -0.03em;
+}
+
+.wk-head p {
+  margin: 0;
+  max-width: 62ch;
+}
+
+.wk-crumbs {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.wk-crumbs a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.wk-crumbs a:hover {
+  color: var(--brand);
+}
+
+/* Полоса под заголовком: кнопка «новый проект» либо развёрнутая форма
+   на её месте. Отдельной строкой, а не в заголовке: форма, вставшая
+   рядом с названием раздела, разъезжается на первой же правке. */
+.wk-bar {
+  margin-bottom: 20px;
+}
+
+/* ── Пусто ── */
+
+.wk-empty {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  max-width: 640px;
+  margin-bottom: 18px;
+}
+
+.wk-empty span[aria-hidden] {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  background: var(--paper-tint);
+  border: 1px solid var(--line-soft);
+}
+
+.wk-empty h2 {
+  margin: 6px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.wk-empty p {
+  margin: 0 0 6px;
+  color: var(--ink-soft);
+  max-width: 56ch;
+}
+
+/* ── Проекты ── */
+
+.wk-cards {
+  display: grid;
+  /* minmax(0, …), а не auto: иначе колонка не может стать уже своего
+     содержимого, и длинное название вытесняет карточку за край. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+.wk-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.wk-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wk-card__top h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  min-width: 0;
+}
+
+.wk-card__lead {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.wk-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* ── Формы ── */
+
+.wk-form {
+  margin-bottom: 20px;
+}
+
+.wk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.wk-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.wk-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ── Загрузка файла ── */
+
+.wk-upload {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.wk-drop {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 30px 20px;
+  border-radius: 16px;
+  border: 1.5px dashed var(--line);
+  background: var(--paper-tint);
+  text-align: center;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.wk-drop.is-over {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.wk-drop p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 15px;
+  /* Длинное имя файла без пробелов не должно раздвигать карточку. */
+  overflow-wrap: anywhere;
+}
+
+.wk-drop__mark {
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* Настоящее поле выбора файла спрятано: системная кнопка «Обзор…» не
+   поддаётся оформлению и выглядит чужой в любой теме. Скрыто размером, а
+   не display:none — иначе до него не добраться с клавиатуры. */
+.wk-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wk-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wk-link:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.wk-upload__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.wk-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Отбор по проекту ── */
+
+.wk-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.wk-filter a {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  text-decoration: none;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.wk-filter a:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.wk-filter a.is-active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+/* ── Список книг ── */
+
+.wk-list {
+  display: grid;
+  gap: 2px;
+}
+
+.wk-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.15s var(--ease);
+}
+
+.wk-row:hover {
+  background: var(--paper-tint);
+}
+
+.wk-row + .wk-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.wk-row__mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  background: var(--paper-tint);
+  border: 1px solid var(--line-soft);
+}
+
+.wk-row__name {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wk-row__name b {
+  font-weight: 600;
+  font-size: 15px;
+  /* Название книги бывает длиннее строки, и обрезать его многоточием
+     честнее, чем ломать сетку строки. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wk-row__when {
+  white-space: nowrap;
+}
+
+/* Сообщение о том, что произошло: не ошибка и не предупреждение, а
+   пояснение к результату действия. */
+.wk-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+/* ── Призыв к действию на карточке ── */
+
+.wk-call {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+  margin-bottom: 20px;
+}
+
+.wk-call h3 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.wk-call p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+/* ── Паспорт книги ── */
+
+.wk-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.wk-fact {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+}
+
+.wk-kinds {
+  display: grid;
+  gap: 12px;
+}
+
+.wk-kind {
+  display: grid;
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.wk-kind span {
+  color: var(--ink-soft);
+}
+
+.wk-kind b {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+.wk-money {
+  display: grid;
+  gap: 10px;
+}
+
+.wk-money__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+}
+
+.wk-money__row b {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.wk-money__row--total {
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.wk-price {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--brand-tint);
+  font-size: 15px;
+}
+
+.wk-price b {
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  color: var(--brand-dark);
+}
+
+/* ── Разбор: как файл лёг в сегменты ── */
+
+.wk-seg {
+  display: grid;
+  gap: 2px;
+}
+
+.wk-seg__row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 150px) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 14px;
+  padding: 9px 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.wk-seg__row + .wk-seg__row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.wk-seg__no {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.wk-seg__kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+.wk-seg__kind i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.wk-seg__text {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.wk-seg__foot {
+  margin: 16px 0 0;
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
+/* ── Кнопки действий ── */
+
+.wk-inline {
+  display: inline-flex;
+}
+
+.wk-danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.wk-warn {
+  margin: 14px 0 0;
+  max-width: 70ch;
+  line-height: 1.6;
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 1080px) {
+  .wk-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .wk-grid,
+  .wk-upload__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Кнопка загрузки в одну колонку растянулась бы во всю ширину — и
+     оказалась бы крупнее всего остального на экране. */
+  .wk-upload__row .btn {
+    justify-self: start;
+  }
+
+  /* Название проекта и время правки на телефоне в строку не помещаются:
+     остаются значок, название с подписью и состояние. */
+  .wk-row {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+
+  .wk-row__when {
+    display: none;
+  }
+
+  .wk-kind {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  /* Полоса в две колонки заняла бы место подписи; на узком экране
+     достаточно названия и числа. */
+  .wk-kind .bar {
+    display: none;
+  }
+
+  .wk-seg__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .wk-seg__no {
+    display: none;
+  }
+}
+
+/* На телефоне плитки остаются в две колонки: числа короткие, а четыре
+   плитки в столбик — это полтора экрана прокрутки до того, что под ними. */
+@media (max-width: 520px) {
+  .wk-fact {
+    padding: 16px;
+  }
+
+  .wk-fact .stat__value {
+    font-size: 24px;
+  }
+}

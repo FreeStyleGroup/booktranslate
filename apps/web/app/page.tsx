@@ -4,13 +4,11 @@
    чьи-то данные. Когда страница начнёт показывать реальный проект, константы
    заменятся запросом — разметка останется та же. */
 
+import { CONTACT_EMAIL, TAGLINE } from "./contacts";
 import { LangSwitch } from "./lang-switch";
 import { MobileMenu } from "./mobile-menu";
 import { ThemeToggle } from "./theme-toggle";
 import { Reveal } from "./reveal";
-
-// Адрес для заявок. Вынесен наверх: меняется одной строкой.
-const CONTACT_EMAIL = "hello@booktranslate.ru";
 
 type Verdict = "ok" | "warn" | "danger" | "info";
 
@@ -713,10 +711,7 @@ export default function Home() {
       </main>
 
       <footer className="wrap foot">
-        <span>
-          BookTranslate · профессиональный перевод технических книг и
-          документации
-        </span>
+        <span>BookTranslate · {TAGLINE}</span>
         <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
       </footer>
     </>

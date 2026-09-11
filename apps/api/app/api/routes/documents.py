@@ -9,11 +9,14 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.api.uploads import chunks
-from app.schemas.document import DocumentPublic
+from app.core.config import get_settings
+from app.schemas.document import DocumentProfilePublic, DocumentPublic
 from app.services.documents import DocumentService
 from app.services.export import ExportFormat
 from app.services.exporting import ExportService
 from app.services.formats import media_type
+from app.services.profiling import ProfilingService
+from app.services.providers import provider_name
 
 router = APIRouter(tags=["documents"])
 
@@ -67,6 +70,31 @@ async def list_documents(
     return [DocumentPublic.model_validate(document) for document in documents]
 
 
+@router.get("/documents", response_model=list[DocumentPublic])
+async def list_all_documents(
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+    project_id: Annotated[
+        uuid.UUID | None, Query(description="Только документы этого проекта")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[DocumentPublic]:
+    """Документы рабочего пространства — всех проектов сразу.
+
+    Отдельно от списка по проекту, потому что вопрос другой: «что у нас
+    сейчас в работе» человек задаёт раньше, чем выбирает проект, и
+    собирать ответ обходом проектов значило бы делать по запросу на
+    каждый.
+    """
+    documents = await DocumentService(session, context, storage).list_all(
+        project_id=project_id, limit=limit, offset=offset
+    )
+
+    return [DocumentPublic.model_validate(document) for document in documents]
+
+
 @router.get("/documents/{document_id}", response_model=DocumentPublic)
 async def get_document(
     document_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
@@ -74,6 +102,31 @@ async def get_document(
     document = await DocumentService(session, context, storage).get(document_id)
 
     return DocumentPublic.model_validate(document)
+
+
+@router.get("/documents/{document_id}/profile", response_model=DocumentProfilePublic)
+async def document_profile(
+    document_id: uuid.UUID,
+    context: ContextDep,
+    session: SessionDep,
+) -> DocumentProfilePublic:
+    """Из чего состоит документ и во что обойдётся его перевод.
+
+    Считается по сегментам, поэтому до разбора отвечает нулями — это не
+    ошибка, а честный ответ: пока файл не разобран, про его состав ничего
+    не известно, кроме размера в байтах.
+
+    Смета — оценка сверху и помечена как оценка. Она нужна до перевода:
+    узнать цену книги, запустив перевод, можно и так, но платить за это
+    придётся уже по-настоящему.
+    """
+    profile = await ProfilingService(session, context).build(
+        document_id,
+        model=provider_name(),
+        context_segments=get_settings().translation_context_segments,
+    )
+
+    return DocumentProfilePublic.model_validate(profile)
 
 
 @router.get("/documents/{document_id}/content")

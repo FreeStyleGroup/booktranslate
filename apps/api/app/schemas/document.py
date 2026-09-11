@@ -41,3 +41,43 @@ class DocumentPublic(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+
+class CostEstimate(BaseModel):
+    """Смета на перевод — оценка сверху, а не счёт.
+
+    Точного числа токенов заранее не знает никто, поэтому здесь заведомо
+    осторожная оценка (см. app/services/pricing.py). Показывать её надо
+    именно так, как она названа: числом порядка, а не суммой к оплате.
+    `usd` пуст, если модель не в прейскуранте, — это честнее нуля.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    input_tokens: int
+    output_tokens: int
+    usd: float | None
+
+
+class DocumentProfilePublic(BaseModel):
+    """Паспорт документа: из чего он состоит и во что обойдётся перевод."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    segments: int
+    characters: int
+    words: int
+    longest_segment_chars: int
+
+    by_kind: dict[str, int]
+    by_status: dict[str, int]
+
+    untranslated: int
+    unique_untranslated: int
+    repeated: int
+    memory_matches: int
+
+    billable_texts: int
+    billable_characters: int
+
+    estimate: CostEstimate | None

@@ -1559,6 +1559,22 @@ h3 {
   display: none;
 }
 
+/* Строка с почтой под формой. Ровно на ширину карточки, чтобы не
+   расползалась по всей колонке. */
+.auth__contact {
+  margin: 18px 0 0;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+.auth__contact a {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
 @media (max-width: 900px) {
   .auth__main {
     /* Колонка вместо центрирования: логотип сверху, форма под ним,
@@ -1617,7 +1633,10 @@ h3 {
   color: var(--ink-faint);
 }
 
-.field input {
+/* Поле ввода и список выбора выглядят одинаково: в одной форме они стоят
+   рядом, и разная высота у соседних полей читается как небрежность. */
+.field input,
+.field select {
   height: 50px;
   padding: 0 16px;
   border-radius: 12px;
@@ -1629,11 +1648,25 @@ h3 {
   transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 
+/* Стрелку рисуем сами: системная берёт цвет у операционной системы, и в
+   тёмной теме остаётся тёмной на тёмном — то есть невидимой. */
+.field select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-faint) 50%),
+    linear-gradient(135deg, var(--ink-faint) 50%, transparent 50%);
+  background-position: right 20px center, right 15px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
 .field input::placeholder {
   color: var(--ink-faint);
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: none;
   border-color: var(--brand);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);

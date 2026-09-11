@@ -109,6 +109,22 @@ def get_provider() -> TranslationProvider:
     )
 
 
+def provider_name() -> str:
+    """Каким провайдером переводили бы сейчас — без создания клиента.
+
+    Смете нужно только имя: по нему берётся прейскурант. Строить ради
+    имени клиент к модели значит требовать ключ там, где в модель никто не
+    идёт, — и карточка документа отвечала бы отказом на установке, где ключ
+    ещё не прописан.
+    """
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return STUB
+
+    return settings.anthropic_model
+
+
 @lru_cache
 def get_lookup() -> TermLookupProvider:
     """Источник справок о терминах.
@@ -157,4 +173,5 @@ __all__ = [
     "Usage",
     "get_lookup",
     "get_provider",
+    "provider_name",
 ]

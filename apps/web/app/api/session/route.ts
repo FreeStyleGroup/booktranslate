@@ -8,6 +8,7 @@
 import { NextResponse } from "next/server";
 
 import { ApiError, apiFetch, type CurrentUser, type TokenPair } from "../../lib/api";
+import { foreign } from "../../lib/same-origin";
 import { clearSession, refreshToken, saveSession } from "../../lib/session";
 
 type Payload = {
@@ -18,31 +19,6 @@ type Payload = {
   organization_name?: unknown;
 };
 
-/* Обработчик маршрута — не серверное действие, и встроенной защиты от
-   запроса с чужой страницы у него нет. Без проверки источника чужой сайт
-   отправляет сюда форму и получает в браузере жертвы сеанс, открытый под
-   учётной записью нападающего: дальше жертва загружает свою книгу в чужое
-   рабочее пространство. `SameSite` от этого не спасает — она ограничивает
-   отправку уже имеющихся печений, а не установку новых.
-
-   Проверяются оба признака: заголовок источника и тип содержимого. Форма
-   со страницы не может отправить `application/json`, а запрос без источника
-   к делу отношения не имеет — обе двери закрываются одной проверкой. */
-function foreign(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-
-  if (origin === null || host === null) {
-    return true;
-  }
-
-  try {
-    return new URL(origin).host !== host;
-  } catch {
-    return true;
-  }
-}
-
 /* Потолок тела запроса. Форма входа умещается в сотни байт; всё, что
    заметно больше, — не форма. Проверяется по заявленной длине до чтения
    тела: читать мегабайты, чтобы потом их отбросить, значит дать любому
@@ -51,6 +27,9 @@ function foreign(request: Request): boolean {
 const MAX_BODY = 16 * 1024;
 
 export async function POST(request: Request): Promise<NextResponse> {
+  // Вдобавок к источнику — тип содержимого: обычная форма со страницы
+  // отправить `application/json` не может, и вторая дверь закрывается той
+  // же проверкой.
   if (foreign(request) || !(request.headers.get("content-type") ?? "").includes("json")) {
     return NextResponse.json({ error: "Запрос с чужой страницы" }, { status: 403 });
   }

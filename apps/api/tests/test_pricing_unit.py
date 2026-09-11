@@ -5,7 +5,7 @@
 выдаётся за бесплатную.
 """
 
-from app.services.pricing import PRICES, WEB_SEARCH_USD_PER_1000, estimate_usd
+from app.services.pricing import PRICES, WEB_SEARCH_USD_PER_1000, estimate_usd, forecast
 from app.services.providers import Usage
 
 
@@ -71,3 +71,34 @@ def test_usage_adds_up() -> None:
     assert total == Usage(
         input_tokens=11, output_tokens=7, cached_input_tokens=3, cache_write_tokens=4
     )
+
+
+def test_forecast_grows_with_the_text() -> None:
+    """Смета должна расти вместе с книгой — иначе это не смета."""
+    small = forecast("claude-opus-5", characters=10_000, context_segments=2)
+    big = forecast("claude-opus-5", characters=100_000, context_segments=2)
+
+    assert small.usd is not None and big.usd is not None
+    assert big.usd > small.usd
+
+
+def test_forecast_counts_the_context_sent_with_each_segment() -> None:
+    """Соседние сегменты уходят в запрос и оплачиваются вместе с ним.
+
+    Смета без них занижала бы счёт в несколько раз — ровно на то, что
+    приложено к каждому сегменту ради связности перевода.
+    """
+    bare = forecast("claude-opus-5", characters=10_000, context_segments=0)
+    with_context = forecast("claude-opus-5", characters=10_000, context_segments=2)
+
+    assert with_context.input_tokens > bare.input_tokens
+    # Перевод от контекста не толстеет: соседи переводить не нужно.
+    assert with_context.output_tokens == bare.output_tokens
+
+
+def test_forecast_of_unknown_model_names_tokens_but_not_money() -> None:
+    """Токены посчитать можно всегда, деньги — только по прейскуранту."""
+    estimate = forecast("stub", characters=10_000, context_segments=2)
+
+    assert estimate.input_tokens > 0
+    assert estimate.usd is None

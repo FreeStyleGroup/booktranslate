@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CONTACT_EMAIL } from "./contacts";
+
 /* Обрамление страниц входа и регистрации.
 
    Слева — то же обещание, что на главной: человек, дошедший до формы, не
@@ -72,6 +74,13 @@ export function AuthShell({
             {footer.text} <Link href={footer.href}>{footer.link}</Link>
           </p>
         </div>
+
+        {/* Адрес почты под формой: тому, кто не может войти, нужен живой
+            человек, а не ещё одна кнопка. */}
+        <p className="auth__contact">
+          Не получается войти?{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+        </p>
       </main>
     </div>
   );

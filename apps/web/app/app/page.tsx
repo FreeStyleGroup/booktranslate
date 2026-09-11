@@ -4,6 +4,15 @@ import { redirect } from "next/navigation";
 import { apiFetch, unauthorized } from "../lib/api";
 import { currentUser } from "../lib/current-user";
 import { accessToken, organizationId, renewUrl } from "../lib/session";
+import {
+  CHECK_CHIP,
+  CHECK_LABEL,
+  DOCUMENT_LABEL,
+  SEGMENT_COLOR,
+  SEGMENT_LABEL,
+  plural,
+  thousands,
+} from "./labels";
 
 /* Обзор кабинета.
 
@@ -150,54 +159,6 @@ const DEMO: Overview = {
   ],
 };
 
-// Как называются состояния сегментов и проверки по-русски. Ключи приходят
-// с API как есть — переводить их там значило бы вшить язык в данные.
-const SEGMENT_LABEL: Record<string, string> = {
-  new: "Не переведено",
-  machine: "Перевод модели",
-  memory: "Из памяти",
-  flagged: "С замечаниями",
-  edited: "Правка человека",
-  approved: "Принято",
-};
-
-const SEGMENT_COLOR: Record<string, string> = {
-  approved: "#2f6bff",
-  edited: "#12b981",
-  memory: "#0ea5a5",
-  machine: "#8b5cf6",
-  flagged: "#f0a63a",
-  new: "#94a3b8",
-};
-
-const CHECK_LABEL: Record<string, string> = {
-  numbers: "Числа",
-  placeholders: "Подстановки",
-  glossary: "Термин",
-  first_use: "Раскрытие",
-  untranslated: "Не переведено",
-  empty: "Пусто",
-};
-
-const CHECK_CHIP: Record<string, string> = {
-  numbers: "chip chip--danger",
-  placeholders: "chip chip--danger",
-  glossary: "chip chip--warn",
-  first_use: "chip chip--info",
-  untranslated: "chip chip--warn",
-  empty: "chip chip--danger",
-};
-
-const DOCUMENT_LABEL: Record<string, string> = {
-  uploaded: "Загружен",
-  parsing: "Разбирается",
-  parsed: "Разобран",
-  translating: "Переводится",
-  review: "На вычитке",
-  done: "Готов",
-  failed: "Ошибка",
-};
-
 /** Сводка своего пространства — или демонстрационная, если сеанса нет. */
 async function load(): Promise<{ data: Overview; live: boolean }> {
   const token = await accessToken();
@@ -224,10 +185,6 @@ async function load(): Promise<{ data: Overview; live: boolean }> {
 
     return { data: DEMO, live: false };
   }
-}
-
-function thousands(value: number): string {
-  return value.toLocaleString("ru-RU");
 }
 
 /* Вошедший без организации. Демонстрацию ему показывать нельзя: он вошёл
@@ -300,8 +257,13 @@ export default async function DashboardPage() {
             📚
           </span>
           <div className="stat__value">{thousands(data.documents)}</div>
+          {/* Число проектов — частью фразы, а не после двоеточия: два
+              числа подряд в плитке читаются как одно и то же, повторённое
+              дважды. */}
           <div className="stat__label">
-            Документов в {data.projects === 1 ? "проекте" : "проектах"}: {data.projects}
+            {plural(data.documents, "книга", "книги", "книг")} в{" "}
+            {thousands(data.projects)}{" "}
+            {plural(data.projects, "проекте", "проектах", "проектах")}
           </div>
         </section>
 
@@ -368,26 +330,24 @@ export default async function DashboardPage() {
           </div>
 
           {data.recent_documents.length === 0 ? (
-            <p className="tile__empty">
-              Пока пусто. Загрузите книгу — разбор, терминология и перевод дальше
-              идут сами.
-            </p>
+            <>
+              <p className="tile__empty">
+                Пока пусто. Загрузите книгу — разбор, терминология и перевод
+                дальше идут сами.
+              </p>
+              <div className="tile__foot">
+                <Link className="btn btn--primary btn--small" href="/app/documents">
+                  Загрузить книгу
+                </Link>
+              </div>
+            </>
           ) : (
             <div className="docs">
               {data.recent_documents.map((document) => (
-                <div className="doc" key={document.id}>
-                  <div className="doc__top">
-                    <b>{document.title}</b>
-                    <span>{document.ready_percent}%</span>
-                  </div>
-                  <div className="bar">
-                    <i style={{ width: `${document.ready_percent}%` }} />
-                  </div>
-                  <span className="tile__note">
-                    {thousands(document.segments)} сегментов ·{" "}
-                    {DOCUMENT_LABEL[document.status] ?? document.status}
-                  </span>
-                </div>
+                /* Карточка ведёт к документу только у своих данных:
+                   у демонстрационных номера выдуманы, и ссылка по ним
+                   привела бы в «не найдено». */
+                <Doc key={document.id} document={document} live={live} />
               ))}
             </div>
           )}
@@ -490,6 +450,41 @@ export default async function DashboardPage() {
         </p>
       )}
     </>
+  );
+}
+
+/** Строка документа с полосой готовности — ссылкой на его карточку. */
+function Doc({
+  document,
+  live,
+}: {
+  document: Overview["recent_documents"][number];
+  live: boolean;
+}) {
+  const body = (
+    <>
+      <div className="doc__top">
+        <b>{document.title}</b>
+        <span>{document.ready_percent}%</span>
+      </div>
+      <div className="bar">
+        <i style={{ width: `${document.ready_percent}%` }} />
+      </div>
+      <span className="tile__note">
+        {thousands(document.segments)} сегментов ·{" "}
+        {DOCUMENT_LABEL[document.status] ?? document.status}
+      </span>
+    </>
+  );
+
+  if (!live) {
+    return <div className="doc">{body}</div>;
+  }
+
+  return (
+    <Link className="doc doc--link" href={`/app/documents/${document.id}`}>
+      {body}
+    </Link>
   );
 }
 

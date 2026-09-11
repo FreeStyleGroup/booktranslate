@@ -22,6 +22,11 @@ from app.services.base import TenantService
 
 _WHITESPACE = re.compile(r"\s+")
 
+# Сколько отпечатков спрашивать у базы за раз. Подобрано так, чтобы запрос
+# оставался разбираемым: разбор списка `IN` на десятки тысяч значений
+# занимает больше времени, чем поиск по индексу.
+LOOKUP_BATCH = 1000
+
 
 def normalize(text: str) -> str:
     """Вид текста, по которому сравниваются совпадения."""
@@ -58,6 +63,33 @@ class TranslationMemory(TenantService):
         )
 
         return {unit.source_hash: unit for unit in await self._session.scalars(query)}
+
+    async def known(
+        self, hashes: set[str], *, source_language: str, target_language: str
+    ) -> set[str]:
+        """Какие из отпечатков память уже закрывает.
+
+        Отдельно от `lookup`, потому что вопрос другой: смете нужно число
+        совпадений по всей книге, а не сами переводы, и тянуть ради него
+        десять тысяч строк с текстом незачем.
+
+        Отпечатки спрашиваются пачками: `IN` на двадцать тысяч значений
+        разбирается дольше, чем выполняется сам запрос.
+        """
+        found: set[str] = set()
+        batch = sorted(hashes)
+
+        for start in range(0, len(batch), LOOKUP_BATCH):
+            query = select(TranslationUnit.source_hash).where(
+                TranslationUnit.organization_id == self.organization_id,
+                TranslationUnit.source_language == source_language,
+                TranslationUnit.target_language == target_language,
+                TranslationUnit.source_hash.in_(batch[start : start + LOOKUP_BATCH]),
+            )
+
+            found.update(await self._session.scalars(query))
+
+        return found
 
     async def remember(
         self,
