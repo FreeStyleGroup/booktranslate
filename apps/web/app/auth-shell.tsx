@@ -52,6 +52,18 @@ export function AuthShell({
       </aside>
 
       <main className="auth__main">
+        {/* Логотип для узких экранов: там боковая колонка скрыта вместе
+            со своим логотипом, и страница входа оставалась без единого
+            признака, куда человек попал. */}
+        <Link className="logo auth__logo" href="/">
+          <span className="logo__mark" aria-hidden="true">
+            📖
+          </span>
+          <span>
+            BookTranslate<sup className="logo__ai">AI</sup>
+          </span>
+        </Link>
+
         <div className="auth__card">
           <h1>{title}</h1>
           <p className="lead">{lead}</p>

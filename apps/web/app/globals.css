@@ -1553,6 +1553,26 @@ h3 {
     var(--paper);
 }
 
+/* Логотип над формой — только там, где скрыта боковая колонка: на
+   широком экране он уже есть слева, и второй был бы лишним. */
+.auth__logo {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .auth__main {
+    /* Колонка вместо центрирования: логотип сверху, форма под ним,
+       оба по центру по горизонтали. */
+    place-items: start center;
+    align-content: center;
+    gap: 26px;
+  }
+
+  .auth__logo {
+    display: flex;
+  }
+}
+
 .auth__card {
   width: 100%;
   max-width: 430px;
