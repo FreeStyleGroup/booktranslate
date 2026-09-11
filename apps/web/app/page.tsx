@@ -4,6 +4,7 @@
    чьи-то данные. Когда страница начнёт показывать реальный проект, константы
    заменятся запросом — разметка останется та же. */
 
+import { ThemeToggle } from "./theme-toggle";
 import { Reveal } from "./reveal";
 
 // Адрес для заявок. Вынесен наверх: меняется одной строкой.
@@ -242,6 +243,7 @@ export default function Home() {
               <a href="#price">Стоимость</a>
               <a href="#faq">Вопросы</a>
             </nav>
+            <ThemeToggle className="top__theme" />
             <a className="btn btn--ghost btn--small" href="/login">
               Войти
             </a>

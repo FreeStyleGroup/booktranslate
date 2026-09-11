@@ -9,7 +9,7 @@ import { accessToken, organizationId, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
 import "./cabinet.css";
 import { SideNav, type NavCounts } from "./side-nav";
-import { ThemeToggle } from "./theme-toggle";
+import { ThemeToggle } from "../theme-toggle";
 
 export const metadata: Metadata = {
   title: "Кабинет — BookTranslate",

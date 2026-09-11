@@ -321,6 +321,61 @@ a {
   border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
 }
 
+.theme-light,
+.theme-dark {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-dark {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-dark {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-light {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-dark {
+    display: block;
+  }
+
+  :root:not([data-theme="light"]) .theme-light {
+    display: none;
+  }
+}
+
+/* Переключатель темы в шапке главной. Круглая кнопка под стать
+   стеклянной полосе: прямоугольная рядом с «Войти» читалась бы третьей
+   кнопкой действия, а это переключатель вида, а не шаг сценария. */
+.top__theme {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--line));
+  background: var(--glass-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+
+.top__theme:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
+}
+
+.top__theme svg {
+  width: 18px;
+  height: 18px;
+}
+
 .btn--small {
   height: 42px;
   padding: 0 18px;

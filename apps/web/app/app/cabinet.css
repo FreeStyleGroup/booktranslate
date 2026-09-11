@@ -196,34 +196,6 @@
 
 /* Значок темы выбирается стилями, а не состоянием кнопки: на сервере темы
    не видно, и любая попытка угадать её в разметке кончается вспышкой. */
-.theme-light,
-.theme-dark {
-  width: 18px;
-  height: 18px;
-}
-
-.theme-dark {
-  display: none;
-}
-
-:root[data-theme="dark"] .theme-dark {
-  display: block;
-}
-
-:root[data-theme="dark"] .theme-light {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .theme-dark {
-    display: block;
-  }
-
-  :root:not([data-theme="light"]) .theme-light {
-    display: none;
-  }
-}
-
 .cab__user {
   display: flex;
   align-items: center;
