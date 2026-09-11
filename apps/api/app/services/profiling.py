@@ -24,11 +24,11 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.models.document import Document
 from app.models.project import Project
 from app.models.segment import Segment, SegmentStatus
+from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.services.base import TenantService
 from app.services.errors import NotFoundError
 from app.services.memory import TranslationMemory, fingerprint
 from app.services.pricing import Forecast, forecast
-from app.services.terminology import TerminologyService
 
 # Сколько строк читать из базы за раз при обходе непереведённых сегментов.
 # Обход нужен целиком — отпечаток считается в Python, тем же кодом, что и
@@ -57,9 +57,14 @@ class DocumentProfile:
     unique_untranslated: int = 0
     repeated: int = 0
 
-    # Кандидатов в словарь без решения. Пока их больше нуля, перевод не
-    # начнётся, и знать об этом надо до того, как нажать «перевести», а не
-    # в ответ на нажатие.
+    # Кандидатов в словарь: всего и без решения. Пока нерешённые есть,
+    # перевод не начнётся, и знать об этом надо до того, как нажать
+    # «перевести», а не в ответ на нажатие.
+    #
+    # Два числа, а не одно: ноль нерешённых означает и «всё решено», и
+    # «проход не делался вовсе», а это разные состояния книги и разный
+    # следующий шаг.
+    terms_total: int = 0
     undecided_terms: int = 0
     # Из различных текстов — те, что память переводов закрывает уже сейчас.
     memory_matches: int = 0
@@ -93,9 +98,7 @@ class ProfilingService(TenantService):
 
         profile.by_kind = await self._grouped(document.id, Segment.kind)
         profile.by_status = await self._grouped(document.id, Segment.status)
-        profile.undecided_terms = await TerminologyService(self._session, self._context).undecided(
-            document.id
-        )
+        profile.terms_total, profile.undecided_terms = await self._terms(document.id)
 
         await self._billable(
             document.id,
@@ -163,6 +166,24 @@ class ProfilingService(TenantService):
         )
 
         return {value.value: int(amount) for value, amount in rows.all()}
+
+    async def _terms(self, document_id: uuid.UUID) -> tuple[int, int]:
+        """Кандидатов в словарь: всего и без решения — одним запросом."""
+        row = (
+            await self._session.execute(
+                select(
+                    func.count(),
+                    func.count().filter(TermCandidate.status == TermCandidateStatus.NEW),
+                )
+                .select_from(TermCandidate)
+                .where(
+                    TermCandidate.organization_id == self.organization_id,
+                    TermCandidate.document_id == document_id,
+                )
+            )
+        ).one()
+
+        return int(row[0]), int(row[1])
 
     async def _billable(
         self,

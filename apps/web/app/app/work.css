@@ -563,10 +563,44 @@
   overflow-wrap: anywhere;
 }
 
+/* После перевода к строке добавляется вторая колонка. Исходник тускнеет:
+   смотреть теперь надо на перевод, а исходник рядом для сверки. */
+.wk-seg--pair .wk-seg__row {
+  grid-template-columns: 44px minmax(0, 120px) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.wk-seg--pair .wk-seg__text {
+  color: var(--ink-faint);
+}
+
+.wk-seg__dst {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .wk-seg__foot {
   margin: 16px 0 0;
   line-height: 1.6;
   max-width: 70ch;
+}
+
+/* ── Ход перевода ── */
+
+.tr-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 2px;
+}
+
+.tr-bar b {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
 }
 
 /* ── Кнопки действий ── */
@@ -626,13 +660,21 @@
     display: none;
   }
 
-  .wk-seg__row {
+  .wk-seg__row,
+  .wk-seg--pair .wk-seg__row {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
   }
 
   .wk-seg__no {
     display: none;
+  }
+
+  /* Перевод под исходником, с отбивкой: рядом они на 375 точках не стоят,
+     а без отбивки читаются как один абзац. */
+  .wk-seg--pair .wk-seg__dst {
+    padding-top: 4px;
+    border-top: 1px dashed var(--line-soft);
   }
 }
 

@@ -64,6 +64,7 @@ export type DocumentProfile = {
   unique_untranslated: number;
   repeated: number;
   memory_matches: number;
+  terms_total: number;
   undecided_terms: number;
   billable_texts: number;
   billable_characters: number;

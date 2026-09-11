@@ -10,6 +10,8 @@ import {
   type SegmentPage,
 } from "../../../lib/work";
 import {
+  CHECK_CHIP,
+  CHECK_LABEL,
   DOCUMENT_CHIP,
   DOCUMENT_LABEL,
   FORMAT_LABEL,
@@ -25,6 +27,7 @@ import {
 } from "../../labels";
 import "../../work.css";
 import { DeleteButton, ParseButton } from "../actions-ui";
+import { BeforeTranslate, TranslateRun } from "../translate-run";
 
 export const metadata: Metadata = {
   title: "Документ — BookTranslate",
@@ -167,36 +170,7 @@ export default async function DocumentPage({
       {parsed && <NextStep book={book} profile={profile.data} />}
 
       {parsed && segments.data !== undefined && segments.data.items.length > 0 && (
-        <section className="tile">
-          <div className="tile__head">
-            <h3>Как файл разобрался</h3>
-            <span className="tile__note">
-              первые {segments.data.items.length} из {thousands(segments.data.total)}
-            </span>
-          </div>
-
-          <div className="wk-seg">
-            {segments.data.items.map((segment) => (
-              <div className="wk-seg__row" key={segment.id}>
-                <span className="wk-seg__no">{segment.position + 1}</span>
-                <span className="wk-seg__kind">
-                  <i style={{ background: SEGMENT_COLOR[segment.status] ?? "#94a3b8" }} />
-                  {KIND_ONE[segment.kind] ?? segment.kind}
-                </span>
-                <span className="wk-seg__text">{segment.source_text}</span>
-              </div>
-            ))}
-          </div>
-
-          <p className="tile__note wk-seg__foot">
-            Цветом слева помечено состояние сегмента
-            {profile.data !== undefined &&
-              `: ${statuses(profile.data)}`}
-            . Следующий шаг — терминология: слово, отданное модели на
-            усмотрение, в сорока сегментах будет названо по-разному. Этот
-            раздел делается сейчас.
-          </p>
-        </section>
+        <Preview page={segments.data} profile={profile.data} />
       )}
 
       <section className="tile">
@@ -232,6 +206,62 @@ export default async function DocumentPage({
   );
 }
 
+/* Первые сегменты книги.
+
+   До перевода это ответ на вопрос «что получилось из файла»: видно, что
+   заголовок стал заголовком, а таблица — ячейками. После перевода это
+   единственное место, где перевод вообще можно увидеть, пока не сделана
+   очередь замечаний, — поэтому рядом с исходником появляется вторая
+   колонка, а не отдельный экран. */
+function Preview({ page, profile }: { page: SegmentPage; profile?: DocumentProfile }) {
+  const translated = page.items.some((segment) => segment.target_text !== null);
+
+  return (
+    <section className="tile">
+      <div className="tile__head">
+        <h3>{translated ? "Перевод по сегментам" : "Как файл разобрался"}</h3>
+        <span className="tile__note">
+          первые {page.items.length} из {thousands(page.total)}
+        </span>
+      </div>
+
+      <div className={translated ? "wk-seg wk-seg--pair" : "wk-seg"}>
+        {page.items.map((segment) => (
+          <div className="wk-seg__row" key={segment.id}>
+            <span className="wk-seg__no">{segment.position + 1}</span>
+            <span className="wk-seg__kind">
+              <i style={{ background: SEGMENT_COLOR[segment.status] ?? "#94a3b8" }} />
+              {KIND_ONE[segment.kind] ?? segment.kind}
+            </span>
+            <span className="wk-seg__text">{segment.source_text}</span>
+            {translated && (
+              <span className="wk-seg__dst">
+                {segment.target_text ?? "—"}
+                {/* Находки проверок показываем рядом с переводом: они и
+                    относятся к нему, а не к исходнику. */}
+                {(segment.quality?.findings ?? []).slice(0, 2).map((finding) => (
+                  <span
+                    key={finding.check}
+                    className={CHECK_CHIP[finding.check] ?? "chip chip--warn"}
+                    title={finding.message}
+                  >
+                    {CHECK_LABEL[finding.check] ?? finding.check}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <p className="tile__note wk-seg__foot">
+        Цветом слева помечено состояние сегмента
+        {profile !== undefined && `: ${statuses(profile)}`}.
+      </p>
+    </section>
+  );
+}
+
 /* Что делать с книгой дальше.
 
    Одна карточка на три случая, а не три подряд: у книги в каждый момент
@@ -261,21 +291,54 @@ function NextStep({ book, profile }: { book: Document; profile?: DocumentProfile
     );
   }
 
+  /* Проход по книге ещё не делался: кандидатов нет вовсе, и это не то же
+     самое, что «все решены». Пока он не сделан, перевод формально
+     возможен — API молчит, когда кандидатов нет, — но заводить книгу без
+     терминологии значит получить сорок написаний одного слова. */
+  const started = (profile?.segments ?? 0) > 0 && profile !== undefined;
+
+  if (started && !hasTerms(profile) && (profile?.untranslated ?? 0) > 0) {
+    return (
+      <BeforeTranslate documentId={book.id} untranslated={profile?.untranslated ?? 0} />
+    );
+  }
+
+  if (profile !== undefined && profile.untranslated === 0) {
+    const flagged = profile.by_status.flagged ?? 0;
+
+    return (
+      <section className="tile wk-call">
+        <h3>Книга переведена</h3>
+        <p>
+          {flagged === 0
+            ? "Непереведённых сегментов не осталось, и проверки ни к чему не придрались."
+            : `Непереведённых сегментов не осталось. ${thousands(flagged)} ${plural(
+                flagged,
+                "сегмент ждёт",
+                "сегмента ждут",
+                "сегментов ждут",
+              )} человека: проверки нашли расхождение чисел, нарушение термина или потерянную подстановку. Это не приговор переводу, а список мест, на которые стоит посмотреть.`}
+        </p>
+        <div className="tile__foot">
+          <Link className="btn btn--ghost btn--small" href="/app/queue">
+            Очередь замечаний
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <section className="tile wk-call">
-      <h3>Следующий шаг — термины</h3>
-      <p>
-        Программа пройдёт по тексту и соберёт то, что в нём повторяется:
-        термины, аббревиатуры, обозначения. Решается это один раз и до
-        перевода, а дальше держит всю книгу и все следующие книги проекта.
-      </p>
-      <div className="tile__foot">
-        <Link className="btn btn--primary btn--small" href={`/app/terms?document=${book.id}`}>
-          Термины книги
-        </Link>
-      </div>
-    </section>
+    <TranslateRun documentId={book.id} untranslated={profile?.untranslated ?? 0} />
   );
+}
+
+/* Делался ли по книге терминологический проход. Состояния три, а не два:
+   «проход не делался», «есть нерешённые» и «всё решено» — и следующий шаг
+   у них разный. Нерешённые ловятся выше, здесь остаётся отличить
+   непройденную книгу от пройденной. */
+function hasTerms(profile: DocumentProfile | undefined): boolean {
+  return profile !== undefined && profile.terms_total > 0;
 }
 
 /** Состояния сегментов словами: «не переведено — 1 240, принято — 12». */
@@ -304,7 +367,7 @@ function Passport({ profile, book }: { profile: DocumentProfile; book: Document 
   }
 
   const kinds = Object.entries(profile.by_kind).sort(([, a], [, b]) => b - a);
-  const spent = book.input_tokens + book.output_tokens > 0;
+  const done = profile.untranslated === 0;
 
   return (
     <>
@@ -364,75 +427,127 @@ function Passport({ profile, book }: { profile: DocumentProfile; book: Document 
 
         <section className="tile">
           <div className="tile__head">
-            <h3>Во что обойдётся перевод</h3>
-            <span className="tile__note">оценка сверху</span>
+            <h3>{done ? "Во что обошёлся перевод" : "Во что обойдётся перевод"}</h3>
+            <span className="tile__note">{done ? "по факту" : "оценка сверху"}</span>
           </div>
 
-          <div className="wk-money">
-            <div className="wk-money__row">
-              <span>Сегментов к переводу</span>
-              <b>{thousands(profile.untranslated)}</b>
-            </div>
-            <div className="wk-money__row">
-              <span>Повторяются внутри книги</span>
-              <b>{thousands(profile.repeated)}</b>
-            </div>
-            <div className="wk-money__row">
-              <span>Уже есть в памяти переводов</span>
-              <b>{thousands(profile.memory_matches)}</b>
-            </div>
-            <div className="wk-money__row wk-money__row--total">
-              <span>Оплачивается</span>
-              <b>{thousands(profile.billable_texts)}</b>
-            </div>
-          </div>
-
-          <p className="tile__note wk-seg__foot">
-            Повтор и совпадение с памятью переводятся один раз на всю книгу,
-            поэтому оплачивается {thousands(profile.billable_texts)} из{" "}
-            {thousands(profile.untranslated)}. Одинаковый текст обязан звучать
-            одинаково — деньги тут приятное следствие, а не цель.
-          </p>
-
-          {profile.estimate !== null && (
-            <p className="wk-price">
-              {profile.estimate.usd === null ? (
-                <>
-                  <b>{thousands(profile.estimate.input_tokens)}</b> токенов на входе
-                  <span className="tile__note">
-                    {" "}
-                    · цена неизвестна: модель не в прейскуранте
-                  </span>
-                </>
-              ) : (
-                <>
-                  <b>≈ ${profile.estimate.usd.toFixed(2)}</b>
-                  <span className="tile__note">
-                    {" "}
-                    · {thousands(profile.estimate.input_tokens)} токенов на входе,{" "}
-                    {thousands(profile.estimate.output_tokens)} на выходе
-                  </span>
-                </>
-              )}
-            </p>
-          )}
-
-          <p className="tile__note wk-seg__foot">
-            Смета считается с запасом и по прейскуранту модели в долларах.
-            Настоящий счёт приходит от поставщика и бывает меньше; число здесь
-            годится, чтобы назначить цену заказчику, а не чтобы сверять с
-            выставленным счётом.
-          </p>
-
-          {spent && (
-            <p className="tile__note wk-seg__foot">
-              Уже потрачено: {thousands(book.input_tokens)} токенов на входе,{" "}
-              {thousands(book.output_tokens)} на выходе
-              {book.translated_by !== null && ` · ${book.translated_by}`}
-            </p>
-          )}
+          {/* У переведённой книги сметы больше нет: четыре нуля подряд
+              ничего не объясняют, а объясняет потраченное. */}
+          {done ? <Spent book={book} /> : <Estimate profile={profile} />}
         </section>
       </div>
+    </>
+  );
+}
+
+/* Сколько будет стоить перевод того, что осталось. */
+function Estimate({ profile }: { profile: DocumentProfile }) {
+  return (
+    <>
+      <div className="wk-money">
+        <div className="wk-money__row">
+          <span>Сегментов к переводу</span>
+          <b>{thousands(profile.untranslated)}</b>
+        </div>
+        <div className="wk-money__row">
+          <span>Повторяются внутри книги</span>
+          <b>{thousands(profile.repeated)}</b>
+        </div>
+        <div className="wk-money__row">
+          <span>Уже есть в памяти переводов</span>
+          <b>{thousands(profile.memory_matches)}</b>
+        </div>
+        <div className="wk-money__row wk-money__row--total">
+          <span>Оплачивается</span>
+          <b>{thousands(profile.billable_texts)}</b>
+        </div>
+      </div>
+
+      <p className="tile__note wk-seg__foot">
+        Повтор и совпадение с памятью переводятся один раз на всю книгу,
+        поэтому оплачивается {thousands(profile.billable_texts)} из{" "}
+        {thousands(profile.untranslated)}. Одинаковый текст обязан звучать
+        одинаково — деньги тут приятное следствие, а не цель.
+      </p>
+
+      {profile.estimate !== null && (
+        <p className="wk-price">
+          {profile.estimate.usd === null ? (
+            <>
+              <b>{thousands(profile.estimate.input_tokens)}</b> токенов на входе
+              <span className="tile__note"> · цена неизвестна: модель не в прейскуранте</span>
+            </>
+          ) : (
+            <>
+              <b>≈ ${profile.estimate.usd.toFixed(2)}</b>
+              <span className="tile__note">
+                {" "}
+                · {thousands(profile.estimate.input_tokens)} токенов на входе,{" "}
+                {thousands(profile.estimate.output_tokens)} на выходе
+              </span>
+            </>
+          )}
+        </p>
+      )}
+
+      <p className="tile__note wk-seg__foot">
+        Смета считается с запасом и по прейскуранту модели в долларах.
+        Настоящий счёт приходит от поставщика и бывает меньше; число здесь
+        годится, чтобы назначить цену заказчику, а не чтобы сверять с
+        выставленным счётом.
+      </p>
+    </>
+  );
+}
+
+/* Что книга стоила на самом деле.
+
+   Токены, а не деньги: цены меняются, а потраченное на эту книгу —
+   исторический факт. Стоимость считает API по прейскуранту той модели,
+   которой переводили. */
+function Spent({ book }: { book: Document }) {
+  /* Ноль токенов означает разное, и путать это нельзя. Если переводчик не
+     записан — модель не вызывалась вовсе: всё закрыли память и повторы.
+     Если записан, а токенов нет — переводил провайдер, который ничего не
+     тратит (заглушка разработки). Сказать в этом случае «модель не
+     вызывалась» значит соврать в отчёте о работе, которая была сделана. */
+  if (book.input_tokens + book.output_tokens === 0) {
+    return (
+      <p className="tile__empty">
+        {book.translated_by === null
+          ? "Переводить было нечего: все сегменты закрыты памятью переводов и повторами. Модель не вызывалась ни разу."
+          : `Расхода нет: переводил «${book.translated_by}» — этот провайдер ничего не тратит. Настоящая модель включается настройкой TRANSLATION_PROVIDER.`}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <div className="wk-money">
+        <div className="wk-money__row">
+          <span>Токенов на входе</span>
+          <b>{thousands(book.input_tokens)}</b>
+        </div>
+        <div className="wk-money__row">
+          <span>Токенов на выходе</span>
+          <b>{thousands(book.output_tokens)}</b>
+        </div>
+        {book.cached_input_tokens > 0 && (
+          <div className="wk-money__row">
+            <span>Прочитано из кэша</span>
+            <b>{thousands(book.cached_input_tokens)}</b>
+          </div>
+        )}
+      </div>
+
+      <p className="tile__note wk-seg__foot">
+        {book.translated_by === null
+          ? "Модель не записана."
+          : `Переведено моделью ${book.translated_by}.`}{" "}
+        Хранятся токены, а не деньги: цены меняются, а потраченное на эту
+        книгу — исторический факт, и пересчитывать его задним числом по
+        новому прейскуранту значит подделывать отчёт.
+      </p>
     </>
   );
 }
