@@ -4,6 +4,7 @@ import Link from "next/link";
 import { load, type Document, type Project } from "../../lib/work";
 import { DOCUMENT_CHIP, DOCUMENT_LABEL, FORMAT_LABEL, fileSize, when } from "../labels";
 import "../work.css";
+import { DeleteButton } from "./actions-ui";
 import { Upload } from "./upload";
 
 export const metadata: Metadata = {
@@ -108,28 +109,35 @@ export default async function DocumentsPage({
             <span className="tile__note">{documents.data.length}</span>
           </div>
 
+          {/* Строка и кнопка удаления — соседи, а не вложенные друг в друга:
+              кнопка внутри ссылки и разметку ломает, и нажатие по ней увело
+              бы на страницу книги вместо удаления. */}
           <div className="wk-list">
             {documents.data.map((document) => (
-              <Link className="wk-row" key={document.id} href={`/app/documents/${document.id}`}>
-                <span className="wk-row__mark" aria-hidden="true">
-                  📄
-                </span>
-
-                <span className="wk-row__name">
-                  <b>{document.title}</b>
-                  <span className="tile__note">
-                    {names.get(document.project_id) ?? "Проект"} ·{" "}
-                    {FORMAT_LABEL[document.source_format] ?? document.source_format} ·{" "}
-                    {fileSize(document.size_bytes)}
+              <div className="wk-item" key={document.id}>
+                <Link className="wk-row" href={`/app/documents/${document.id}`}>
+                  <span className="wk-row__mark" aria-hidden="true">
+                    📄
                   </span>
-                </span>
 
-                <span className={DOCUMENT_CHIP[document.status] ?? "chip chip--info"}>
-                  {DOCUMENT_LABEL[document.status] ?? document.status}
-                </span>
+                  <span className="wk-row__name">
+                    <b>{document.title}</b>
+                    <span className="tile__note">
+                      {names.get(document.project_id) ?? "Проект"} ·{" "}
+                      {FORMAT_LABEL[document.source_format] ?? document.source_format} ·{" "}
+                      {fileSize(document.size_bytes)}
+                    </span>
+                  </span>
 
-                <span className="wk-row__when tile__note">{when(document.updated_at)}</span>
-              </Link>
+                  <span className={DOCUMENT_CHIP[document.status] ?? "chip chip--info"}>
+                    {DOCUMENT_LABEL[document.status] ?? document.status}
+                  </span>
+
+                  <span className="wk-row__when tile__note">{when(document.updated_at)}</span>
+                </Link>
+
+                <DeleteButton id={document.id} title={document.title} icon />
+              </div>
             ))}
           </div>
         </section>

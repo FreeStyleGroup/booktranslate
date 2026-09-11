@@ -23,16 +23,18 @@ function groups(counts: NavCounts | null): { title: string; items: Item[] }[] {
   return [
     {
       title: "Работа",
+      // Порядок — как идёт работа: обзор, проект, книги в нём, и только
+      // потом очередь замечаний, которая появляется уже после перевода.
       items: [
         { href: "/app", icon: "📊", label: "Обзор" },
+        { href: "/app/projects", icon: "🗃", label: "Проекты", count: counts?.projects },
+        { href: "/app/documents", icon: "📚", label: "Документы", count: counts?.documents },
         {
           href: "/app/queue",
           icon: "🧪",
           label: "Очередь замечаний",
           count: counts?.flagged,
         },
-        { href: "/app/documents", icon: "📚", label: "Документы", count: counts?.documents },
-        { href: "/app/projects", icon: "🗃", label: "Проекты", count: counts?.projects },
       ],
     },
     {

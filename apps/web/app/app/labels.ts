@@ -71,6 +71,25 @@ export const KIND_ONE: Record<string, string> = {
   code: "Код",
 };
 
+/** Разряд записи словаря: что это за слово, а не «договорились ли мы». */
+export const GLOSSARY_KIND: Record<string, string> = {
+  term: "Термин",
+  abbreviation: "Аббревиатура",
+  do_not_translate: "Не переводится",
+  notation: "Обозначение",
+  proper_name: "Имя собственное",
+};
+
+/** Чем разряды отличаются. Показывается там, где разряд выбирают: без
+ *  пояснения «обозначение» и «не переводится» выглядят одинаково. */
+export const GLOSSARY_KIND_HINT: Record<string, string> = {
+  term: "обычное слово: valve → клапан",
+  abbreviation: "ПЛК, HMI — при первом употреблении раскрывается",
+  do_not_translate: "ISO, USB, артикул — переносится дословно",
+  notation: "σ, W₀, LT1 — переводу не подлежит, но различается",
+  proper_name: "фирма, модель, площадка — решает человек",
+};
+
 export const CHECK_LABEL: Record<string, string> = {
   numbers: "Числа",
   placeholders: "Подстановки",

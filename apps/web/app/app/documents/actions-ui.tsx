@@ -1,15 +1,19 @@
 "use client";
 
-/* Кнопки карточки документа: разобрать, разобрать заново, удалить.
+/* Кнопки книги: разобрать, разобрать заново, удалить.
 
    Клиентские, потому что у каждой есть состояние: пока идёт разбор, кнопку
    надо выключить, а отказ — показать рядом с ней, а не увести человека на
    страницу ошибки. Само действие при этом серверное — токен в браузер не
-   попадает. */
+   попадает.
+
+   Лежат рядом со списком, а не внутри карточки: удалять книгу приходится и
+   из списка тоже — пробных загрузок бывает пять, и открывать ради каждой
+   отдельную страницу незачем. */
 
 import { useActionState } from "react";
 
-import { deleteDocument, parseDocument, type Result } from "../../actions";
+import { deleteDocument, parseDocument, type Result } from "../actions";
 
 const EMPTY: Result = {};
 
@@ -54,14 +58,23 @@ export function ParseButton({
   );
 }
 
+/** Удаление книги.
+ *
+ * `icon` — вид для строки списка: там подпись «удалить» у каждой из
+ * двадцати книг превращает список в столбец из одного слова. Вопрос
+ * перед удалением одинаков в обоих видах: книга уходит вместе с разбором
+ * и переводом, и это не та кнопка, которую жмут дважды подряд не глядя.
+ */
 export function DeleteButton({
   id,
   title,
   small,
+  icon,
 }: {
   id: string;
   title: string;
   small?: boolean;
+  icon?: boolean;
 }) {
   const [state, action, busy] = useActionState(deleteDocument, EMPTY);
 
@@ -71,8 +84,6 @@ export function DeleteButton({
         action={action}
         className="wk-inline"
         onSubmit={(event) => {
-          // Удаление книги уносит с собой сегменты и перевод — это не та
-          // кнопка, которую нажимают дважды подряд без вопроса.
           if (!confirm(`Удалить «${title}» вместе с разбором и переводом?`)) {
             event.preventDefault();
           }
@@ -80,13 +91,34 @@ export function DeleteButton({
       >
         <input type="hidden" name="id" value={id} />
 
-        <button
-          className={"btn btn--ghost wk-danger" + (small === true ? " btn--small" : "")}
-          type="submit"
-          disabled={busy}
-        >
-          {busy ? "Удаляем…" : "Удалить"}
-        </button>
+        {icon === true ? (
+          <button
+            className="wk-kill"
+            type="submit"
+            disabled={busy}
+            aria-label={`Удалить «${title}»`}
+            title="Удалить книгу"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+              <path
+                d="M4 7h16M10 7V5h4v2M6 7l1 13h10l1-13M10 11v6M14 11v6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <button
+            className={"btn btn--ghost wk-danger" + (small === true ? " btn--small" : "")}
+            type="submit"
+            disabled={busy}
+          >
+            {busy ? "Удаляем…" : "Удалить"}
+          </button>
+        )}
       </form>
 
       {state.error !== undefined && (

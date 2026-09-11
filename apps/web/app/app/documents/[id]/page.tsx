@@ -24,7 +24,7 @@ import {
   when,
 } from "../../labels";
 import "../../work.css";
-import { DeleteButton, ParseButton } from "./actions-ui";
+import { DeleteButton, ParseButton } from "../actions-ui";
 
 export const metadata: Metadata = {
   title: "Документ — BookTranslate",
@@ -162,6 +162,24 @@ export default async function DocumentPage({
 
       {parsed && profile.data !== undefined && (
         <Passport profile={profile.data} book={book} />
+      )}
+
+      {parsed && (
+        <section className="tile wk-call">
+          <h3>Следующий шаг — термины</h3>
+          <p>
+            Программа пройдёт по тексту и соберёт то, что в нём повторяется:
+            термины, аббревиатуры, обозначения. Решить их надо один раз и до
+            перевода — слово, отданное модели на усмотрение, в сорока сегментах
+            будет названо по-разному, и ловить это потом придётся тому, кто
+            читал исходник.
+          </p>
+          <div className="tile__foot">
+            <Link className="btn btn--primary btn--small" href={`/app/terms?document=${book.id}`}>
+              Термины книги
+            </Link>
+          </div>
+        </section>
       )}
 
       {parsed && segments.data !== undefined && segments.data.items.length > 0 && (
