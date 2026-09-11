@@ -1,15 +1,20 @@
-# Рабочая среда: база, API и обратный прокси с сертификатом.
+# Рабочая среда на одной машине: база, API, витрина и обратный прокси с
+# сертификатом.
 #
 # Отдельным файлом, а не профилем в общем: в docker-compose.yml код
 # смонтирован томом, включён --reload и стоит DEBUG. Один файл с условиями
 # рано или поздно уезжает на сервер целиком — и увозит туда всё это.
 #
-# Витрина здесь не описана: она живёт на Vercel и общается с API по адресу
-# из NEXT_PUBLIC_API_URL. Переезд любой половины не трогает вторую.
+# Витрина и API — на разных доменах, как и задумано: между собой они
+# связаны только адресом API_URL, и любую половину можно увезти отдельно
+# (витрину — на Vercel, см. docs/DEPLOY.md). Но основной способ — обе
+# рядом: так витрина ходит в API по внутренней сети, а API видит настоящий
+# адрес посетителя.
 #
-# Запуск:
+# Запуск — docs/DEPLOY.md. Коротко:
 #   cp apps/api/.env.production.example .env
 #   $EDITOR .env                       # секреты, домены, ключ модели
+#   docker login ghcr.io               # образы приватного репозитория
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml exec api \
 #       python -m app.cli create-superuser --email you@example.com
@@ -37,32 +42,54 @@ services:
     # Образ, а не сборка: он собран из тега, проверен и дальше только
     # продвигается по окружениям. Пересборка «того же» кода перед выкатом
     # означала бы, что в бой уезжает не то, что проверяли.
-    image: ${API_IMAGE:-ghcr.io/freestylegroup/booktranslate/api:latest}
+    image: ${API_IMAGE:?задайте API_IMAGE в .env — тег версии, не latest}
     restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booktranslate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-booktranslate}
       STORAGE_ROOT: /var/booktranslate/storage
-      # Заголовкам источника верим только от своего прокси: подставить
+      # Заголовкам источника верим только из своей сети: подставить
       # X-Forwarded-For может кто угодно, и с открытым списком ограничитель
-      # частоты считает всех одним клиентом либо каждого — новым.
+      # частоты считает всех одним клиентом либо каждого — новым. В этой
+      # сети стоят и прокси, и витрина — оба передают адрес посетителя.
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.16.0.0/12}
     volumes:
       - api_storage:/var/booktranslate/storage
+    # Потолок памяти: без него один тяжёлый разбор или поток запросов
+    # уводит в своп всю машину вместе с базой. С потолком перезапускается
+    # один контейнер, остальные живут.
+    mem_limit: 2g
     # Миграции накатываются при старте: на одной машине это надёжнее
     # ручного шага, про который забывают, а откат остаётся отдельной
     # осознанной командой.
+    # limit-concurrency: сверх потолка запросы получают 503 сразу, а не
+    # копятся в памяти одного процесса до OOM. Перевод и разбор — долгие
+    # запросы, и без потолка поток коротких за ними обрушил бы всё.
     command: >-
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+             --limit-concurrency 64"
     depends_on:
       postgres:
         condition: service_healthy
 
+  web:
+    image: ${WEB_IMAGE:?задайте WEB_IMAGE в .env — тег версии, не latest}
+    restart: unless-stopped
+    environment:
+      # Внутренний адрес API: по имени сервиса, мимо прокси и сертификата.
+      # 🔥 Имя «api» обязано стоять в ALLOWED_HOSTS у API — иначе он ответит
+      # витрине 400 «Invalid host header», и кабинет покажет демонстрацию
+      # вместо данных, не объяснив почему.
+      API_URL: http://api:8000
+    mem_limit: 768m
+    depends_on:
+      - api
+
   proxy:
-    # Caddy сам получает и продлевает сертификат Let's Encrypt: отдельного
-    # certbot по расписанию не нужно, а забытое продление — самая частая
-    # причина «сайт вдруг перестал открываться».
+    # Caddy сам получает и продлевает сертификаты Let's Encrypt на оба
+    # домена: отдельного certbot по расписанию не нужно, а забытое
+    # продление — самая частая причина «сайт вдруг перестал открываться».
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
@@ -70,15 +97,27 @@ services:
       - "443:443"
     environment:
       API_DOMAIN: ${API_DOMAIN:?задайте API_DOMAIN в .env}
+      WEB_DOMAIN: ${WEB_DOMAIN:?задайте WEB_DOMAIN в .env}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - api
+      - web
 
 volumes:
   postgres_data:
   api_storage:
   caddy_data:
   caddy_config:
+
+# MTU сети compose. Настройка «mtu» в /etc/docker/daemon.json касается
+# только моста docker0, а compose создаёт свою сеть — ей значение нужно
+# задать отдельно, иначе на хостинге с урезанным интерфейсом контейнеры
+# теряют крупные пакеты. deploy/bootstrap.sh пишет DOCKER_NETWORK_MTU в
+# .env, когда интерфейс уже 1500; на обычной машине остаётся 1500.
+networks:
+  default:
+    driver_opts:
+      com.docker.network.driver.mtu: ${DOCKER_NETWORK_MTU:-1500}

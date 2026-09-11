@@ -7,6 +7,7 @@
 
 from httpx import AsyncClient
 
+from app.core.config import get_settings
 from tests.conftest import requires_database
 from tests.factories import admin_headers, find_user
 
@@ -124,6 +125,19 @@ async def test_login_rejects_wrong_password_without_hinting(db_client: AsyncClie
 
 
 @requires_database
+async def test_login_ignores_email_case(db_client: AsyncClient) -> None:
+    """Почта — не пароль: регистр не должен рождать вторую учётную запись."""
+    await _register(db_client)
+
+    entered = await db_client.post(
+        "/auth/login",
+        json={"email": "EDITOR@Example.com", "password": REGISTRATION["password"]},
+    )
+
+    assert entered.status_code == 200, entered.text
+
+
+@requires_database
 async def test_refresh_rotates_token(db_client: AsyncClient) -> None:
     tokens = await _register(db_client)
 
@@ -151,6 +165,37 @@ async def test_reused_refresh_token_revokes_all_sessions(db_client: AsyncClient)
     fresh_token = rotated.json()["refresh_token"]
     after_revocation = await db_client.post("/auth/refresh", json={"refresh_token": fresh_token})
     assert after_revocation.status_code == 401
+
+
+@requires_database
+async def test_reuse_inside_grace_window_does_not_revoke_sessions(db_client: AsyncClient) -> None:
+    """Две вкладки, открытые разом, — гонка клиента, а не кража.
+
+    Обе шлют обновление одним токеном. Второе отвергается, но выданная
+    первому пара продолжает работать: иначе чужая страница, открывающая
+    два окна кабинета, выбрасывала бы человека из всех сеансов.
+    """
+    settings = get_settings()
+    settings.refresh_reuse_grace_seconds = 60
+    try:
+        tokens = await _register(db_client)
+
+        rotated = await db_client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert rotated.status_code == 200
+
+        raced = await db_client.post(
+            "/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
+        )
+        assert raced.status_code == 401
+
+        still_alive = await db_client.post(
+            "/auth/refresh", json={"refresh_token": rotated.json()["refresh_token"]}
+        )
+        assert still_alive.status_code == 200, still_alive.text
+    finally:
+        settings.refresh_reuse_grace_seconds = 0
 
 
 @requires_database

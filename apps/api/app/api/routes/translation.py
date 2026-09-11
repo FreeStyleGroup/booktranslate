@@ -29,28 +29,50 @@ async def translate_document(
     context: ContextDep,
     session: SessionDep,
     provider: ProviderDep,
+    limit: Annotated[
+        int | None,
+        Query(
+            description=(
+                "Сколько непереведённых сегментов взять этим вызовом. Без значения — "
+                "TRANSLATION_DEFAULT_LIMIT, не больше TRANSLATION_MAX_SEGMENTS_PER_RUN"
+            )
+        ),
+    ] = None,
     force: Annotated[
         bool,
-        Query(description="Переводить заново, включая отредактированные и принятые сегменты"),
+        Query(
+            description=(
+                "На документе без непереведённых сегментов — перевести заново, включая "
+                "отредактированные и принятые; на документе с непереведёнными — продолжить; "
+                "на зависшем в «переводится» дольше TRANSLATION_STALE_MINUTES — снять "
+                "отметку и продолжить"
+            )
+        ),
     ] = False,
     ignore_terminology: Annotated[
         bool,
         Query(description="Переводить, не дожидаясь решений по кандидатам в словарь"),
     ] = False,
 ) -> TranslationResult:
-    """Перевести сегменты документа.
+    """Перевести очередную порцию сегментов документа.
 
-    По умолчанию берутся только непереведённые: повторный запуск не трогает
-    правку человека. Ответ — не список сегментов, а сводка: их могут быть
-    десятки тысяч, а по сводке видно, сколько закрыто памятью и сколько
-    пришлось отдать модели.
+    Один вызов берёт `limit` непереведённых сегментов в порядке книги и
+    отвечает, сколько осталось (`remaining`); книга переводится циклом
+    вызовов до нуля. Так задумано: обратный прокси режет соединение через
+    четверть часа, а сделанное до срыва фиксируется по пачкам и не
+    теряется. Повторный вызов не трогает правку человека: берутся только
+    непереведённые.
+
+    Ответ — не список сегментов, а сводка: их могут быть десятки тысяч, а
+    по сводке видно, сколько закрыто памятью и сколько пришлось отдать
+    модели.
 
     Незаконченный терминологический проход останавливает перевод: словарь,
     решённый наполовину, даёт в книге два названия для одной вещи. Обойти
     это можно (`ignore_terminology`), но это осознанный шаг, а не умолчание.
     """
     summary = await TranslationService(session, context, provider).translate(
-        document_id, force=force, ignore_terminology=ignore_terminology
+        document_id, limit=limit, force=force, ignore_terminology=ignore_terminology
     )
 
     return TranslationResult(
@@ -61,6 +83,8 @@ async def translate_document(
         unique_texts=summary.unique_texts,
         provider_calls=summary.provider_calls,
         saved_calls=summary.saved_calls,
+        remaining=summary.remaining,
+        status=summary.status,
         input_tokens=summary.usage.input_tokens,
         output_tokens=summary.usage.output_tokens,
         cached_input_tokens=summary.usage.cached_input_tokens,

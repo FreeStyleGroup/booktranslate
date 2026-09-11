@@ -348,3 +348,31 @@ async def test_extract_needs_parsed_document(db_client: AsyncClient) -> None:
     )
 
     assert response.status_code == 409
+
+
+@requires_database
+async def test_glossary_term_refuses_foreign_project(db_client: AsyncClient) -> None:
+    """Термин нельзя привязать к проекту другой организации.
+
+    Запись легла бы в свою организацию, но внешним ключом держалась бы за
+    чужой проект: его удаление каскадом унесло бы наши термины, а разница
+    между ошибкой ключа и успехом подсказывала бы, существует ли чужой
+    идентификатор. Чужое здесь — 404, как и везде.
+    """
+    owner = await register(db_client)
+    foreign_project = await create_project(db_client, owner)
+
+    stranger = await register(db_client, email="other@example.com", organization_name="Чужие")
+    response = await db_client.post(
+        "/glossary",
+        headers=stranger.headers,
+        json={
+            "source_term": "Check Valve",
+            "target_term": "обратный клапан",
+            "source_language": "en",
+            "target_language": "ru",
+            "project_id": foreign_project,
+        },
+    )
+
+    assert response.status_code == 404, response.text

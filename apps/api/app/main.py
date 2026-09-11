@@ -1,7 +1,12 @@
 """Точка входа API."""
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.errors import handle_domain_error
@@ -19,7 +24,37 @@ from app.api.routes import (
 )
 from app.api.throttle import RateLimitMiddleware
 from app.core.config import get_settings
+from app.db.session import get_sessionmaker
 from app.services.errors import DomainError
+from app.services.translation import recover_interrupted
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Что делается при старте процесса.
+
+    Документы, оставшиеся в «разбирается» и «переводится» от убитого
+    процесса, возвращаются в состояние по данным: отметку ставил он, и
+    снять её больше некому. Без этого каждый запуск перевода после
+    перезапуска контейнера отвечал бы «документ уже переводится».
+
+    База, недоступная в момент старта, процесс не роняет: сессия
+    подключается лениво, и остальное приложение поднимется как прежде.
+    Подвисшие документы при этом дождутся первого вызова с force=true —
+    порог давности их всё равно выпустит.
+    """
+    try:
+        async with get_sessionmaker()() as session:
+            recovered = await recover_interrupted(session)
+    except (SQLAlchemyError, OSError):
+        logger.exception("Не удалось проверить подвисшие документы при старте")
+    else:
+        if recovered:
+            logger.warning("Возвращено из подвисшего состояния документов: %d", len(recovered))
+
+    yield
 
 
 def create_app() -> FastAPI:
@@ -46,6 +81,7 @@ def create_app() -> FastAPI:
         docs_url="/docs" if development else None,
         redoc_url="/redoc" if development else None,
         openapi_url="/openapi.json" if development else None,
+        lifespan=lifespan,
     )
 
     # Порядок обёрток обратный порядку добавления: ограничитель частоты

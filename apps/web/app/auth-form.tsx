@@ -38,7 +38,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         }),
       });
 
-      const payload = (await response.json()) as { error?: string; pending?: boolean };
+      const payload = (await response.json()) as {
+        error?: string;
+        pending?: boolean;
+        home?: string;
+      };
 
       if (!response.ok) {
         setError(payload.error ?? "Не получилось. Попробуйте ещё раз.");
@@ -54,8 +58,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       }
 
       // refresh() нужен вместе с push(): кабинет собирается на сервере и
-      // без сброса кеша отрисовался бы по старому — без сеанса.
-      router.push("/app");
+      // без сброса кеша отрисовался бы по старому — без сеанса. Адрес
+      // назначения приходит от сервера: администратора площадки ведут в
+      // управление доступом, остальных — в кабинет.
+      router.push(payload.home ?? "/app");
       router.refresh();
     } catch {
       setError("Сеть недоступна. Проверьте соединение.");

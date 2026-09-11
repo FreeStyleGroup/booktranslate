@@ -5,9 +5,14 @@
 невидим, а сломанный файл оставляет причину, а не молчание.
 """
 
+import uuid
+from datetime import UTC, datetime, timedelta
+
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.document import Document, DocumentStatus
 from app.models.organization import Membership, Role
 from tests.conftest import requires_database
 from tests.factories import (
@@ -110,6 +115,53 @@ async def test_second_parse_is_refused_without_force(db_client: AsyncClient) -> 
     listing = await db_client.get(f"/documents/{document_id}/segments", headers=account.headers)
     # Повтор заменяет, а не добавляет: сегментов столько же, сколько было.
     assert listing.json()["total"] == 3
+
+
+async def leave_parsing(session: AsyncSession, document_id: str, *, silent_for: timedelta) -> None:
+    """Так выглядит документ после контейнера, убитого посреди разбора."""
+    await session.execute(
+        update(Document)
+        .where(Document.id == uuid.UUID(document_id))
+        .values(status=DocumentStatus.PARSING, updated_at=datetime.now(UTC) - silent_for)
+    )
+    await session.commit()
+
+
+@requires_database
+async def test_stale_parse_is_released_only_with_force(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    account = await register(db_client)
+    project_id = await create_project(db_client, account)
+    document_id = await upload(db_client, account, project_id)
+    await leave_parsing(session, document_id, silent_for=timedelta(hours=2))
+
+    plain = await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
+    # Без force — отказ с подсказкой: отметку оставил убитый процесс, и
+    # человек должен понять, как её снять.
+    assert plain.status_code == 409
+    assert "force=true" in plain.json()["detail"]
+
+    forced = await db_client.post(
+        f"/documents/{document_id}/parse?force=true", headers=account.headers
+    )
+    assert forced.status_code == 200, forced.text
+    assert forced.json()["status"] == "parsed"
+
+
+@requires_database
+async def test_live_parse_is_not_released(db_client: AsyncClient, session: AsyncSession) -> None:
+    """Разбор, отмечавшийся минуту назад, идёт: второй сотрёт сегменты у первого."""
+    account = await register(db_client)
+    project_id = await create_project(db_client, account)
+    document_id = await upload(db_client, account, project_id)
+    await leave_parsing(session, document_id, silent_for=timedelta(minutes=1))
+
+    forced = await db_client.post(
+        f"/documents/{document_id}/parse?force=true", headers=account.headers
+    )
+
+    assert forced.status_code == 409
 
 
 @requires_database

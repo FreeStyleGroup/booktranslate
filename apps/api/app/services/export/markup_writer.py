@@ -5,16 +5,19 @@
 заново из переведённых абзацев нельзя, и попытка обернулась бы книгой без
 единой картинки и с рассыпавшимся оглавлением.
 
-Поэтому берётся оригинал и в нём заменяется текст. Обход разметки повторяет
-обход разборщика ровно — тем же перечнем блочных тегов, с тем же пропуском
-вложенных и пустых, — по нему и восстанавливается соответствие. Всё
-остальное содержимое архива переносится байт в байт.
+Поэтому берётся оригинал и в нём заменяется текст. Обход разметки — тот же
+самый, которым читал разборщик (`parsers.markup.find_blocks`), а не его
+копия: по номеру блока в этом обходе и восстанавливается соответствие, и
+разойтись два обхода не могут, пока обход один. Всё остальное содержимое
+архива переносится байт в байт.
 
-Внутреннее оформление абзаца при замене теряется: `<b>` и ссылка внутри
-фразы уходят вместе с исходным текстом. В сегменте лежит текст, и разметки
-внутри фразы в нём нет с самого разбора — та же граница, что и в DOCX.
-Разметка самого блока (заголовок остаётся `h2`, пункт списка — `li`,
-классы и атрибуты на месте) сохраняется.
+Внутреннее оформление абзаца при замене теряется: перевод занимает место
+первого текста в блоке, остальной текст убирается. В сегменте лежит текст,
+и разложить перевод по прежним `<b>` и ссылкам не по чему — та же граница,
+что и в DOCX. Но сами теги внутри блока — картинка, перенос, ссылка на
+сноску — остаются: в тексте сегмента их не было, и терять их при сборке
+значит портить книгу. Разметка самого блока (заголовок остаётся `h2`, пункт
+списка — `li`, классы и атрибуты на месте) сохраняется.
 """
 
 import io
@@ -25,7 +28,7 @@ from typing import Any
 from bs4 import BeautifulSoup, Tag
 
 from app.services.export.base import ExportError, Rendered, TranslatedBlock
-from app.services.parsers.markup import BLOCK_TAGS, IGNORED_TAGS
+from app.services.parsers.markup import block_strings, find_blocks
 
 
 def rewrite_html(markup: str, translations: dict[int, str]) -> str:
@@ -36,39 +39,35 @@ def rewrite_html(markup: str, translations: dict[int, str]) -> str:
     книги не должен сдвигать всё, что за ним.
     """
     soup = BeautifulSoup(markup, "html.parser")
-    root = soup.body or soup
-    index = 0
 
-    for element in root.find_all(BLOCK_TAGS):
-        if not isinstance(element, Tag):
-            continue
-
-        # Разборщик служебные теги удалял, здесь они только пропускаются:
-        # счёт блоков от этого не меняется, а скрипты и стили остаются в
-        # документе. Удалять из книги то, чего разбор просто не читал, —
-        # порча оригинала.
-        if _inside_ignored(element):
-            continue
-
-        if element.find(BLOCK_TAGS) is not None:
-            continue
-
-        if not element.get_text(" ", strip=True):
-            continue
-
+    for index, element in enumerate(find_blocks(soup)):
         text = translations.get(index)
         if text is not None:
-            # Содержимое заменяется целиком: перевод — это текст, и
-            # разложить его по прежним `<b>` и ссылкам не по чему.
-            element.string = text
-
-        index += 1
+            _replace_text(element, text)
 
     return str(soup)
 
 
-def _inside_ignored(element: Tag) -> bool:
-    return any(parent.name in IGNORED_TAGS for parent in element.parents)
+def _replace_text(element: Tag, text: str) -> None:
+    """Вписать перевод на место текста блока, не трогая разметку внутри.
+
+    Перевод занимает первый непустой текстовый узел — вместе с его
+    оформлением, как первая руна в DOCX; остальные текстовые узлы
+    убираются. Узлы — ровно те, из которых разбор складывал текст сегмента:
+    скрипт внутри абзаца он не читал, и здесь он остаётся как был.
+    """
+    strings = [node for node in block_strings(element) if str(node).strip()]
+
+    # Обход отдаёт только блоки с текстом, так что пустым список не бывает;
+    # но перевод в любом случае не должен пропасть молча.
+    if not strings:
+        element.append(text)
+        return
+
+    strings[0].replace_with(text)
+
+    for node in strings[1:]:
+        node.extract()
 
 
 class HtmlRenderer:

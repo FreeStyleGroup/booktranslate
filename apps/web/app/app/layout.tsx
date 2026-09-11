@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { apiFetch, type CurrentUser } from "../lib/api";
-import { accessToken, organizationId } from "../lib/session";
+import { apiFetch, unauthorized, type CurrentUser } from "../lib/api";
+import { currentUser } from "../lib/current-user";
+import { accessToken, organizationId, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
 import "./cabinet.css";
 import { SideNav, type NavCounts } from "./side-nav";
@@ -13,23 +15,6 @@ export const metadata: Metadata = {
   title: "Кабинет — BookTranslate",
   description: "Очередь замечаний, документы, терминология и расход.",
 };
-
-/** Кто вошёл — или никто, если сеанса нет либо API недоступен. */
-async function currentUser(): Promise<CurrentUser | null> {
-  const token = await accessToken();
-
-  if (token === undefined) {
-    return null;
-  }
-
-  try {
-    return await apiFetch<CurrentUser>("/auth/me", { token });
-  } catch {
-    // Просроченный токен или недоступный API — не повод показать пустой
-    // экран: кабинет откроется с пометкой, что это демонстрация.
-    return null;
-  }
-}
 
 /** Числа рядом с разделами меню — из той же сводки, что и обзор. */
 async function counts(): Promise<NavCounts | null> {
@@ -44,17 +29,35 @@ async function counts(): Promise<NavCounts | null> {
       token,
       organizationId: await organizationId(),
     });
-  } catch {
+  } catch (error) {
+    if (unauthorized(error)) {
+      redirect(renewUrl("/app"));
+    }
+
     // Меню без чисел лучше кабинета, который не открылся.
     return null;
   }
 }
 
+/** Подпись под именем: своё пространство, а если его нет — почему. */
+function workspaceLabel(me: CurrentUser | null): string {
+  if (me === null) {
+    return "Демонстрация";
+  }
+
+  return (
+    me.memberships[0]?.organization_name ??
+    (me.user.is_superuser ? "Администратор площадки" : "Без рабочего пространства")
+  );
+}
+
 export default async function CabinetLayout({ children }: { children: ReactNode }) {
-  const me = await currentUser();
-  const navCounts = await counts();
+  const me = await currentUser("/app");
+  // Сводка принадлежит организации: без неё API ответит отказом, и
+  // спрашивать незачем.
+  const navCounts = me === null || me.memberships.length === 0 ? null : await counts();
   const name = me?.user.full_name ?? me?.user.email ?? "Гость";
-  const workspace = me?.memberships[0]?.organization_name ?? "Демонстрация";
+  const workspace = workspaceLabel(me);
 
   return (
     <div className="cab">

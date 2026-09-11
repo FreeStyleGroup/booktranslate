@@ -4,6 +4,7 @@
 криптографией, а решения «кто вошёл» и «что ему можно» принимает сервис.
 """
 
+import contextlib
 import hashlib
 import secrets
 import uuid
@@ -69,6 +70,20 @@ def verify_password(password: str, password_hash: str) -> bool:
         return _hasher.verify(password_hash, password)
     except (VerifyMismatchError, InvalidHashError):
         return False
+
+
+# Хеш заведомо несуществующего пароля. Нужен, чтобы вход по незнакомой
+# почте стоил столько же времени, сколько по знакомой: иначе разница в
+# сотню миллисекунд выдаёт, кто здесь зарегистрирован, — ровно то, что
+# одинаковый текст ответа скрывает словами. Считается при загрузке с
+# текущими параметрами Argon2, поэтому по времени неотличим от настоящего.
+_DECOY_HASH: Final = _hasher.hash(secrets.token_urlsafe(24))
+
+
+def burn_password_check(password: str) -> None:
+    """Потратить на пароль столько же, сколько стоила бы настоящая проверка."""
+    with contextlib.suppress(VerifyMismatchError, InvalidHashError):
+        _hasher.verify(_DECOY_HASH, password)
 
 
 def needs_rehash(password_hash: str) -> bool:

@@ -723,6 +723,11 @@
   margin-bottom: 24px;
 }
 
+/* Кнопка в сетке заглушки растянулась бы на всю ширину. */
+.soon .btn {
+  justify-self: start;
+}
+
 .demo-badge {
   display: inline-flex;
   align-items: center;

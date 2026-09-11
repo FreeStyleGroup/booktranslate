@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.document import DocumentStatus
 from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
 
 
@@ -94,6 +95,10 @@ class TranslationResult(BaseModel):
     Цифры отдаются не для красоты: по ним считается, сколько обращений к
     модели не понадобилось, и они же обосновывают заказчику скидку на
     повторный заказ.
+
+    Вызов переводит порцию, а не книгу: `total` — сколько взято этим
+    вызовом, `remaining` — сколько непереведённых осталось. Клиент зовёт
+    ручку, пока `remaining` не станет нулём.
     """
 
     total: int
@@ -105,6 +110,12 @@ class TranslationResult(BaseModel):
     # экономия на повторах и памяти.
     provider_calls: int
     saved_calls: int
+
+    # Сколько непереведённых сегментов осталось после этого вызова и в
+    # каком состоянии документ: «разобран», пока остаток есть, «на
+    # вычитке», когда его нет.
+    remaining: int
+    status: DocumentStatus
 
     # Расход этого запуска в токенах. Прочитанное из кэша отдельно: оно
     # стоит примерно десятую часть обычного ввода, и сложенное с ним

@@ -46,6 +46,10 @@ const nextConfig: NextConfig = {
   // Версия сервера в заголовке ответа — бесплатная подсказка тому, кто
   // подбирает уязвимость под конкретную версию.
   poweredByHeader: false,
+  // Самодостаточная сборка: в образ уезжают сервер и ровно те модули, что
+  // ему нужны, а не node_modules целиком (см. apps/web/Dockerfile). На
+  // Vercel не влияет — он собирает по-своему.
+  output: "standalone",
   env: {
     NEXT_PUBLIC_API_URL: API_URL,
   },

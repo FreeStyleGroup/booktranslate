@@ -14,7 +14,11 @@ import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, CData, Tag
+
+# NavigableString и PageElement пакет bs4 наружу не переэкспортирует —
+# строгая типизация принимает их только из модуля, где они определены.
+from bs4.element import NavigableString, PageElement
 
 # Не штатный xml.etree: описи приходят из чужого файла, а штатный разбор
 # разворачивает рекурсивно вложенные сущности («billion laughs») в гигабайты
@@ -58,7 +62,84 @@ IGNORED_TAGS = {"script", "style", "head", "title", "meta", "link", "noscript"}
 # приходилось помнить, что ключи словаря — это и есть теги.
 BLOCK_TAGS = list(BLOCK_KINDS)
 
+# Узлы, из которых складывается текст блока. Ровно те, что берёт
+# `get_text()`: комментарий, скрипт и стиль в bs4 — тоже подклассы
+# NavigableString, поэтому сравнение по точному типу, а не isinstance.
+_TEXT_TYPES = (NavigableString, CData)
+
 _XHTML_SUFFIXES = (".xhtml", ".html", ".htm")
+
+
+def find_blocks(soup: BeautifulSoup) -> list[Tag]:
+    """Целевые блоки разметки в порядке документа.
+
+    Один обход на разбор и на сборку. Номер блока в этом обходе —
+    единственное, что связывает сегмент с местом в файле, и любое
+    расхождение ставит перевод не в свой абзац, а всё, что дальше по главе,
+    сдвигает на один. Поэтому служебные теги здесь не удаляются (сборка
+    обязана вернуть их заказчику нетронутыми), а не замечаются: их текст в
+    счёт не идёт, а блок внутри них — не вложенный.
+    """
+    root = soup.body or soup
+    blocks: list[Tag] = []
+
+    for element in root.find_all(BLOCK_TAGS):
+        if not isinstance(element, Tag):
+            continue
+
+        if _under_ignored(element, root):
+            continue
+
+        # Вложенный блок отдаётся сам по себе; родитель, который его
+        # содержит, не должен выдать его текст второй раз.
+        if any(
+            not _under_ignored(nested, element)
+            for nested in element.find_all(BLOCK_TAGS)
+            if isinstance(nested, Tag)
+        ):
+            continue
+
+        if not block_text(element):
+            continue
+
+        blocks.append(element)
+
+    return blocks
+
+
+def block_strings(element: Tag) -> list[NavigableString]:
+    """Текстовые узлы блока — те, из которых складывается текст сегмента.
+
+    Отдаются сами узлы, а не строки: сборке нужно вписать перевод на место
+    ровно тех узлов, которые разбор прочитал, не трогая картинки и ссылки
+    между ними.
+    """
+    return [
+        node
+        for node in element.descendants
+        if isinstance(node, NavigableString)
+        and type(node) in _TEXT_TYPES
+        and not _under_ignored(node, element)
+    ]
+
+
+def block_text(element: Tag) -> str:
+    """Текст блока: то же, что `get_text(" ", strip=True)`, но без служебных тегов."""
+    parts = (str(node).strip() for node in block_strings(element))
+
+    return " ".join(part for part in parts if part)
+
+
+def _under_ignored(node: PageElement, stop: Tag) -> bool:
+    """Стоит ли между узлом и `stop` служебный тег (сам `stop` не в счёт)."""
+    for parent in node.parents:
+        if parent is stop:
+            return False
+
+        if parent.name in IGNORED_TAGS:
+            return True
+
+    return False
 
 
 def blocks_from_html(
@@ -72,30 +153,11 @@ def blocks_from_html(
     """
     soup = BeautifulSoup(markup, "html.parser")
 
-    for tag in soup.find_all(IGNORED_TAGS):
-        tag.decompose()
-
-    root = soup.body or soup
-    index = 0
-
-    for element in root.find_all(BLOCK_TAGS):
-        if not isinstance(element, Tag):
-            continue
-
-        # Вложенный блок отдаётся сам по себе; родитель, который его
-        # содержит, не должен выдать его текст второй раз.
-        if element.find(BLOCK_TAGS) is not None:
-            continue
-
-        text = element.get_text(" ", strip=True)
-        if not text:
-            continue
-
+    for index, element in enumerate(find_blocks(soup)):
         place = dict(location or {})
         place["block"] = index
-        index += 1
 
-        yield ParsedBlock(text=text, kind=BLOCK_KINDS[element.name], location=place)
+        yield ParsedBlock(text=block_text(element), kind=BLOCK_KINDS[element.name], location=place)
 
 
 class HtmlParser:

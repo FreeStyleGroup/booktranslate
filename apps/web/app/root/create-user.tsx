@@ -34,8 +34,24 @@ export function CreateUser() {
         </label>
 
         <label className="field">
-          <span>Рабочее пространство</span>
-          <input name="organization_name" type="text" required placeholder="Бюро переводов" />
+          <span>Новое рабочее пространство</span>
+          <input name="organization_name" type="text" placeholder="Бюро переводов" />
+        </label>
+
+        {/* Списка организаций у API нет, поэтому существующее пространство
+            указывается идентификатором. Одно из двух полей обязательно —
+            проверяет серверное действие, а не `required`: у пары «либо
+            то, либо это» браузерной проверки не бывает. */}
+        <label className="field">
+          <span>…или существующее</span>
+          <input
+            name="organization_id"
+            type="text"
+            placeholder="UUID пространства"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <small>Идентификатор из ответа на создание первого пользователя</small>
         </label>
 
         <label className="field">
@@ -67,6 +83,11 @@ export function CreateUser() {
             <b>{state.created.email}</b>
             <span className="muted"> · {state.created.organization}</span>
           </div>
+          {/* Идентификатор пространства показывается рядом с паролем: он
+              нужен, чтобы завести в это же пространство второго человека. */}
+          <span className="muted">
+            Пространство <code className="secret__id">{state.created.organizationId}</code>
+          </span>
           <code>{state.created.password}</code>
           <span className="muted">
             Передайте пароль лично. Второй раз он не покажется — в базе только хеш.

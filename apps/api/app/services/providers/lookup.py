@@ -303,6 +303,11 @@ def _references(value: Any) -> tuple[Reference, ...]:
         if url is None:
             # Источник без адреса непроверяем, а значит и не источник.
             continue
+        # Только веб-адреса: ответ модели — не доверенный ввод, а адрес
+        # позже станет ссылкой в интерфейсе. «javascript:» в href — это
+        # выполнение чужого кода в браузере редактора.
+        if not url.lower().startswith(("http://", "https://")):
+            continue
 
         found.append(Reference(title=_string(item.get("title")) or url, url=url))
 

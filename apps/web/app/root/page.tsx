@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { apiFetch, type CurrentUser } from "../lib/api";
-import { accessToken } from "../lib/session";
+import { apiFetch, unauthorized } from "../lib/api";
+import { currentUser } from "../lib/current-user";
+import { accessToken, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
-import { changeStatus } from "./actions";
 import { AdminLogin } from "./admin-login";
 import { CreateUser } from "./create-user";
 import "./root.css";
+import { StatusForm } from "./status-form";
 
 export const metadata: Metadata = {
   title: "Управление доступом — BookTranslate",
@@ -46,19 +49,37 @@ const FILTERS: { value: string; label: string }[] = [
   { value: "suspended", label: "Закрытые" },
 ];
 
-/** Кто пришёл. Никого — значит форма входа, не ошибка. */
-async function currentUser(): Promise<CurrentUser | null> {
-  const token = await accessToken();
+/* Страница списка. API отдаёт не больше 500 за раз и умеет смещение;
+   спрашиваем на одного больше, чем показываем, — так видно, есть ли
+   следующая страница, без отдельного запроса за общим числом. */
+const PAGE = 50;
 
-  if (token === undefined) {
-    return null;
+/** Адрес той же выборки с другим смещением. */
+function pageHref(status: string, query: string, offset: number): string {
+  const parameters = new URLSearchParams();
+
+  if (status !== "") {
+    parameters.set("status", status);
   }
 
-  try {
-    return await apiFetch<CurrentUser>("/auth/me", { token });
-  } catch {
-    return null;
+  if (query !== "") {
+    parameters.set("query", query);
   }
+
+  if (offset > 0) {
+    parameters.set("offset", String(offset));
+  }
+
+  const suffix = parameters.toString();
+
+  return suffix === "" ? "/root" : `/root?${suffix}`;
+}
+
+/** Смещение из адреса: только целое от нуля, остальное — как без него. */
+function parseOffset(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function moment(value: string | null): string {
@@ -91,9 +112,9 @@ function day(value: string | null): string {
 export default async function RootPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; query?: string }>;
+  searchParams: Promise<{ status?: string; query?: string; offset?: string }>;
 }) {
-  const me = await currentUser();
+  const me = await currentUser("/root");
 
   // Обычный пользователь и гость видят одно и то же: раздел не намекает,
   // что он существует и что кто-то до него не дотянулся.
@@ -101,7 +122,8 @@ export default async function RootPage({
     return <AdminLogin />;
   }
 
-  const { status = "", query = "" } = await searchParams;
+  const { status = "", query = "", offset: offsetParam } = await searchParams;
+  const offset = parseOffset(offsetParam);
   const parameters = new URLSearchParams();
 
   if (status !== "") {
@@ -112,18 +134,36 @@ export default async function RootPage({
     parameters.set("query", query);
   }
 
-  const suffix = parameters.toString();
+  parameters.set("limit", String(PAGE + 1));
+  parameters.set("offset", String(offset));
+
   let list: UserList;
 
   try {
-    list = await apiFetch<UserList>(`/admin/users${suffix === "" ? "" : `?${suffix}`}`, {
+    list = await apiFetch<UserList>(`/admin/users?${parameters.toString()}`, {
       token: await accessToken(),
     });
-  } catch {
+  } catch (error) {
+    if (unauthorized(error)) {
+      redirect(renewUrl(pageHref(status, query, offset)));
+    }
+
     // Недоступный API — не повод показать страницу ошибки на весь экран:
     // администратор должен видеть, что дело в связи, а не в его правах.
     return <AdminLogin unreachable />;
   }
+
+  const more = list.items.length > PAGE;
+  const items = list.items.slice(0, PAGE);
+
+  // Общее число известно только без поиска: счётчики считаются по
+  // состояниям, а не по строке запроса.
+  const total =
+    query !== ""
+      ? null
+      : status === ""
+        ? list.counts.pending + list.counts.active + list.counts.suspended
+        : (list.counts[status as keyof UserList["counts"]] ?? null);
 
   return (
     <div className="root">
@@ -181,7 +221,7 @@ export default async function RootPage({
               <span />
             </div>
 
-            {list.items.map((user) => (
+            {items.map((user) => (
               <div className="adm-table__row" role="row" key={user.id}>
                 <span>
                   <b>{user.full_name ?? user.email}</b>
@@ -202,35 +242,63 @@ export default async function RootPage({
                 </span>
                 <span className="adm-table__actions">
                   {user.status !== "active" && (
-                    <form action={changeStatus}>
-                      <input type="hidden" name="id" value={user.id} />
-                      <input type="hidden" name="status" value="active" />
-                      <button className="btn btn--primary btn--small" type="submit">
-                        {user.status === "pending" ? "Одобрить" : "Возобновить"}
-                      </button>
-                    </form>
+                    <StatusForm
+                      id={user.id}
+                      status="active"
+                      label={user.status === "pending" ? "Одобрить" : "Возобновить"}
+                      primary
+                    />
                   )}
                   {/* Приостановка и отклонение — одно состояние, но разные
                       поступки, и называться должны по-разному: отклоняют
                       заявку, приостанавливают работающий доступ. Позже сюда
                       же встанет автоматика окончания подписки. */}
                   {user.status !== "suspended" && !user.is_superuser && (
-                    <form action={changeStatus}>
-                      <input type="hidden" name="id" value={user.id} />
-                      <input type="hidden" name="status" value="suspended" />
-                      <button className="btn btn--ghost btn--small" type="submit">
-                        {user.status === "pending" ? "Отклонить" : "Приостановить"}
-                      </button>
-                    </form>
+                    <StatusForm
+                      id={user.id}
+                      status="suspended"
+                      label={user.status === "pending" ? "Отклонить" : "Приостановить"}
+                    />
                   )}
                 </span>
               </div>
             ))}
 
-            {list.items.length === 0 && (
-              <p className="adm-table__empty">Ничего не нашлось по этому отбору.</p>
+            {items.length === 0 && (
+              <p className="adm-table__empty">
+                {offset > 0
+                  ? "На этой странице пусто — список стал короче."
+                  : "Ничего не нашлось по этому отбору."}
+              </p>
             )}
           </div>
+
+          {(offset > 0 || more) && (
+            <nav className="adm-pager" aria-label="Страницы списка">
+              <span className="muted">
+                Показаны {offset + 1}–{offset + items.length}
+                {total !== null && ` из ${total}`}
+              </span>
+              <div className="adm-pager__links">
+                {offset > 0 && (
+                  <Link
+                    className="btn btn--ghost btn--small"
+                    href={pageHref(status, query, Math.max(0, offset - PAGE))}
+                  >
+                    ← Назад
+                  </Link>
+                )}
+                {more && (
+                  <Link
+                    className="btn btn--ghost btn--small"
+                    href={pageHref(status, query, offset + PAGE)}
+                  >
+                    Дальше →
+                  </Link>
+                )}
+              </div>
+            </nav>
+          )}
         </section>
       </main>
     </div>

@@ -1,20 +1,27 @@
-name: Release API
+name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
-# Образ собирается один раз на тег и дальше только продвигается по
+# Образы собираются один раз на тег и дальше только продвигаются по
 # окружениям. Пересборка «того же» кода перед продакшеном означала бы, что
 # в продакшен уезжает не то, что проверяли на стенде.
+#
+# Оба образа — одним тегом репозитория: витрина и API выкатываются парой,
+# и разные номера у половин одного выката только запутывают откат.
 jobs:
   image:
-    name: Образ API в GHCR
+    name: Образ ${{ matrix.app }} в GHCR
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
+    strategy:
+      matrix:
+        app: [api, web]
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +37,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/api
+          images: ghcr.io/${{ github.repository }}/${{ matrix.app }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -38,9 +45,11 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: apps/api
+          context: apps/${{ matrix.app }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Кеш слоёв — свой на каждый образ: под одним ключом две сборки
+          # затирали бы друг друга.
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}

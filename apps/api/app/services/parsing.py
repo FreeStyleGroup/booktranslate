@@ -12,10 +12,12 @@
 """
 
 import asyncio
+import logging
 import os
 import tempfile
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,9 @@ from app.services.errors import ConflictError, UnsupportedFormatError
 from app.services.parsers import DocumentParser, ParsedBlock, ParsingError, parser_for
 from app.services.segmentation import split_block
 from app.services.storage import ObjectStorage
+from app.services.translation import is_stale
+
+logger = logging.getLogger(__name__)
 
 # Разбор — обработка чужого материала, а не правка: наблюдателю он не нужен,
 # остальным ролям нужен. Набор совпадает с загрузкой намеренно: тот, кто
@@ -58,6 +63,12 @@ class ParsingService(TenantService):
         Повторный вызов на разобранном документе отклоняется: сегменты уже
         могли быть переведены и отредактированы, и молча заменить их значит
         потерять работу человека. Осознанный повтор — `force=True`.
+
+        Документ, застрявший в «разбирается», тоже берётся только с
+        `force=True` — и только если разбор молчит дольше порога: отметку
+        оставил убитый процесс, а не идущий разбор. Сегменты пишутся одной
+        транзакцией, поэтому у такого документа либо прежний полный набор,
+        либо ничего — терять нечего.
         """
         self._context.require(*PARSING_ROLES)
 
@@ -65,7 +76,27 @@ class ParsingService(TenantService):
         document = await documents.get(document_id)
 
         if document.status == DocumentStatus.PARSING:
-            raise ConflictError("Документ уже разбирается")
+            settings = get_settings()
+            stale = is_stale(
+                document.updated_at,
+                now=datetime.now(UTC),
+                threshold=timedelta(minutes=settings.translation_stale_minutes),
+            )
+
+            if not (force and stale):
+                hint = (
+                    f" Разбор молчит дольше {settings.translation_stale_minutes} мин: "
+                    "если он прерван, повторите с force=true."
+                    if stale
+                    else ""
+                )
+                raise ConflictError("Документ уже разбирается." + hint)
+
+            logger.warning(
+                "Документ %s взят на разбор повторно: прежний разбор молчал с %s",
+                document.id,
+                document.updated_at.isoformat(),
+            )
 
         if document.status != DocumentStatus.UPLOADED and not force:
             raise ConflictError(

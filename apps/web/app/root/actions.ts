@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { ApiError, apiFetch } from "../lib/api";
 import { accessToken } from "../lib/session";
 
-type Result = { error?: string };
+export type Result = { error?: string };
 
 // Идентификатор из формы уходит в адрес запроса, а серверное действие можно
 // вызвать и в обход отрисованной страницы. Непроверенное значение вида
@@ -28,18 +28,25 @@ export type CreatedUser = {
   email: string;
   password: string;
   organization: string;
+  organizationId: string;
 };
 
 export type CreateState = Result & { created?: CreatedUser };
 
-/** Открыть или закрыть доступ. */
-export async function changeStatus(formData: FormData): Promise<void> {
+/** Открыть или закрыть доступ. Отказ возвращается форме: молча
+    перерисованная строка с прежним состоянием выглядит как «кнопка не
+    сработала», и администратор жмёт её снова и снова. */
+export async function changeStatus(_previous: Result, formData: FormData): Promise<Result> {
   const token = await accessToken();
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
 
-  if (token === undefined || !UUID.test(id) || !STATUSES.has(status)) {
-    return;
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  if (!UUID.test(id) || !STATUSES.has(status)) {
+    return { error: "Запрос повреждён — обновите страницу" };
   }
 
   try {
@@ -48,12 +55,17 @@ export async function changeStatus(formData: FormData): Promise<void> {
       token,
       body: { status },
     });
-  } catch {
-    // Отказ показывать некуда: форма уходит и возвращается перерисовкой
-    // страницы, где состояние пользователя и так будет видно настоящее.
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
   }
 
   revalidatePath("/root");
+
+  return {};
 }
 
 /** Завести учётную запись и получить выданный пароль. */
@@ -69,16 +81,28 @@ export async function createUser(
 
   const email = String(formData.get("email") ?? "").trim();
   const organization = String(formData.get("organization_name") ?? "").trim();
+  const organizationId = String(formData.get("organization_id") ?? "").trim();
   const fullName = String(formData.get("full_name") ?? "").trim();
   const role = String(formData.get("role") ?? "owner");
 
-  if (email === "" || organization === "") {
-    return { error: "Нужны почта и название рабочего пространства" };
+  // Пространство задаётся либо названием (заводится новое), либо
+  // идентификатором существующего — так к работающей команде добавляют
+  // коллегу. Идентификатор проверяется здесь по той же причине, что и в
+  // changeStatus: в API он уйдёт как есть.
+  if (organizationId !== "" && !UUID.test(organizationId)) {
+    return { error: "Идентификатор рабочего пространства — UUID вида 8-4-4-4-12" };
+  }
+
+  if (email === "" || (organization === "" && organizationId === "")) {
+    return {
+      error: "Нужны почта и рабочее пространство: название нового или идентификатор существующего",
+    };
   }
 
   try {
     const created = await apiFetch<{
       password: string;
+      organization_id: string;
       organization_name: string;
       user: { email: string };
     }>("/admin/users", {
@@ -87,7 +111,8 @@ export async function createUser(
       body: {
         email,
         full_name: fullName === "" ? null : fullName,
-        organization_name: organization,
+        organization_name: organization === "" ? null : organization,
+        organization_id: organizationId === "" ? null : organizationId,
         role,
       },
     });
@@ -100,6 +125,7 @@ export async function createUser(
         email: created.user.email,
         password: created.password,
         organization: created.organization_name,
+        organizationId: created.organization_id,
       },
     };
   } catch (error) {

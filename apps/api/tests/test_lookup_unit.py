@@ -229,3 +229,26 @@ async def test_offline_lookup_says_so() -> None:
 
     assert explanation.found is False
     assert explanation.searches == 0
+
+
+async def test_reference_with_non_web_address_is_dropped() -> None:
+    """Адрес источника позже станет ссылкой в интерфейсе.
+
+    Ответ модели — не доверенный ввод: «javascript:» в href выполнил бы чужой
+    код в браузере редактора. Остаются только http и https.
+    """
+    answer = {
+        **ANSWER,
+        "sources": [
+            {"title": "Скрипт", "url": "javascript:alert(1)"},
+            {"title": "Файл", "url": "file:///etc/passwd"},
+            {"title": "Справочник", "url": "HTTPS://example.org/basis-risk"},
+        ],
+    }
+    lookup, _ = provider(Message(json.dumps(answer, ensure_ascii=False)))
+
+    explanation = await lookup.lookup(request())
+
+    assert [reference.url for reference in explanation.references] == [
+        "HTTPS://example.org/basis-risk"
+    ]

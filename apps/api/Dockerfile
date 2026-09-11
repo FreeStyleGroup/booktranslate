@@ -33,8 +33,14 @@ EXPOSE 8000
 # Проверка живости внутри образа: оркестратор узнаёт о зависшем процессе
 # сам, не дожидаясь жалоб. Запрос идёт мимо базы — её недоступность
 # перезапуском не лечится.
+#
+# Заголовок Host обязателен. В рабочей среде API отвечает только на имена
+# из ALLOWED_HOSTS, и запрос на 127.0.0.1 без него получает 400 «Invalid
+# host header»: контейнер числился бы больным всю жизнь, хотя работает.
+# Имя берётся из той же переменной, по которой прокси получает сертификат;
+# без неё (разработка, где разрешены любые имена) — localhost.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health', headers={'Host': os.environ.get('API_DOMAIN', 'localhost')}))"
 
 # proxy-headers: за обратным прокси адрес соединения — это адрес прокси, и
 # без разбора заголовков весь мир окажется одним клиентом для ограничителя

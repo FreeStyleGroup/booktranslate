@@ -16,7 +16,18 @@ export const ACCESS_COOKIE = "bt_access";
 export const REFRESH_COOKIE = "bt_refresh";
 export const ORGANIZATION_COOKIE = "bt_org";
 
+/* Отметка «сеанс только что продлён маршрутом /api/session/renew». Нужна
+   как стопор: страница, получившая от API отказ при живом печенье, уходит
+   на продление, и если API отвергает даже свежевыданный токен, без стопора
+   они гоняли бы друг друга по кругу. */
+export const RENEWED_COOKIE = "bt_renewed";
+
 const SECURE = process.env.NODE_ENV === "production";
+
+/** Адрес маршрута продления с возвратом на страницу `next`. */
+export function renewUrl(next: string): string {
+  return `/api/session/renew?next=${encodeURIComponent(next)}`;
+}
 
 /** Токен доступа текущего пользователя, если он вошёл. */
 export async function accessToken(): Promise<string | undefined> {
@@ -78,7 +89,7 @@ export async function saveSession(
 export async function clearSession(): Promise<void> {
   const jar = await cookies();
 
-  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ORGANIZATION_COOKIE]) {
+  for (const name of [ACCESS_COOKIE, REFRESH_COOKIE, ORGANIZATION_COOKIE, RENEWED_COOKIE]) {
     jar.delete(name);
   }
 }

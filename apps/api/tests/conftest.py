@@ -55,6 +55,12 @@ ROOT_PASSWORD = "root-password-for-tests"
 get_settings().rate_limit_per_minute = 100_000
 get_settings().auth_rate_limit_per_minute = 100_000
 
+# Окно гонки при ротации refresh-токена в тестах закрыто: проверка
+# «повтор гасит все сеансы» делает повтор сразу, и с окном по умолчанию
+# он считался бы гонкой клиента. Само окно проверяется отдельным тестом,
+# который включает его явно.
+get_settings().refresh_reuse_grace_seconds = 0
+
 requires_database = pytest.mark.skipif(
     DATABASE_URL is None,
     reason="нужен Postgres: задайте DATABASE_URL (в CI он задан)",

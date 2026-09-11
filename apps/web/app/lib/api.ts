@@ -5,8 +5,29 @@
    браузере — публичный (`NEXT_PUBLIC_API_URL`); в разработке оба сводятся к
    локальному запуску. */
 
+import { headers } from "next/headers";
+
 export const API_URL =
   process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+/* Адрес посетителя, если запрос пришёл от него.
+
+   Витрина ходит в API сама, и без этого заголовка API видел бы за всеми
+   пользователями один адрес — адрес витрины: ограничитель частоты считал
+   бы их одним клиентом, а список сессий показывал бы одну строку на всех.
+   Первый адрес в X-Forwarded-For ставит наш же прокси перед витриной и
+   чужие значения отбрасывает, поэтому ему можно верить. Вне запроса —
+   сборка, консоль — адреса нет, и это не ошибка. */
+async function clientAddress(): Promise<string | undefined> {
+  try {
+    const incoming = await headers();
+    const forwarded = incoming.get("x-forwarded-for")?.split(",")[0]?.trim();
+
+    return forwarded || incoming.get("x-real-ip")?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -16,6 +37,11 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/** API не признал токен: просрочен, отозван или учётная запись закрыта. */
+export function unauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 type Options = {
@@ -35,6 +61,12 @@ export async function apiFetch<T>(path: string, options: Options = {}): Promise<
 
   if (options.organizationId !== undefined) {
     headers["X-Organization-Id"] = options.organizationId;
+  }
+
+  const client = await clientAddress();
+
+  if (client !== undefined) {
+    headers["X-Forwarded-For"] = client;
   }
 
   const response = await fetch(`${API_URL}${path}`, {

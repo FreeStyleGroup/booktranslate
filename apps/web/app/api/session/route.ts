@@ -43,12 +43,35 @@ function foreign(request: Request): boolean {
   }
 }
 
+/* Потолок тела запроса. Форма входа умещается в сотни байт; всё, что
+   заметно больше, — не форма. Проверяется по заявленной длине до чтения
+   тела: читать мегабайты, чтобы потом их отбросить, значит дать любому
+   желающему занять память сервера. Без заявленной длины тело не читаем
+   вовсе — браузер её ставит всегда. */
+const MAX_BODY = 16 * 1024;
+
 export async function POST(request: Request): Promise<NextResponse> {
   if (foreign(request) || !(request.headers.get("content-type") ?? "").includes("json")) {
     return NextResponse.json({ error: "Запрос с чужой страницы" }, { status: 403 });
   }
 
-  const payload = (await request.json()) as Payload;
+  const declared = request.headers.get("content-length");
+
+  if (declared === null || !/^\d+$/.test(declared)) {
+    return NextResponse.json({ error: "Не указана длина запроса" }, { status: 411 });
+  }
+
+  if (Number(declared) > MAX_BODY) {
+    return NextResponse.json({ error: "Слишком большой запрос" }, { status: 413 });
+  }
+
+  let payload: Payload;
+
+  try {
+    payload = (await request.json()) as Payload;
+  } catch {
+    return NextResponse.json({ error: "Тело запроса не разобрано" }, { status: 400 });
+  }
 
   const email = text(payload.email);
   const password = text(payload.password);
@@ -94,7 +117,10 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     await saveSession(tokens, me.memberships[0]?.organization_id);
 
-    return NextResponse.json({ ok: true });
+    // Куда вести после входа решает сервер — он единственный видит ответ
+    // `/auth/me`. Администратору площадки кабинет показывать нечего: он
+    // распоряжается доступом, а не работает в чьём-то пространстве.
+    return NextResponse.json({ ok: true, home: me.user.is_superuser ? "/root" : "/app" });
   } catch (error) {
     if (error instanceof ApiError) {
       return NextResponse.json({ error: error.message }, { status: error.status });

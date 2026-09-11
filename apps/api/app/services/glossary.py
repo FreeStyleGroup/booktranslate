@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.core.config import get_settings
 from app.models.memory import GlossaryEntryKind, GlossaryTerm, GlossaryTermStatus
 from app.models.organization import Role
+from app.models.project import Project
 from app.services.base import TenantService
 from app.services.dictionaries import ImportedTerm
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
@@ -262,6 +263,7 @@ class GlossaryService(TenantService):
         у объекта уже есть идентификатор, на который можно сослаться.
         """
         self._context.require(*EDITING_ROLES)
+        await self._require_project(project_id)
 
         normalized = normalize_term(source_term)
         if not normalized or not target_term.strip():
@@ -340,6 +342,23 @@ class GlossaryService(TenantService):
             # идентификатор, но транзакцию закрывает вызывающий.
             await self._session.flush()
 
+    async def _require_project(self, project_id: uuid.UUID | None) -> None:
+        """Проект термина обязан быть проектом этой организации.
+
+        Сам термин пишется в свою организацию, но внешний ключ на чужой
+        проект связал бы его с чужой сущностью: удаление того проекта
+        каскадом унесло бы наши термины, а разница между ошибкой ключа и
+        успехом подсказывала бы, существует ли чужой идентификатор.
+        """
+        if project_id is None:
+            return
+
+        exists = await self._session.scalar(
+            self.scoped(Project).where(Project.id == project_id).with_only_columns(Project.id)
+        )
+        if exists is None:
+            raise NotFoundError("Проект не найден")
+
     async def import_terms(
         self,
         terms: Sequence[ImportedTerm],
@@ -362,6 +381,7 @@ class GlossaryService(TenantService):
         двадцать тысяч отдельных вставок — это минуты вместо секунд.
         """
         self._context.require(*EDITING_ROLES)
+        await self._require_project(project_id)
 
         limit = get_settings().max_import_terms
         if len(terms) > limit:

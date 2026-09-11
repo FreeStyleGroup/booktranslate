@@ -4,6 +4,7 @@
 знает ни про сессии SQLAlchemy, ни про то, в каком порядке пишутся записи.
 """
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.security import (
+    burn_password_check,
     create_access_token,
     generate_refresh_token,
     hash_password,
@@ -57,10 +59,17 @@ class AuthService:
         неверную почту и на неверный пароль, — и отдавать то же самое даром
         через соседнюю форму бессмысленно.
         """
+        # Почта приводится к нижнему регистру здесь же, где и в админке и в
+        # CLI: иначе User@ и user@ — две учётные записи, и администратор,
+        # заведший одну, не находит заявку другой.
+        email = email.strip().lower()
+
         # Хеш считается до проверки, а не после: иначе занятая почта
         # отвечает заметно быстрее свободной, и разница во времени говорит
         # ровно то, что мы только что перестали говорить словами.
-        password_hash = hash_password(password)
+        # В отдельном потоке: Argon2 держит процессор десятую долю секунды,
+        # и в цикле событий это остановило бы все остальные запросы.
+        password_hash = await asyncio.to_thread(hash_password, password)
 
         existing = await self._session.scalar(select(User).where(User.email == email))
         if existing is not None:
@@ -94,15 +103,19 @@ class AuthService:
         user_agent: str | None = None,
         ip_address: str | None = None,
     ) -> TokenPair:
+        email = email.strip().lower()
         user = await self._session.scalar(select(User).where(User.email == email))
 
         # Один и тот же ответ на «нет такого пользователя» и «неверный
         # пароль»: разные ответы позволяют выяснить перебором, кто здесь
-        # зарегистрирован.
+        # зарегистрирован. Одинаковым должно быть и время: без проверки
+        # подставного хеша незнакомая почта отвечала бы мгновенно, а
+        # знакомая — после Argon2, и это та же подсказка, только по часам.
         if user is None or user.password_hash is None:
+            await asyncio.to_thread(burn_password_check, password)
             raise AuthError("Неверная почта или пароль")
 
-        if not verify_password(password, user.password_hash):
+        if not await asyncio.to_thread(verify_password, password, user.password_hash):
             raise AuthError("Неверная почта или пароль")
 
         # Состояние доступа сообщается только после верного пароля. До него
@@ -114,7 +127,7 @@ class AuthService:
         # Единственный момент, когда пароль известен в открытом виде, —
         # здесь. Если параметры Argon2 ужесточились, пересчитываем сейчас.
         if needs_rehash(user.password_hash):
-            user.password_hash = hash_password(password)
+            user.password_hash = await asyncio.to_thread(hash_password, password)
 
         user.last_login_at = datetime.now(UTC)
 
@@ -140,8 +153,12 @@ class AuthService:
         ip_address: str | None = None,
     ) -> TokenPair:
         token_hash = hash_refresh_token(refresh_token)
+        # Строка блокируется на время ротации: два параллельных обновления
+        # одним токеном без блокировки оба прочитали бы «не отозван» и
+        # выдали бы две пары — и детектор повторного использования их не
+        # заметил бы. С блокировкой второе ждёт первого и видит отзыв.
         session_row = await self._session.scalar(
-            select(RefreshSession).where(RefreshSession.token_hash == token_hash)
+            select(RefreshSession).where(RefreshSession.token_hash == token_hash).with_for_update()
         )
 
         if session_row is None:
@@ -150,12 +167,16 @@ class AuthService:
         now = datetime.now(UTC)
 
         if session_row.revoked_at is not None:
-            # По отозванному токену пришли повторно. Либо это гонка
-            # клиента, либо украденная копия — различить нельзя, поэтому
-            # гасим все сессии пользователя и заставляем войти заново.
-            await self._revoke_all(session_row.user_id, now)
-            await self._session.commit()
-            raise AuthError("Токен обновления уже использован; сессии сброшены")
+            # По отозванному токену пришли повторно. Внутри короткого окна
+            # после ротации это гонка клиента — две вкладки, открытые разом;
+            # повтор отвергается, но сеансы не трогаем. Позже — украденная
+            # копия: гасим все сессии пользователя и заставляем войти заново.
+            grace = timedelta(seconds=get_settings().refresh_reuse_grace_seconds)
+            if now - session_row.revoked_at >= grace:
+                await self._revoke_all(session_row.user_id, now)
+                await self._session.commit()
+                raise AuthError("Токен обновления уже использован; сессии сброшены")
+            raise AuthError("Токен обновления уже использован")
 
         if session_row.expires_at <= now:
             raise AuthError("Срок действия токена обновления истёк")

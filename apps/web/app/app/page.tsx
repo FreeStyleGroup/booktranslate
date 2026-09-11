@@ -1,14 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { apiFetch } from "../lib/api";
-import { accessToken, organizationId } from "../lib/session";
+import { apiFetch, unauthorized } from "../lib/api";
+import { currentUser } from "../lib/current-user";
+import { accessToken, organizationId, renewUrl } from "../lib/session";
 
 /* Обзор кабинета.
 
    Данные берутся одним запросом к сводке (`GET /overview`): кабинет
    открывают чаще всего, и собирать его десятком запросов значит открывать
    три секунды. Без сеанса показывается тот же экран на демонстрационных
-   числах — с пометкой, чтобы никто не принял их за свои. */
+   числах — с пометкой, чтобы никто не принял их за свои. Отказ API при
+   живом сеансе демонстрацией не прикрывается: страница уходит на
+   продление (см. lib/current-user.ts). */
 
 type Overview = {
   projects: number;
@@ -210,9 +214,14 @@ async function load(): Promise<{ data: Overview; live: boolean }> {
       }),
       live: true,
     };
-  } catch {
-    // Просроченный токен или недоступный API — не повод показать пустой
-    // экран; демонстрация честно помечена.
+  } catch (error) {
+    // Токен отвергнут — сеанс кончился раньше печенья; продление либо
+    // выдаст новый, либо выведет ко входу. Недоступный API — не повод
+    // показать пустой экран; демонстрация честно помечена.
+    if (unauthorized(error)) {
+      redirect(renewUrl("/app"));
+    }
+
     return { data: DEMO, live: false };
   }
 }
@@ -221,7 +230,37 @@ function thousands(value: number): string {
   return value.toLocaleString("ru-RU");
 }
 
+/* Вошедший без организации. Демонстрацию ему показывать нельзя: он вошёл
+   и примет чужие числа за свои. Администратор площадки к организациям не
+   привязан по замыслу — его место в управлении доступом. */
+function NoWorkspace({ superuser }: { superuser: boolean }) {
+  return (
+    <section className="tile soon">
+      <span className="soon__mark" aria-hidden="true">
+        🏢
+      </span>
+      <h2>У вас нет рабочего пространства</h2>
+      <p className="lead">
+        {superuser
+          ? "Учётная запись администратора площадки не состоит ни в одной организации, и кабинету нечего показать. Учётные записи и рабочие пространства заводятся в управлении доступом."
+          : "Учётная запись не состоит ни в одной организации. Попросите администратора добавить вас в рабочее пространство."}
+      </p>
+      {superuser && (
+        <Link className="btn btn--primary" href="/root">
+          Управление доступом
+        </Link>
+      )}
+    </section>
+  );
+}
+
 export default async function DashboardPage() {
+  const me = await currentUser("/app");
+
+  if (me !== null && me.memberships.length === 0) {
+    return <NoWorkspace superuser={me.user.is_superuser} />;
+  }
+
   const { data, live } = await load();
 
   const approved = data.segments_by_status.approved ?? 0;
