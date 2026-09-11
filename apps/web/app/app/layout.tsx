@@ -9,6 +9,7 @@ import { accessToken, organizationId, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
 import "./cabinet.css";
 import { SideNav, type NavCounts } from "./side-nav";
+import { NavToggle } from "./nav-toggle";
 import { ThemeToggle } from "../theme-toggle";
 
 export const metadata: Metadata = {
@@ -76,6 +77,8 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
 
       <div className="cab__main">
         <header className="cab__top">
+          <NavToggle />
+
           <div className="cab__search">
             <span aria-hidden="true">🔍</span>
             <span>Поиск по сегментам, терминам и документам</span>

@@ -48,6 +48,8 @@
     Consolas, monospace;
 
   --maxw: 1280px;
+  /* Высота шапки: по ней равняются логотип и полоса кнопок. */
+  --top-h: 56px;
   --ease: cubic-bezier(0.22, 0.72, 0.28, 1);
 }
 
@@ -190,8 +192,9 @@ a {
 .top__pill {
   display: flex;
   align-items: center;
+  min-height: var(--top-h);
   gap: 8px;
-  padding: 7px 7px 7px 22px;
+  padding: 6px 7px 6px 22px;
   border-radius: 16px;
   border: 1px solid var(--glass-line);
   /* Плотнее обычного стекла: полоса проплывает и над тёмными разворотами,
@@ -212,7 +215,11 @@ a {
   font-weight: 650;
   font-size: 18px;
   letter-spacing: -0.02em;
-  padding: 9px 16px;
+  /* Высота задаётся, а не набегает из отступов: полоса справа собрана из
+     кнопок, и без общей высоты логотип оказывается ниже неё на семь
+     точек — вровень они не стоят. */
+  min-height: var(--top-h);
+  padding: 0 16px;
   margin-left: -16px;
   border-radius: 14px;
   border: 1px solid var(--glass-line);
@@ -272,6 +279,199 @@ a {
 @media (max-width: 1120px) {
   .nav {
     display: none;
+  }
+}
+
+
+
+/* ── Переключатель языка ──
+   Рядом с темой и по тем же правилам: одна высота, один радиус, одна
+   реакция на наведение. Код языка подписан рядом со значком — глобус без
+   подписи не говорит, какой язык сейчас включён. */
+.lang {
+  position: relative;
+  display: flex;
+}
+
+.lang__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  display: grid;
+  gap: 2px;
+  min-width: 190px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-line);
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--glass-top);
+}
+
+/* 🔥 Своё display перебивает атрибут hidden: у браузера это правило
+   слабее авторского, и панель оставалась раскрытой навсегда. */
+.lang__panel[hidden],
+.mmenu__panel[hidden] {
+  display: none;
+}
+
+.lang__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lang__item b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+}
+
+.lang__item i {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.lang__item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+}
+
+.lang__item.is-active {
+  color: var(--ink);
+  background: var(--brand-tint);
+}
+
+.lang__item:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* ── Меню на узких экранах ──
+   Полоса шапки рассчитана на десктоп: логотип, разделы, тема и две
+   кнопки. На телефоне это шире экрана, поэтому разделы и кнопки входа
+   уходят в раскрывающийся список, а в полосе остаётся кнопка с тремя
+   полосками. Ниже 1120 точек разделы и так были спрятаны — теперь они
+   снова доступны, а не просто исчезают. */
+.mmenu {
+  position: relative;
+  display: none;
+}
+
+.mmenu__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  width: min(300px, calc(100vw - 36px));
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid var(--glass-line);
+  background: color-mix(in srgb, var(--paper) 97%, transparent);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  box-shadow: var(--shadow-soft), inset 0 1px 0 var(--glass-top);
+}
+
+.mmenu__nav {
+  display: grid;
+  gap: 2px;
+}
+
+/* Высота строки под палец: 44 точки — нижняя граница, ниже которой по
+   ссылке начинают промахиваться. */
+.mmenu__nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.mmenu__nav a:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.mmenu__actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.mmenu__actions .btn {
+  width: 100%;
+  height: 46px;
+}
+
+@media (max-width: 1120px) {
+  .mmenu {
+    display: block;
+  }
+
+  /* Два класса, а не один: .btn{display:inline-flex} объявлен ниже по
+     файлу, и при равной силе побеждал бы он — кнопки оставались бы в
+     полосе и растягивали страницу. */
+  .top__pill .top__enter {
+    display: none;
+  }
+
+  .top__pill {
+    padding: 6px 10px;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 620px) {
+  :root {
+    --top-h: 48px;
+  }
+
+  .top {
+    top: 10px;
+  }
+
+  .top__inner {
+    gap: 10px;
+  }
+
+  .logo {
+    font-size: 16px;
+    padding: 0 13px;
+    margin-left: -13px;
+  }
+
+  .top__pill {
+    /* 34 (кнопка) + 12 (отступы) + 2 (рамка) = 48 — высота логотипа. */
+    padding: 6px 8px;
+    gap: 2px;
+  }
+
+  .top__theme,
+  .mmenu__btn {
+    width: 34px;
+    height: 34px;
   }
 }
 
@@ -352,23 +552,25 @@ a {
 /* Переключатель темы в шапке главной. Круглая кнопка под стать
    стеклянной полосе: прямоугольная рядом с «Войти» читалась бы третьей
    кнопкой действия, а это переключатель вида, а не шаг сценария. */
+/* Иконки шапки — без рамки и подложки: в стеклянной полосе каждая
+   кнопка в кружке читается как отдельный элемент управления, и три
+   кружка подряд спорят с логотипом за внимание. Остаётся сам значок,
+   область нажатия при этом прежняя — 38 точек. */
 .top__theme {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   flex: none;
   display: grid;
   place-items: center;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ink) 14%, var(--line));
-  background: var(--glass-strong);
+  border: 0;
+  background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
-  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: color 0.2s var(--ease);
 }
 
 .top__theme:hover {
   color: var(--ink);
-  border-color: color-mix(in srgb, var(--ink) 30%, var(--line));
 }
 
 .top__theme svg {
@@ -547,7 +749,10 @@ h3 {
   align-items: center;
   gap: clamp(28px, 3.4vw, 56px);
   /* Сверху — под плавающую навигацию (18 + 60) плюс воздух. */
-  padding: 134px 0 82px;
+  /* padding-block, а не шорткат: .hero — это .wrap, и шорткат обнулял
+     её боковые отступы. Текст упирался в края экрана, на телефоне
+     особенно заметно. */
+  padding-block: 134px 82px;
 }
 
 .hero .lead {
@@ -558,9 +763,12 @@ h3 {
 
 @media (max-width: 1080px) {
   .hero {
-    grid-template-columns: 1fr;
+    /* minmax(0,…), а не 1fr: у «1fr» нижняя граница — ширина содержимого,
+       и таблица макета внутри распирала колонку до 447 точек при экране
+       в 375. Страница уезжала вбок целиком, вместе с заголовком. */
+    grid-template-columns: minmax(0, 1fr);
     min-height: auto;
-    padding: 108px 0 24px;
+    padding-block: 108px 24px;
   }
 }
 
@@ -569,7 +777,11 @@ h3 {
    фон, который замечают, мешает читать заголовок. */
 .aurora {
   position: absolute;
-  inset: -20% -10% auto -10%;
+  /* По бокам ровно по краю окна: вылет на 10% давал горизонтальную
+     прокрутку всей страницы — сияние декоративное, а прокрутка от него
+     настоящая. Сверху вылет оставлен: он уходит под шапку и ничего не
+     двигает. */
+  inset: -20% 0 auto 0;
   height: 130vh;
   z-index: -1;
   pointer-events: none;
@@ -838,7 +1050,7 @@ h3 {
 .panel__head,
 .seg {
   display: grid;
-  grid-template-columns: 46px 1fr 1fr 126px;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 126px;
   gap: 18px;
   padding: 15px 20px;
   align-items: start;
@@ -867,7 +1079,7 @@ h3 {
 }
 
 .seg--terms {
-  grid-template-columns: 1fr 58px 152px;
+  grid-template-columns: minmax(0, 1fr) 58px 152px;
 }
 
 .seg--formats,
@@ -937,6 +1149,21 @@ h3 {
   color: var(--brand-dark);
 }
 
+
+/* ── Макет первого экрана на телефоне ──
+   Таблица с номерами сегментов, исходником, переводом и отметкой — это
+   иллюстрация к тексту, и на 375 точках она превращается в нечитаемую
+   лесенку: четыре колонки требуют минимум 447. Пересобирать её в
+   вертикальные карточки смысла нет — на телефоне первый экран должен
+   быть коротким, заголовок и кнопка выше сгиба. Поэтому на телефоне
+   иллюстрация не показывается вовсе; на планшете (до 1080) она
+   остаётся под текстом и там читается. */
+@media (max-width: 620px) {
+  .showcase {
+    display: none;
+  }
+}
+
 /* ── Карточки ── */
 
 .grid {
@@ -945,23 +1172,23 @@ h3 {
 }
 
 .grid--2 {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .grid--3 {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 @media (max-width: 1000px) {
   .grid--3 {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 680px) {
   .grid--2,
   .grid--3 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1028,7 +1255,11 @@ h3 {
 
 .split {
   display: grid;
-  grid-template-columns: 1fr 1.05fr;
+  /* minmax(0,…) вместо голого fr: иначе нижняя граница колонки — ширина
+     её содержимого, и панель с неразрывными строками распирает колонку
+     за пределы обёртки. На телефоне такой блок выходит за правый край и
+     остаётся без отступа. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
   gap: clamp(36px, 5vw, 72px);
   align-items: center;
 }
@@ -1039,7 +1270,7 @@ h3 {
 
 @media (max-width: 1000px) {
   .split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .split--flip .split__text {
@@ -1253,7 +1484,9 @@ h3 {
 
 .foot {
   border-top: 1px solid var(--line);
-  padding: 34px 0;
+  /* padding-block: подвал — это .wrap, и шорткат обнулял её боковые
+     отступы; строка с адресом липла к краю экрана. */
+  padding-block: 34px;
   font-size: 14px;
   color: var(--ink-faint);
   display: flex;
@@ -1279,19 +1512,21 @@ h3 {
   grid-template-columns: 0.85fr 1fr;
 }
 
+.auth__side {
+  padding: 44px;
+  display: flex;
+}
+
+/* 🔥 Базовое правило — ВЫШЕ медиазапроса: при равной силе побеждает то,
+   что ниже по файлу, и «display: flex» отменял бы «display: none». */
 @media (max-width: 900px) {
   .auth {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auth__side {
     display: none;
   }
-}
-
-.auth__side {
-  padding: 44px;
-  display: flex;
 }
 
 .auth__side-inner {

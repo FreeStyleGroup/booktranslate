@@ -151,7 +151,7 @@
 
 @media (max-width: 620px) {
   .adm-create {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -349,7 +349,7 @@
   }
 
   .adm-table__row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     padding: 18px 4px;
   }

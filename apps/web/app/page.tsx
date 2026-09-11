@@ -4,6 +4,8 @@
    чьи-то данные. Когда страница начнёт показывать реальный проект, константы
    заменятся запросом — разметка останется та же. */
 
+import { LangSwitch } from "./lang-switch";
+import { MobileMenu } from "./mobile-menu";
 import { ThemeToggle } from "./theme-toggle";
 import { Reveal } from "./reveal";
 
@@ -243,13 +245,17 @@ export default function Home() {
               <a href="#price">Стоимость</a>
               <a href="#faq">Вопросы</a>
             </nav>
+            <LangSwitch />
             <ThemeToggle className="top__theme" />
-            <a className="btn btn--ghost btn--small" href="/login">
+            {/* На узких экранах эти две кнопки уезжают в меню: вместе с
+                логотипом и темой они в полосу не помещаются. */}
+            <a className="btn btn--ghost btn--small top__enter" href="/login">
               Войти
             </a>
-            <a className="btn btn--primary btn--small" href="/register">
+            <a className="btn btn--primary btn--small top__enter" href="/register">
               Регистрация <i aria-hidden="true">↗</i>
             </a>
+            <MobileMenu />
           </div>
         </div>
       </header>
@@ -691,8 +697,11 @@ export default function Home() {
                 будет потрачен первый рубль.
               </p>
               <div className="hero__actions">
-                <a className="btn btn--primary" href={`mailto:${CONTACT_EMAIL}`}>
-                  Написать нам
+                {/* Регистрация, а не письмо: заявка через форму заводит
+                    рабочее пространство и попадает к администратору, а
+                    письмо в ящик теряется и ничего в системе не создаёт. */}
+                <a className="btn btn--primary" href="/register">
+                  Зарегистрироваться <i aria-hidden="true">↗</i>
                 </a>
                 <a className="btn btn--ghost" href="#how">
                   Ещё раз про порядок работы
