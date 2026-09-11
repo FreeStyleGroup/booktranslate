@@ -164,23 +164,7 @@ export default async function DocumentPage({
         <Passport profile={profile.data} book={book} />
       )}
 
-      {parsed && (
-        <section className="tile wk-call">
-          <h3>Следующий шаг — термины</h3>
-          <p>
-            Программа пройдёт по тексту и соберёт то, что в нём повторяется:
-            термины, аббревиатуры, обозначения. Решить их надо один раз и до
-            перевода — слово, отданное модели на усмотрение, в сорока сегментах
-            будет названо по-разному, и ловить это потом придётся тому, кто
-            читал исходник.
-          </p>
-          <div className="tile__foot">
-            <Link className="btn btn--primary btn--small" href={`/app/terms?document=${book.id}`}>
-              Термины книги
-            </Link>
-          </div>
-        </section>
-      )}
+      {parsed && <NextStep book={book} profile={profile.data} />}
 
       {parsed && segments.data !== undefined && segments.data.items.length > 0 && (
         <section className="tile">
@@ -245,6 +229,52 @@ export default async function DocumentPage({
         )}
       </section>
     </>
+  );
+}
+
+/* Что делать с книгой дальше.
+
+   Одна карточка на три случая, а не три подряд: у книги в каждый момент
+   ровно один следующий шаг, и показывать рядом «решите термины» и
+   «переведите» значит предлагать сделать то, что всё равно не выйдет. */
+function NextStep({ book, profile }: { book: Document; profile?: DocumentProfile }) {
+  const waiting = profile?.undecided_terms ?? 0;
+
+  if (waiting > 0) {
+    return (
+      <section className="tile wk-call">
+        <h3>
+          {thousands(waiting)} {plural(waiting, "термин", "термина", "терминов")} ждёт
+          решения
+        </h3>
+        <p>
+          Пока они не решены, перевод не начнётся. Это не придирка: слово,
+          отданное модели на усмотрение, в сорока сегментах будет названо
+          по-разному, и ловить это потом придётся тому, кто читал исходник.
+        </p>
+        <div className="tile__foot">
+          <Link className="btn btn--primary btn--small" href={`/app/terms?document=${book.id}`}>
+            Разобрать термины
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="tile wk-call">
+      <h3>Следующий шаг — термины</h3>
+      <p>
+        Программа пройдёт по тексту и соберёт то, что в нём повторяется:
+        термины, аббревиатуры, обозначения. Решается это один раз и до
+        перевода, а дальше держит всю книгу и все следующие книги проекта.
+      </p>
+      <div className="tile__foot">
+        <Link className="btn btn--primary btn--small" href={`/app/terms?document=${book.id}`}>
+          Термины книги
+        </Link>
+      </div>
+    </section>
   );
 }
 

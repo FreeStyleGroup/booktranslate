@@ -46,13 +46,6 @@
   color: var(--brand);
 }
 
-/* Полоса под заголовком: кнопка «новый проект» либо развёрнутая форма
-   на её месте. Отдельной строкой, а не в заголовке: форма, вставшая
-   рядом с названием раздела, разъезжается на первой же правке. */
-.wk-bar {
-  margin-bottom: 20px;
-}
-
 /* ── Пусто ── */
 
 .wk-empty {
@@ -263,6 +256,49 @@
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
+}
+
+/* ── Поиск по списку ── */
+
+.wk-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 38px;
+  min-width: 0;
+  width: min(280px, 100%);
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper-tint);
+  transition: border-color 0.2s var(--ease);
+}
+
+.wk-find:focus-within {
+  border-color: var(--brand);
+}
+
+.wk-find span {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.wk-find input {
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  min-width: 0;
+  width: 100%;
+}
+
+/* У поля type="search" браузер рисует свой крестик очистки — рядом с нашим
+   значком поиска получается два лишних элемента на одну строку. */
+.wk-find input::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 /* ── Список книг ── */

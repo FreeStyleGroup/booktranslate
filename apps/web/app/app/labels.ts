@@ -83,11 +83,11 @@ export const GLOSSARY_KIND: Record<string, string> = {
 /** Чем разряды отличаются. Показывается там, где разряд выбирают: без
  *  пояснения «обозначение» и «не переводится» выглядят одинаково. */
 export const GLOSSARY_KIND_HINT: Record<string, string> = {
-  term: "обычное слово: valve → клапан",
-  abbreviation: "ПЛК, HMI — при первом употреблении раскрывается",
-  do_not_translate: "ISO, USB, артикул — переносится дословно",
-  notation: "σ, W₀, LT1 — переводу не подлежит, но различается",
-  proper_name: "фирма, модель, площадка — решает человек",
+  term: "обычное слово: thread → поток",
+  abbreviation: "TLS, SDK — при первом употреблении раскрывается",
+  do_not_translate: "JSON, HTTP, имя поля — переносится дословно",
+  notation: "O(n), Δt, x₀ — переводу не подлежит, но различается",
+  proper_name: "фирма, продукт, стандарт — решает человек",
 };
 
 export const CHECK_LABEL: Record<string, string> = {

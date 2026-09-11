@@ -28,36 +28,38 @@ const SEGMENTS: {
 }[] = [
   {
     no: 214,
-    src: "Tighten the retaining bolts to 42 N·m in a diagonal sequence.",
-    dst: "Затяните стопорные болты моментом 42 Н·м крест-накрест.",
+    src: "Send the request with the header Idempotency-Key set to a UUID.",
+    dst: "Отправьте запрос с заголовком Idempotency-Key, содержащим UUID.",
     verdict: "ok",
     note: "Проверено",
   },
   {
     no: 215,
-    src: "Do not exceed the maximum inlet pressure of 16 bar.",
-    dst: "Не превышайте максимальное давление на входе 16 бар.",
+    src: "Do not exceed the maximum pool size of 32 connections.",
+    dst: "Не превышайте предельный размер пула — 32 соединения.",
     verdict: "ok",
     note: "Из памяти",
   },
   {
     no: 216,
-    src: "The impeller shaft must be replaced together with the seal kit.",
-    dst: "Вал крыльчатки заменяется вместе с комплектом уплотнений.",
+    src: "The primary node must be restarted together with its replica set.",
+    dst: "Главный узел перезапускается вместе с набором реплик.",
     verdict: "warn",
     note: "Термин",
   },
   {
     no: 217,
-    src: "Refer to section 7.3 for the wiring diagram of the control unit.",
-    dst: "Схема подключения блока управления приведена в разделе 7.3.",
+    src: "Refer to section 7.3 for the full list of environment variables.",
+    dst: "Полный список переменных окружения приведён в разделе 7.3.",
     verdict: "ok",
     note: "Проверено",
   },
   {
+    // Число в переводе не то, что в исходнике: ровно та ошибка, которую
+    // ищет проверка чисел, и ровно та, которую человек не замечает.
     no: 218,
-    src: "Failure to observe this warning may result in severe injury.",
-    dst: "Несоблюдение предупреждения может привести к тяжёлой травме.",
+    src: "The access token expires after 3600 seconds.",
+    dst: "Токен доступа истекает через 360 секунд.",
     verdict: "danger",
     note: "Числа",
   },
@@ -163,11 +165,11 @@ const CANDIDATES: {
   verdict: Verdict;
   note: string;
 }[] = [
-  { term: "impeller", freq: 34, verdict: "ok", note: "крыльчатка" },
-  { term: "check valve", freq: 21, verdict: "ok", note: "обратный клапан" },
-  { term: "PLC", freq: 18, verdict: "info", note: "раскрыть при первом" },
-  { term: "basis risk", freq: 9, verdict: "warn", note: "ждёт решения" },
-  { term: "ISO 9001", freq: 4, verdict: "ok", note: "не переводится" },
+  { term: "replica set", freq: 34, verdict: "ok", note: "набор реплик" },
+  { term: "rate limit", freq: 21, verdict: "ok", note: "ограничение частоты" },
+  { term: "TLS", freq: 18, verdict: "info", note: "раскрыть при первом" },
+  { term: "cold start", freq: 9, verdict: "warn", note: "ждёт решения" },
+  { term: "RFC 7519", freq: 4, verdict: "ok", note: "не переводится" },
 ];
 
 const CHECKS = [
@@ -281,8 +283,8 @@ export default function Home() {
               </h1>
               <p className="lead">
                 Книгу на восемьсот страниц нельзя просто «прогнать через
-                переводчик»: цена ошибки здесь не стиль, а момент затяжки,
-                давление и класс защиты. Сначала разбираем документ и
+                переводчик»: цена ошибки здесь не стиль, а срок жизни токена,
+                предел частоты и имя поля в запросе. Сначала разбираем документ и
                 договариваемся о терминах, потом переводим, потом проверяем — и
                 собираем обратно в тот же файл, со всем оформлением.
               </p>
@@ -330,7 +332,7 @@ export default function Home() {
                       <span />
                       <span />
                     </span>
-                    <span className="panel__file">pump-manual-v4.docx</span>
+                    <span className="panel__file">api-reference-v4.docx</span>
                     <span>раздел 7 · 218 из 1 240</span>
                   </div>
                   <div className="panel__head">

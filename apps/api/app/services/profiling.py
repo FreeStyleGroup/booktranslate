@@ -28,6 +28,7 @@ from app.services.base import TenantService
 from app.services.errors import NotFoundError
 from app.services.memory import TranslationMemory, fingerprint
 from app.services.pricing import Forecast, forecast
+from app.services.terminology import TerminologyService
 
 # Сколько строк читать из базы за раз при обходе непереведённых сегментов.
 # Обход нужен целиком — отпечаток считается в Python, тем же кодом, что и
@@ -55,6 +56,11 @@ class DocumentProfile:
     # Повтор переводится один раз — и ради единообразия, и ради денег.
     unique_untranslated: int = 0
     repeated: int = 0
+
+    # Кандидатов в словарь без решения. Пока их больше нуля, перевод не
+    # начнётся, и знать об этом надо до того, как нажать «перевести», а не
+    # в ответ на нажатие.
+    undecided_terms: int = 0
     # Из различных текстов — те, что память переводов закрывает уже сейчас.
     memory_matches: int = 0
 
@@ -87,6 +93,9 @@ class ProfilingService(TenantService):
 
         profile.by_kind = await self._grouped(document.id, Segment.kind)
         profile.by_status = await self._grouped(document.id, Segment.status)
+        profile.undecided_terms = await TerminologyService(self._session, self._context).undecided(
+            document.id
+        )
 
         await self._billable(
             document.id,

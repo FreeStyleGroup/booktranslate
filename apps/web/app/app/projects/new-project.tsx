@@ -11,7 +11,7 @@
    Форма свёрнута, пока её не попросили: на экране со списком главное —
    список, а не пустые поля над ним. */
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ReactNode } from "react";
 
 import { createProject, type Result } from "../actions";
 
@@ -37,21 +37,54 @@ const LANGUAGES = [
    и страница пересобирает эту форму заново — по ключу (см. page.tsx).
    Закрывать её здесь, глядя на результат действия, значит писать состояние
    из эффекта и получать лишний круг отрисовки. */
-export function NewProject({ first }: { first: boolean }) {
+export function NewProject({
+  first,
+  children,
+}: {
+  first: boolean;
+  children: ReactNode;
+}) {
   // Первый проект заводят сразу — без него в кабинете нечего делать, и
   // прятать форму за кнопкой значит прятать единственное доступное
   // действие.
   const [open, setOpen] = useState(first);
   const [state, action, busy] = useActionState(createProject, EMPTY);
 
-  if (!open) {
-    return (
-      <button className="btn btn--primary" type="button" onClick={() => setOpen(true)}>
-        Новый проект
-      </button>
-    );
-  }
+  /* Заголовок раздела приходит сюда содержимым, а не живёт отдельно: кнопка
+     стоит в его строке справа, а форма раскрывается под ним — значит обе
+     части принадлежат одному узлу дерева. Текст заголовка при этом остаётся
+     серверным, в браузер уезжает только кнопка. */
+  return (
+    <>
+      <header className="wk-head">
+        {children}
 
+        <button
+          className="btn btn--primary"
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((was) => !was)}
+        >
+          Новый проект <i aria-hidden="true">+</i>
+        </button>
+      </header>
+
+      {open && <Form action={action} busy={busy} state={state} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function Form({
+  action,
+  busy,
+  state,
+  onClose,
+}: {
+  action: (formData: FormData) => void;
+  busy: boolean;
+  state: Result;
+  onClose: () => void;
+}) {
   return (
     <section className="tile wk-form">
       <div className="tile__head">
@@ -68,7 +101,7 @@ export function NewProject({ first }: { first: boolean }) {
             required
             minLength={2}
             maxLength={200}
-            placeholder="Руководство по эксплуатации насосов"
+            placeholder="Документация к API платформы"
             autoComplete="off"
           />
         </label>
@@ -110,11 +143,9 @@ export function NewProject({ first }: { first: boolean }) {
           <button className="btn btn--primary" type="submit" disabled={busy}>
             {busy ? "Создаём…" : "Создать проект"}
           </button>
-          {!first && (
-            <button className="btn btn--ghost" type="button" onClick={() => setOpen(false)}>
-              Отмена
-            </button>
-          )}
+          <button className="btn btn--ghost" type="button" onClick={onClose}>
+            Отмена
+          </button>
         </div>
       </form>
 

@@ -42,7 +42,10 @@ export default async function ProjectsPage() {
 
   return (
     <>
-      <header className="wk-head">
+      {/* Ключ по числу проектов: после удачного создания список
+          обновляется, ключ меняется — и форма собирается заново уже
+          закрытой и пустой, без возни с её состоянием изнутри. */}
+      <NewProject key={projects.data.length} first={projects.data.length === 0}>
         <div>
           <h1>Проекты</h1>
           <p className="tile__note">
@@ -50,8 +53,7 @@ export default async function ProjectsPage() {
             переводов копятся внутри проекта.
           </p>
         </div>
-
-      </header>
+      </NewProject>
 
       {projects.data.length === 0 && (
         <section className="tile wk-empty">
@@ -63,13 +65,6 @@ export default async function ProjectsPage() {
           </p>
         </section>
       )}
-
-      {/* Ключ по числу проектов: после удачного создания список
-          обновляется, ключ меняется — и форма собирается заново уже
-          закрытой и пустой, без возни с её состоянием изнутри. */}
-      <div className="wk-bar">
-        <NewProject key={projects.data.length} first={projects.data.length === 0} />
-      </div>
 
       {projects.data.length > 0 && (
         <div className="wk-cards">

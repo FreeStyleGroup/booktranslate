@@ -64,6 +64,7 @@ export type DocumentProfile = {
   unique_untranslated: number;
   repeated: number;
   memory_matches: number;
+  undecided_terms: number;
   billable_texts: number;
   billable_characters: number;
   estimate: { input_tokens: number; output_tokens: number; usd: number | null } | null;

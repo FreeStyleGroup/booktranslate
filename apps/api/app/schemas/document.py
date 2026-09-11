@@ -76,6 +76,9 @@ class DocumentProfilePublic(BaseModel):
     unique_untranslated: int
     repeated: int
     memory_matches: int
+    # Пока больше нуля, перевод не начнётся: нерешённый термин модель
+    # придумает сама и по-разному.
+    undecided_terms: int
 
     billable_texts: int
     billable_characters: int

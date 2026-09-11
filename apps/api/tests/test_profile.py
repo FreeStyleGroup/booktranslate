@@ -81,6 +81,9 @@ async def test_profile_counts_text_after_parsing(db_client: AsyncClient) -> None
     assert 0 < body["longest_segment_chars"] <= body["characters"]
     assert body["by_kind"]["paragraph"] == 4
     assert body["by_status"]["new"] == 4
+    # Терминологический проход не запускался — решать нечего, и это не то
+    # же самое, что «есть нерешённые».
+    assert body["undecided_terms"] == 0
 
 
 @requires_database
@@ -161,6 +164,33 @@ async def test_profile_does_not_need_a_model_key(db_client: AsyncClient) -> None
     assert response.status_code == 200, response.text
     # Модель известна и есть в прейскуранте — значит смета в деньгах.
     assert response.json()["estimate"]["usd"] > 0
+
+
+@requires_database
+async def test_profile_counts_terms_waiting_for_a_decision(db_client: AsyncClient) -> None:
+    """Готовность к переводу видна в паспорте, а не только в отказе.
+
+    Нерешённые термины останавливают перевод, и знать об этом надо до
+    нажатия «перевести», а не в ответ на него.
+    """
+    account = await register(db_client)
+    project_id = await create_project(db_client, account)
+    document_id = await upload(db_client, account, project_id)
+    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
+
+    extracted = await db_client.post(
+        f"/documents/{document_id}/terminology/extract",
+        params={"min_frequency": 2},
+        headers=account.headers,
+    )
+    assert extracted.status_code == 200, extracted.text
+    assert len(extracted.json()) > 0
+
+    body = (
+        await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
+    ).json()
+
+    assert body["undecided_terms"] == len(extracted.json())
 
 
 @requires_database
