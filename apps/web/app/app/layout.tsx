@@ -86,10 +86,23 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
         <header className="cab__top">
           <NavToggle />
 
-          <div className="cab__search">
-            <span aria-hidden="true">🔍</span>
-            <span>Поиск по сегментам, терминам и документам</span>
-          </div>
+          {/* Обычная форма, а не клиентский компонент: результаты живут на
+              своей странице, и Enter ведёт туда без единой строки скрипта.
+              На узком экране остаётся значок — ссылка на ту же страницу. */}
+          <form className="cab__search" action="/app/search" method="get" role="search">
+            <Link href="/app/search" aria-label="Поиск">
+              🔍
+            </Link>
+            <input
+              type="search"
+              name="query"
+              placeholder="Поиск по книгам, терминам, справкам и тексту"
+              aria-label="Поиск по кабинету"
+              minLength={2}
+              maxLength={200}
+              autoComplete="off"
+            />
+          </form>
 
           <div className="cab__tools">
             <ThemeToggle />

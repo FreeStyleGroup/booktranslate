@@ -178,12 +178,45 @@
   align-items: center;
   gap: 10px;
   height: 42px;
+  margin: 0;
   padding: 0 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--paper-tint);
   color: var(--ink-faint);
   font-size: 14.5px;
+  transition: border-color 0.2s var(--ease);
+}
+
+.cab__search:focus-within {
+  border-color: var(--brand);
+}
+
+.cab__search a {
+  text-decoration: none;
+  line-height: 1;
+}
+
+/* Поле без своей рамки: рамка у всей полосы, и вторая внутри неё
+   читалась бы как поле в поле. */
+.cab__search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  outline: none;
+}
+
+.cab__search input::placeholder {
+  color: var(--ink-faint);
+}
+
+.cab__search input::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 .cab__tools {
@@ -457,9 +490,9 @@
 }
 
 @media (max-width: 620px) {
-  /* Подпись поиска на 375 точках переносилась на три строки и ломала
-     всю шапку. Остаётся значок — нажатие ведёт в тот же поиск. */
-  .cab__search span:last-child {
+  /* Поле на 375 точках отъедало всю шапку. Остаётся значок — ссылка на
+     страницу поиска со своим полем. */
+  .cab__search input {
     display: none;
   }
 

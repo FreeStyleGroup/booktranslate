@@ -280,6 +280,27 @@ export type CatalogEntry = {
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
 
+/** Сегмент в выдаче поиска — с книгой, в которой он стоит. */
+export type SegmentHit = {
+  id: string;
+  document_id: string;
+  document_title: string;
+  position: number;
+  kind: string;
+  status: string;
+  source_text: string;
+  target_text: string | null;
+};
+
+/** Общий поиск: четыре группы, в каждой общее число и первые несколько. */
+export type SearchResult = {
+  query: string;
+  documents: { total: number; items: Document[] };
+  terms: { total: number; items: GlossaryTerm[] };
+  entries: { total: number; items: CatalogEntry[] };
+  segments: { total: number; items: SegmentHit[] };
+};
+
 /** Чем закончился запрос справок. */
 export type CatalogLookupReport = {
   entries: CatalogEntry[];

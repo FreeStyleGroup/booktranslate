@@ -22,6 +22,7 @@ from app.api.routes import (
     overview,
     preferences,
     projects,
+    search,
     segments,
     team,
     terminology,
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(translation.router)
     app.include_router(jobs.router)
     app.include_router(memory.router)
+    app.include_router(search.router)
     app.include_router(preferences.router)
     app.include_router(usage.router)
     app.include_router(team.router)
