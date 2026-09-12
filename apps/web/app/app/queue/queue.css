@@ -1,0 +1,230 @@
+/* Очередь замечаний.
+
+   Отдельным файлом от work.css: там экраны книг, здесь одно рабочее место
+   со своей раскладкой. Общие токены — из globals.css, поэтому тёмная тема
+   работает сама.
+
+   Раскладка строки — в столбик, а не в две колонки. Исходник и перевод
+   рядом хороши для просмотра, но здесь перевод правят: поле в половину
+   ширины режет длинный абзац на узкую ленту, а читать при правке надо
+   строку целиком.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+.qu-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.qu-head h2 {
+  margin: 0 0 4px;
+  font-size: clamp(19px, 2vw, 24px);
+  letter-spacing: -0.02em;
+}
+
+.qu-state {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+
+.qu-state .tile__note {
+  margin: 0;
+}
+
+.qu-lead {
+  margin: 0 0 14px;
+  max-width: 74ch;
+  line-height: 1.6;
+}
+
+/* ── Список ── */
+
+.qu-list {
+  display: grid;
+  gap: 14px;
+}
+
+.qu-row {
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper);
+}
+
+/* Принятая строка гаснет, но остаётся на месте: исчезни она — редактор
+   потеряет место в списке и не сможет отменить промах по кнопке. */
+.qu-row.is-done {
+  opacity: 0.6;
+  border-color: var(--line-soft);
+}
+
+.qu-row__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.qu-row__no {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.qu-row__kind {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+/* Значки находок прижаты вправо: слева номер и роль — то, чем строка
+   опознаётся, справа — то, чем она попала в очередь. */
+.qu-row__chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* Исходник — то, с чем сверяют. Тусклее перевода и без правки: смотреть
+   надо на перевод, исходник рядом для сверки. */
+.qu-src {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+
+.qu-dst {
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-tint);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: vertical;
+  overflow: hidden;
+}
+
+.qu-dst:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: var(--paper);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.qu-dst:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* ── Что нашли проверки ── */
+
+/* Полным текстом, а не одними значками: значок говорит, какая проверка
+   сработала, а работает редактор по сообщению — в нём сказано, какое
+   именно число пропало и какой термин не употреблён. */
+.qu-says {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 12px 14px;
+  list-style: none;
+  border-radius: 12px;
+  background: var(--paper-tint);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.qu-says b {
+  display: inline-block;
+  min-width: 108px;
+  margin-right: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+.qu-said {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.qu-row__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+/* ── Полоса очереди ── */
+
+/* Прилипает к низу: очередь длинная, и уходить за кнопкой в самый конец,
+   разобрав пять строк, незачем. */
+.qu-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-lift);
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 680px) {
+  .qu-row {
+    padding: 14px 16px;
+  }
+
+  /* Значки под номером, а не в той же строке: на 375 точках они вытесняют
+     роль сегмента и переносятся вразнобой. */
+  .qu-row__chips {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Подпись проверки над сообщением: в строку они оставляют сообщению
+     треть ширины. */
+  .qu-says b {
+    display: block;
+    min-width: 0;
+    margin: 0 0 2px;
+  }
+}

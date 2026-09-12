@@ -57,6 +57,15 @@ async def list_segments(
         list[SegmentStatus] | None,
         Query(description="Отобрать по состоянию; можно указать несколько раз"),
     ] = None,
+    check: Annotated[
+        list[str] | None,
+        Query(
+            description=(
+                "Отобрать по виду находки: numbers, placeholders, glossary, "
+                "first_use, untranslated, empty. Можно указать несколько раз"
+            )
+        ),
+    ] = None,
     worst_first: Annotated[
         bool,
         Query(description="Сначала сегменты с худшей оценкой проверок, а не по порядку в книге"),
@@ -65,14 +74,20 @@ async def list_segments(
     """Сегменты документа.
 
     Редактор смотрит не книгу подряд, а очередь замечаний, поэтому здесь
-    есть и отбор по состоянию, и порядок «сначала худшее».
+    есть и отбор по состоянию, отбор по виду находки, и порядок «сначала
+    худшее».
     """
     service = ParsingService(session, context, storage)
 
     segments = await service.list_segments(
-        document_id, limit=limit, offset=offset, statuses=status, worst_first=worst_first
+        document_id,
+        limit=limit,
+        offset=offset,
+        statuses=status,
+        checks=check,
+        worst_first=worst_first,
     )
-    total = await service.count_segments(document_id, statuses=status)
+    total = await service.count_segments(document_id, statuses=status, checks=check)
 
     return SegmentPage(
         total=total,
@@ -102,6 +117,7 @@ async def document_progress(
         approved=progress.approved,
         untouched=progress.untouched,
         is_complete=progress.is_complete,
+        by_check=progress.by_check,
     )
 
 

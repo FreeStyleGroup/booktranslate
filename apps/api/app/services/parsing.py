@@ -21,7 +21,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -141,6 +141,7 @@ class ParsingService(TenantService):
         limit: int = 100,
         offset: int = 0,
         statuses: Sequence[SegmentStatus] | None = None,
+        checks: Sequence[str] | None = None,
         worst_first: bool = False,
     ) -> list[Segment]:
         """Сегменты документа — целиком или отобранные для правки.
@@ -155,7 +156,7 @@ class ParsingService(TenantService):
         await DocumentService(self._session, self._context, self._storage).get(document_id)
 
         query = self._filtered(
-            self.scoped(Segment).where(Segment.document_id == document_id), statuses
+            self.scoped(Segment).where(Segment.document_id == document_id), statuses, checks
         )
 
         if worst_first:
@@ -169,7 +170,11 @@ class ParsingService(TenantService):
         return list(await self._session.scalars(query.limit(limit).offset(offset)))
 
     async def count_segments(
-        self, document_id: uuid.UUID, *, statuses: Sequence[SegmentStatus] | None = None
+        self,
+        document_id: uuid.UUID,
+        *,
+        statuses: Sequence[SegmentStatus] | None = None,
+        checks: Sequence[str] | None = None,
     ) -> int:
         query = (
             select(func.count())
@@ -180,19 +185,37 @@ class ParsingService(TenantService):
             )
         )
 
-        return int(await self._session.scalar(self._filtered(query, statuses)) or 0)
+        return int(await self._session.scalar(self._filtered(query, statuses, checks)) or 0)
 
     @staticmethod
-    def _filtered(query: Any, statuses: Sequence[SegmentStatus] | None) -> Any:
-        """Отбор по статусу — общий для страницы и для счётчика.
+    def _filtered(
+        query: Any, statuses: Sequence[SegmentStatus] | None, checks: Sequence[str] | None = None
+    ) -> Any:
+        """Отбор по статусу и виду находки — общий для страницы и счётчика.
 
         Общий намеренно: разойдясь, они дадут страницу из десяти строк при
         заявленной тысяче, и полоса прокрутки станет врать.
-        """
-        if not statuses:
-            return query
 
-        return query.where(Segment.status.in_(list(statuses)))
+        Вид находки ищется вхождением в JSONB (`@>`), а не разбором поля в
+        Python: иначе отбор пришлось бы делать после выборки, и «числа — 12»
+        означало бы «двенадцать на этой странице», а не в книге. Редактор,
+        разбирающий очередь, по такому числу судит о том, сколько работы
+        осталось, — и оно обязано считаться по всему документу.
+        """
+        if statuses:
+            query = query.where(Segment.status.in_(list(statuses)))
+
+        if checks:
+            query = query.where(
+                or_(
+                    *(
+                        Segment.quality.contains({"findings": [{"check": check}]})
+                        for check in checks
+                    )
+                )
+            )
+
+        return query
 
     async def _read_blocks(self, document: Document, parser: DocumentParser) -> list[ParsedBlock]:
         """Забрать файл из хранилища во временный и разобрать его.

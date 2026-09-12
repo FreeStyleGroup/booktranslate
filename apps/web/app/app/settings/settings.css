@@ -1,0 +1,100 @@
+/* Настройки рабочего пространства.
+
+   Формы настроек отличаются от форм ввода: их читают чаще, чем заполняют,
+   и главное в них — понять, что сейчас включено. Поэтому канал — это
+   отдельная рамка с переключателем в заголовке, а не строка среди строк.
+
+   🔥 Рамка канала — `div`, а не `fieldset` с `legend`. У `legend` своё
+   правило отрисовки: он разрывает верхнюю границу и встаёт ровно на неё,
+   поэтому переключатель оказывался на линии рамки, а поля под ним — с
+   отступом. Выравнять это оформлением нельзя, а группировка здесь ничего
+   не добавляет: у каждого поля свой ярлык.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+.st-block {
+  max-width: 760px;
+  margin-bottom: 20px;
+}
+
+.st-lead {
+  margin: 0 0 16px;
+  max-width: 68ch;
+  line-height: 1.6;
+}
+
+.st-form {
+  display: grid;
+  gap: 18px;
+}
+
+.st-channel {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-tint);
+  transition: border-color 0.2s var(--ease);
+}
+
+/* Включённый канал отличается рамкой, а не цветом текста: цвет пришлось бы
+   раздавать по всем потомкам, а рамка обводит ровно то, что включено. */
+.st-channel.is-on {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line-soft));
+}
+
+/* Поля выключенного канала гаснут, но остаются на месте и доступными:
+   заполнить их можно заранее, а исчезающие при переключении поля
+   заставляют гадать, что было введено раньше. */
+.st-channel:not(.is-on) .field {
+  opacity: 0.55;
+}
+
+.st-channel p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Ограничение по ширине — только пояснениям: длинная строка читается
+   тяжело. Полосы состояния под него не попадают намеренно: это не текст в
+   колонку, а подложка во всю ширину канала, и обрезанная по словам она
+   выглядит как недоделанная. */
+.st-channel > .tile__note {
+  max-width: 66ch;
+}
+
+.st-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.st-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+/* Состояние связи с ботом: не подпись и не ошибка, а ответ на вопрос
+   «дойдёт ли до меня сообщение». */
+.st-state {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.st-state.is-ok {
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  border-color: transparent;
+}

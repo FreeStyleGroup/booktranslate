@@ -71,6 +71,8 @@ export type DocumentProfile = {
   estimate: { input_tokens: number; output_tokens: number; usd: number | null } | null;
 };
 
+export type Finding = { check: string; message: string };
+
 export type Segment = {
   id: string;
   position: number;
@@ -79,9 +81,44 @@ export type Segment = {
   source_text: string;
   target_text: string | null;
   source_location: Record<string, unknown> | null;
-  quality: { findings?: { check: string; message: string }[] } | null;
+  quality: { findings?: Finding[] } | null;
   quality_score: number | null;
   translation_source: string | null;
+};
+
+export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
+
+/** Задание на перевод книги — работа, которая идёт без человека. */
+export type TranslationJob = {
+  id: string;
+  document_id: string;
+  state: JobState;
+  requested_by_id: string | null;
+  attempts: number;
+  error: string | null;
+  // Факты запуска: сколько было непереведённого, когда взялись, и сколько
+  // перевели с тех пор. Не состояние документа — оно считается отдельно.
+  segments_total: number;
+  segments_done: number;
+  started_at: string | null;
+  finished_at: string | null;
+  notified_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Состояние книги для очереди замечаний и полосы выполнения. */
+export type ReviewProgress = {
+  total: number;
+  translated: number;
+  flagged: number;
+  edited: number;
+  approved: number;
+  untouched: number;
+  is_complete: boolean;
+  // Чего ждёт очередь по видам проверок. Считается по всей книге, а не по
+  // выданной странице: по этому числу судят об оставшейся работе.
+  by_check: Record<string, number>;
 };
 
 export type SegmentPage = {

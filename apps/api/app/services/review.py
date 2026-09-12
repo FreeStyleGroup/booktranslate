@@ -24,7 +24,8 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import column, distinct, func, select, true
+from sqlalchemy.dialects import postgresql
 
 from app.models.document import Document, DocumentStatus
 from app.models.organization import Role
@@ -73,6 +74,11 @@ class Progress:
     approved: int
     # Ещё не переводились.
     untouched: int
+    # Чего именно ждут: числа — 12, термины — 4. Считается по сегментам, а
+    # не по находкам: в одном сегменте расхождений чисел бывает два (одно
+    # пропало, другое появилось), и «числа — 2» на одной строке сказало бы
+    # редактору, что работы вдвое больше, чем есть.
+    by_check: dict[str, int]
 
     @property
     def is_complete(self) -> bool:
@@ -225,7 +231,41 @@ class ReviewService(TenantService):
             edited=counts.get(SegmentStatus.EDITED, 0),
             approved=counts.get(SegmentStatus.APPROVED, 0),
             untouched=untouched,
+            by_check=await self._by_check(document_id),
         )
+
+    async def _by_check(self, document_id: uuid.UUID) -> dict[str, int]:
+        """Сколько сегментов ждёт из-за какой проверки.
+
+        Считается в базе, а не разбором выгруженных находок: очередь
+        показывается по полсотни строк, а число рядом с «Числа» означает
+        всю книгу. Посчитанное по загруженной странице врало бы ровно там,
+        где по нему судят об оставшейся работе.
+
+        Принятое сюда не попадает: у принятого сегмента находки остаются —
+        видно, что было замечено и всё-таки принято, — но работой он уже не
+        является.
+        """
+        # Тип колонки задан явно: без него SQLAlchemy не знает, что в `value`
+        # лежит JSONB, и обращение по ключу не собирается вовсе.
+        finding = func.jsonb_array_elements(Segment.quality["findings"]).table_valued(
+            column("value", postgresql.JSONB)
+        )
+        kind = finding.c.value["check"].astext
+
+        rows = await self._session.execute(
+            select(kind, func.count(distinct(Segment.id)))
+            .select_from(Segment)
+            .join(finding, true())
+            .where(
+                Segment.organization_id == self.organization_id,
+                Segment.document_id == document_id,
+                Segment.status == SegmentStatus.FLAGGED,
+            )
+            .group_by(kind)
+        )
+
+        return {str(check): int(amount) for check, amount in rows.all() if check is not None}
 
     def _write(
         self,

@@ -56,6 +56,9 @@ class ReviewProgress(BaseModel):
     approved: int
     untouched: int
     is_complete: bool
+    # Чего ждёт очередь по видам проверок: `{"numbers": 12, "glossary": 4}`.
+    # Считается по сегментам и по всему документу, а не по выданной странице.
+    by_check: dict[str, int] = Field(default_factory=dict)
 
 
 class ApprovedCount(BaseModel):

@@ -16,11 +16,14 @@ from app.api.routes import (
     catalog,
     documents,
     health,
+    jobs,
     overview,
+    preferences,
     projects,
     segments,
     terminology,
     translation,
+    usage,
 )
 from app.api.throttle import RateLimitMiddleware
 from app.core.config import get_settings
@@ -120,6 +123,9 @@ def create_app() -> FastAPI:
     app.include_router(terminology.router)
     app.include_router(catalog.router)
     app.include_router(translation.router)
+    app.include_router(jobs.router)
+    app.include_router(preferences.router)
+    app.include_router(usage.router)
 
     return app
 

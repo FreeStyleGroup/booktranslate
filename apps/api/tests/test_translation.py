@@ -7,6 +7,7 @@
 оплаченного, а документ, брошенный убитым процессом, не запирается навсегда.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -308,6 +309,48 @@ async def test_stale_run_is_released_only_with_force(
     assert forced.status_code == 200, forced.text
     assert forced.json()["total"] == 4
     assert forced.json()["status"] == "review"
+
+
+@requires_database
+async def test_ordinary_run_raises_no_alarm(
+    db_client: AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """🔥 Тревога о перехвате зависшего прогона не должна звучать на обычном.
+
+    Ловушка тонкая: обновление через ORM сверяет условие по объектам в
+    сессии и подтягивает изменения в сам объект. Проверка «а не был ли
+    документ уже занят», сделанная после обновления, видит собственную
+    запись и срабатывает всегда. Предупреждение, звучащее на каждом
+    запуске, перестают читать — и вместе с ним пропустят настоящее.
+    """
+    account = await register(db_client)
+    document_id = await prepare(db_client, account)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.translation"):
+        response = await db_client.post(
+            f"/documents/{document_id}/translate", headers=account.headers
+        )
+
+    assert response.status_code == 200, response.text
+    assert [record.message for record in caplog.records] == []
+
+
+@requires_database
+async def test_taking_over_a_stale_run_is_reported(
+    db_client: AsyncClient, session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """А на настоящем перехвате — обязана: это след чужого убитого процесса."""
+    account = await register(db_client)
+    document_id = await prepare(db_client, account)
+    await mark(session, document_id, DocumentStatus.TRANSLATING, silent_for=timedelta(hours=2))
+
+    with caplog.at_level(logging.WARNING, logger="app.services.translation"):
+        response = await db_client.post(
+            f"/documents/{document_id}/translate?force=true", headers=account.headers
+        )
+
+    assert response.status_code == 200, response.text
+    assert any("взят повторно" in record.message for record in caplog.records)
 
 
 @requires_database

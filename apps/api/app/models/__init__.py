@@ -7,12 +7,14 @@
 
 from app.models.catalog import CatalogEntry
 from app.models.document import Document, DocumentStatus, SourceFormat
+from app.models.job import JobState, TranslationJob
 from app.models.memory import (
     GlossaryEntryKind,
     GlossaryTerm,
     GlossaryTermStatus,
     TranslationUnit,
 )
+from app.models.notification import NotificationSettings
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.project import Project
 from app.models.segment import Segment, SegmentKind, SegmentStatus
@@ -26,7 +28,9 @@ __all__ = [
     "GlossaryEntryKind",
     "GlossaryTerm",
     "GlossaryTermStatus",
+    "JobState",
     "Membership",
+    "NotificationSettings",
     "Organization",
     "Project",
     "RefreshSession",
@@ -37,6 +41,7 @@ __all__ = [
     "SourceFormat",
     "TermCandidate",
     "TermCandidateStatus",
+    "TranslationJob",
     "TranslationUnit",
     "User",
     "UserStatus",

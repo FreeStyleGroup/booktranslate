@@ -388,6 +388,15 @@ class TranslationService(TenantService):
         threshold = timedelta(minutes=settings.translation_stale_minutes)
         now = datetime.now(UTC)
 
+        # 🔥 Прежнее состояние читается ДО обновления. Обновление через ORM
+        # сверяет условие по объектам в сессии и подтягивает изменения в
+        # сам объект: после него `document.status` — это то, что мы сейчас
+        # записали, а не то, что было. Проверка «а не был ли он уже занят»
+        # после обновления срабатывала бы на каждом обычном запуске, и
+        # предупреждение о перехвате зависшего прогона кричало бы всегда.
+        was_running = document.status is DocumentStatus.TRANSLATING
+        silent_since = document.updated_at
+
         free = Document.status != DocumentStatus.TRANSLATING
         condition = or_(free, Document.updated_at <= now - threshold) if unlock_stale else free
 
@@ -402,21 +411,22 @@ class TranslationService(TenantService):
                 " Прогон не подаёт признаков жизни дольше "
                 f"{settings.translation_stale_minutes} мин: если он прерван, "
                 "повторите с force=true."
-                if is_stale(document.updated_at, now=now, threshold=threshold)
+                if is_stale(silent_since, now=now, threshold=threshold)
                 else " Дождитесь окончания прогона."
             )
             raise ConflictError("Документ уже переводится." + hint)
 
-        if document.status is DocumentStatus.TRANSLATING:
+        if was_running:
             logger.warning(
                 "Документ %s взят повторно: прежний прогон молчал с %s",
                 document.id,
-                document.updated_at.isoformat(),
+                silent_since.isoformat(),
             )
 
         await self._session.commit()
-        # Объект в сессии не знает про обновление, сделанное запросом мимо
-        # него: без этого дальше он отдаст прежнее состояние.
+        # Состояние объекта приводится к строке в базе: сверка по сессии
+        # покрывает не всякое условие, и полагаться на неё как на гарантию
+        # нельзя — а дальше по коду документ читается как источник правды.
         await self._session.refresh(document)
 
     async def _count_untranslated(self, document_id: uuid.UUID) -> int:

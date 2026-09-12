@@ -293,3 +293,138 @@ async def test_segments_are_scoped_to_organization(db_client: AsyncClient) -> No
     )
 
     assert response.status_code == 404
+
+
+async def with_two_kinds_of_findings(client: AsyncClient, account: Account) -> str:
+    """Книга, в которой проверки нашли разное.
+
+    Нужна трём тестам сразу: отбору по виду находки, счётчику по видам и
+    уходу принятого из очереди. Виды подобраны под заглушку: числа и
+    подстановки она переносит дословно, придраться к ней может только
+    словарь.
+
+    Первая находка — термин заведён в другом регистре: сопоставление его
+    найдёт, а подстановка по точному совпадению не сработает. Вторая —
+    сокращение, которое положено раскрыть при первом употреблении: заглушка
+    подставит перевод вместо него, и самого сокращения в переводе не
+    останется.
+    """
+    for term in (
+        {"source_term": "Pressure Gauge", "target_term": "манометр", "status": "confirmed"},
+        {
+            "source_term": "MM",
+            "target_term": "маркет-мейкер",
+            "kind": "abbreviation",
+            "expand_on_first_use": True,
+        },
+    ):
+        response = await client.post(
+            "/glossary",
+            headers=account.headers,
+            json={**term, "source_language": "en", "target_language": "ru"},
+        )
+        assert response.status_code in (200, 201), response.text
+
+    return await prepare(
+        client,
+        account,
+        data=(
+            b"Open the valve before start.\n"
+            b"\n"
+            b"Check the pressure gauge every day.\n"
+            b"\n"
+            b"The MM quotes prices for the whole session.\n"
+        ),
+    )
+
+
+@requires_database
+async def test_queue_is_filtered_by_kind_of_finding(db_client: AsyncClient) -> None:
+    """Редактор разбирает очередь по видам: термины отдельно, раскрытие отдельно."""
+    account = await register(db_client)
+    document_id = await with_two_kinds_of_findings(db_client, account)
+
+    response = await db_client.get(
+        f"/documents/{document_id}/segments",
+        headers=account.headers,
+        params={"status": "flagged", "check": "glossary"},
+    )
+    body = response.json()
+
+    assert response.status_code == 200, response.text
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert "pressure gauge" in body["items"][0]["source_text"].lower()
+
+    checks = {finding["check"] for finding in body["items"][0]["quality"]["findings"]}
+    assert "glossary" in checks
+
+
+@requires_database
+async def test_queue_filter_counts_the_whole_book(db_client: AsyncClient) -> None:
+    """🔥 Число рядом с видом находки означает книгу, а не выданную страницу.
+
+    Иначе редактор, увидев «термины — 1» при лимите в одну строку, решит,
+    что работы осталось на одну строку.
+    """
+    account = await register(db_client)
+    document_id = await with_two_kinds_of_findings(db_client, account)
+
+    response = await db_client.get(
+        f"/documents/{document_id}/segments",
+        headers=account.headers,
+        params={"status": "flagged", "limit": 1},
+    )
+    body = response.json()
+
+    assert len(body["items"]) == 1
+    assert body["total"] == 2
+
+
+@requires_database
+async def test_progress_counts_findings_by_kind(db_client: AsyncClient) -> None:
+    account = await register(db_client)
+    document_id = await with_two_kinds_of_findings(db_client, account)
+
+    progress = (
+        await db_client.get(f"/documents/{document_id}/progress", headers=account.headers)
+    ).json()
+
+    assert progress["flagged"] == 2
+    assert progress["by_check"]["glossary"] == 1
+    assert progress["by_check"]["first_use"] == 1
+
+
+@requires_database
+async def test_accepted_segment_leaves_the_queue(db_client: AsyncClient) -> None:
+    """Принятое перестаёт быть работой, хотя находки у него остаются."""
+    account = await register(db_client)
+    document_id = await with_two_kinds_of_findings(db_client, account)
+
+    flagged = await segments(db_client, account, document_id, status="flagged", check="glossary")
+    approved = await db_client.post(
+        f"/segments/{flagged[0]['id']}/approve", headers=account.headers
+    )
+
+    assert approved.status_code == 200, approved.text
+    # Находки сохраняются: видно, что было замечено и всё-таки принято.
+    assert approved.json()["quality"] is not None
+
+    progress = (
+        await db_client.get(f"/documents/{document_id}/progress", headers=account.headers)
+    ).json()
+
+    assert "glossary" not in progress["by_check"]
+    assert progress["by_check"]["first_use"] == 1
+
+
+@requires_database
+async def test_progress_has_no_findings_on_a_clean_book(db_client: AsyncClient) -> None:
+    account = await register(db_client)
+    document_id = await prepare(db_client, account)
+
+    progress = (
+        await db_client.get(f"/documents/{document_id}/progress", headers=account.headers)
+    ).json()
+
+    assert progress["by_check"] == {}

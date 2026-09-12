@@ -8,6 +8,7 @@ import {
   type DocumentProfile,
   type Project,
   type SegmentPage,
+  type TranslationJob,
 } from "../../../lib/work";
 import {
   CHECK_CHIP,
@@ -89,6 +90,9 @@ export default async function DocumentPage({
     `/documents/${id}/segments?limit=${PREVIEW}`,
     here,
   );
+  // Последнее задание на перевод: по нему видно, идёт ли работа прямо
+  // сейчас, чем кончился прошлый заход и сколько он успел.
+  const jobs = await load<TranslationJob[]>(`/jobs?document_id=${id}&limit=1`, here);
 
   const parsed = book.status !== "uploaded" && book.status !== "failed";
   const blocked = NOT_PARSED_YET[book.source_format];
@@ -167,7 +171,9 @@ export default async function DocumentPage({
         <Passport profile={profile.data} book={book} />
       )}
 
-      {parsed && <NextStep book={book} profile={profile.data} />}
+      {parsed && (
+        <NextStep book={book} profile={profile.data} job={jobs.data?.[0] ?? null} />
+      )}
 
       {parsed && segments.data !== undefined && segments.data.items.length > 0 && (
         <Preview page={segments.data} profile={profile.data} />
@@ -267,7 +273,15 @@ function Preview({ page, profile }: { page: SegmentPage; profile?: DocumentProfi
    Одна карточка на три случая, а не три подряд: у книги в каждый момент
    ровно один следующий шаг, и показывать рядом «решите термины» и
    «переведите» значит предлагать сделать то, что всё равно не выйдет. */
-function NextStep({ book, profile }: { book: Document; profile?: DocumentProfile }) {
+function NextStep({
+  book,
+  profile,
+  job,
+}: {
+  book: Document;
+  profile?: DocumentProfile;
+  job: TranslationJob | null;
+}) {
   const waiting = profile?.undecided_terms ?? 0;
 
   if (waiting > 0) {
@@ -299,7 +313,11 @@ function NextStep({ book, profile }: { book: Document; profile?: DocumentProfile
 
   if (started && !hasTerms(profile) && (profile?.untranslated ?? 0) > 0) {
     return (
-      <BeforeTranslate documentId={book.id} untranslated={profile?.untranslated ?? 0} />
+      <BeforeTranslate
+        documentId={book.id}
+        untranslated={profile?.untranslated ?? 0}
+        job={job}
+      />
     );
   }
 
@@ -329,7 +347,11 @@ function NextStep({ book, profile }: { book: Document; profile?: DocumentProfile
   }
 
   return (
-    <TranslateRun documentId={book.id} untranslated={profile?.untranslated ?? 0} />
+    <TranslateRun
+      documentId={book.id}
+      untranslated={profile?.untranslated ?? 0}
+      job={job}
+    />
   );
 }
 

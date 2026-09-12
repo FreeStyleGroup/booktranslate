@@ -73,6 +73,30 @@ services:
       postgres:
         condition: service_healthy
 
+  worker:
+    # Тот же образ, что у API: код общий, разная только команда. Отдельный
+    # контейнер — ради того, чтобы выкат API не обрывал перевод книги на
+    # середине: он идёт часами, а перезапуск занимает секунды.
+    image: ${API_IMAGE:?задайте API_IMAGE в .env — тег версии, не latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booktranslate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-booktranslate}
+      STORAGE_ROOT: /var/booktranslate/storage
+    volumes:
+      - api_storage:/var/booktranslate/storage
+    mem_limit: 1g
+    # Миграции здесь не накатываются: их накатывает API, и два процесса,
+    # делающие это одновременно при старте, — это гонка на схеме базы.
+    command: python -m app.worker
+    # Docker шлёт SIGTERM и ждёт: рабочий дописывает пачку и возвращает
+    # задание в очередь. Полминуты хватает на пачку у любой модели; за
+    # порогом контейнер убивается, и задание подберут по молчанию.
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   web:
     image: ${WEB_IMAGE:?задайте WEB_IMAGE в .env — тег версии, не latest}
     restart: unless-stopped

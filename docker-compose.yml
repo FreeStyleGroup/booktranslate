@@ -44,6 +44,27 @@ services:
       postgres:
         condition: service_healthy
 
+  worker:
+    # Фоновый перевод: книга ставится в очередь и переводится без человека.
+    # Тот же образ и тот же код, что у API, — разная только команда.
+    build:
+      context: ./apps/api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://booktranslate:booktranslate@postgres:5432/booktranslate
+      ENVIRONMENT: development
+      STORAGE_ROOT: /var/booktranslate/storage
+      # На разработке очередь опрашивается чаще: ждать пять секунд, проверяя
+      # только что поставленное задание, — это пять секунд на каждую проверку.
+      WORKER_POLL_SECONDS: "2"
+    volumes:
+      - ./apps/api:/app
+      - api_storage:/var/booktranslate/storage
+    command: python -m app.worker
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   api_storage:

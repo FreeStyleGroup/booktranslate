@@ -1,29 +1,39 @@
 "use client";
 
-/* Перевод книги.
+/* Перевод книги: постановка в очередь и наблюдение за ней.
 
-   Идёт порциями, а цикл крутит витрина. Причина не в удобстве: книга на
-   четыреста страниц переводится часами, а обратный прокси режет соединение
-   через четверть часа — один запрос на всю книгу до ответа не доживёт. API
-   отвечает после каждой порции, сколько осталось, и мы зовём его, пока
-   остаток не станет нулём.
+   Книга не переводится в браузере. Человек ставит её в очередь и уходит:
+   работает отдельный процесс на сервере, а по готовности приходит
+   уведомление. Закрытая вкладка, потерянная связь и выключённый ноутбук
+   переводу больше не мешают — раньше мешали все три.
 
-   Отсюда же и честность: сделанное фиксируется в базе после каждой пачки.
-   Закрытая вкладка, нажатая остановка, оборванная связь — всё это теряет
-   не перевод, а только цикл. Следующий запуск продолжит с того же места и
-   не заплатит второй раз за уже переведённое.
+   Отсюда устройство экрана: кнопка не «перевести», а «поставить в
+   очередь», и то, что показано после неё, — не ход работы этой страницы, а
+   состояние задания на сервере. Страница его спрашивает раз в несколько
+   секунд и ничего не делает сама.
 
-   🔥 Чего здесь нет и не должно быть: автоматического повтора после
-   отказа. Каждое обращение к модели стоит денег, и цикл, который сам
-   ломится в стену, потратит их быстрее, чем человек успеет прочитать
-   сообщение об ошибке. */
+   🔥 Остановка не отменяет сделанного. Переведённое записано после каждой
+   пачки, и за него уже заплачено; отменяется только продолжение. Сказать
+   это надо там же, где стоит кнопка, — иначе «остановить» читается как
+   «отменить перевод». */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { plural, thousands } from "../labels";
-import { translateChunk, type Chunk } from "../actions";
+import type { TranslationJob } from "../../lib/work";
+import { plural, thousands, when } from "../labels";
+import { cancelJob, documentJob, queueDocument } from "../actions";
+
+// Как часто спрашивать о ходе работы. Четыре секунды: пачка в сотню
+// сегментов занимает у настоящей модели больше, и опрашивать чаще значит
+// получать один и тот же ответ.
+const POLL_MS = 4000;
+
+/** Идёт ли работа по заданию. */
+function live(job: TranslationJob | null): boolean {
+  return job !== null && (job.state === "waiting" || job.state === "running");
+}
 
 /** Книга без терминологического прохода: что делать дальше.
  *
@@ -36,14 +46,17 @@ import { translateChunk, type Chunk } from "../actions";
 export function BeforeTranslate({
   documentId,
   untranslated,
+  job,
 }: {
   documentId: string;
   untranslated: number;
+  job: TranslationJob | null;
 }) {
   const [skip, setSkip] = useState(false);
 
-  if (skip) {
-    return <TranslateRun documentId={documentId} untranslated={untranslated} />;
+  // Книга уже в очереди — предлагать выбор поздно: работа идёт.
+  if (skip || live(job)) {
+    return <TranslateRun documentId={documentId} untranslated={untranslated} job={job} />;
   }
 
   return (
@@ -75,136 +88,102 @@ export function BeforeTranslate({
   );
 }
 
-type Tally = {
-  done: number;
-  fromMemory: number;
-  fromProvider: number;
-  flagged: number;
-  savedCalls: number;
-  inputTokens: number;
-  outputTokens: number;
-  usd: number | null;
-};
-
-const EMPTY: Tally = {
-  done: 0,
-  fromMemory: 0,
-  fromProvider: 0,
-  flagged: 0,
-  savedCalls: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  usd: null,
-};
-
-function add(tally: Tally, chunk: Chunk): Tally {
-  return {
-    done: tally.done + chunk.total,
-    fromMemory: tally.fromMemory + chunk.from_memory,
-    fromProvider: tally.fromProvider + chunk.from_provider,
-    flagged: tally.flagged + chunk.flagged,
-    savedCalls: tally.savedCalls + chunk.saved_calls,
-    inputTokens: tally.inputTokens + chunk.input_tokens,
-    outputTokens: tally.outputTokens + chunk.output_tokens,
-    // Стоимость складывается только из того, что посчиталось: у заглушки и
-    // у модели вне прейскуранта её нет вовсе, и подставлять ноль нельзя.
-    usd:
-      chunk.estimated_usd === null
-        ? tally.usd
-        : (tally.usd ?? 0) + chunk.estimated_usd,
-  };
-}
-
 export function TranslateRun({
   documentId,
   untranslated,
+  job: initial,
 }: {
   documentId: string;
   untranslated: number;
+  job: TranslationJob | null;
 }) {
   const router = useRouter();
 
-  const [running, setRunning] = useState(false);
-  const [left, setLeft] = useState(untranslated);
-  const [tally, setTally] = useState<Tally>(EMPTY);
+  const [job, setJob] = useState<TranslationJob | null>(initial);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [finished, setFinished] = useState(false);
 
-  // Остановка читается внутри цикла, поэтому ссылкой, а не состоянием:
-  // состояние, прочитанное из замыкания цикла, навсегда осталось бы тем,
-  // каким было при запуске.
-  const stop = useRef(false);
+  const working = live(job);
 
-  async function run(): Promise<void> {
-    stop.current = false;
-    setRunning(true);
-    setError(null);
-    setFinished(false);
-    setTally(EMPTY);
+  const ask = useCallback(async () => {
+    const answer = await documentJob(documentId);
 
-    let more = true;
-
-    while (more && !stop.current) {
-      const answer = await translateChunk(documentId);
-
-      if (answer.error !== undefined || answer.chunk === undefined) {
-        setError(answer.error ?? "Перевод не удался");
-        break;
-      }
-
-      const chunk = answer.chunk;
-
-      setTally((was) => add(was, chunk));
-      setLeft(chunk.remaining);
-
-      // Ноль в остатке — книга переведена. Ноль во взятых сегментах при
-      // ненулевом остатке означал бы, что цикл крутится впустую: такого
-      // быть не должно, но останавливаемся и здесь, чтобы не молотить.
-      more = chunk.remaining > 0 && chunk.total > 0;
-
-      if (chunk.remaining === 0) {
-        setFinished(true);
-      }
+    if (answer.error !== undefined || answer.job === undefined) {
+      // Один неудачный опрос — не повод пугать человека: работа идёт на
+      // сервере и от нашего вопроса не зависит. Следующий опрос через
+      // четыре секунды.
+      return;
     }
 
-    setRunning(false);
+    setJob(answer.job);
+
+    if (answer.job !== null && !live(answer.job)) {
+      // Работа кончилась — странице пора перечитать паспорт книги: там
+      // теперь и расход, и состояние сегментов.
+      router.refresh();
+    }
+  }, [documentId, router]);
+
+  /* Опрос, пока задание живо.
+     Состояние меняется в обработчике таймера, а не в самом эффекте: эффект
+     только заводит и снимает таймер. */
+  useEffect(() => {
+    if (!working) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void ask();
+    }, POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [working, ask]);
+
+  async function start(): Promise<void> {
+    setBusy(true);
+    setError(null);
+
+    const answer = await queueDocument(documentId);
+
+    setBusy(false);
+
+    if (answer.error !== undefined || answer.job === undefined) {
+      setError(answer.error ?? "Не удалось поставить книгу в очередь");
+      return;
+    }
+
+    setJob(answer.job);
+  }
+
+  async function stop(): Promise<void> {
+    if (job === null) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    const answer = await cancelJob(job.id, documentId);
+
+    setBusy(false);
+
+    if (answer.error !== undefined || answer.job === undefined) {
+      setError(answer.error ?? "Не удалось остановить перевод");
+      return;
+    }
+
+    setJob(answer.job);
     router.refresh();
   }
 
-  const done = untranslated - left;
-  const percent = untranslated === 0 ? 100 : Math.round((done * 100) / untranslated);
-
   return (
     <section className="tile wk-call">
-      <h3>{finished ? "Книга переведена" : "Перевод"}</h3>
+      <h3>{working ? "Книга переводится" : "Перевод"}</h3>
 
-      {!running && !finished && (
-        <p>
-          Модель получит сегменты вместе с решёнными терминами и соседними
-          абзацами — без них «он», «указанный выше» и опущенное подлежащее
-          переводятся наугад. Повторы внутри книги и то, что уже есть в памяти
-          переводов, в модель не уйдут вовсе.
-        </p>
-      )}
-
-      {(running || tally.done > 0) && (
-        <>
-          <div className="tr-bar">
-            <div className="bar">
-              <i style={{ width: `${percent}%` }} />
-            </div>
-            <b>{percent}%</b>
-          </div>
-
-          <p className="tile__note">
-            Переведено {thousands(done)} из {thousands(untranslated)}{" "}
-            {plural(untranslated, "сегмента", "сегментов", "сегментов")}
-            {tally.fromMemory > 0 && `, из них ${thousands(tally.fromMemory)} закрыла память`}
-            {tally.flagged > 0 &&
-              ` · с замечаниями ${thousands(tally.flagged)}`}
-            {tally.usd !== null && ` · ≈ $${tally.usd.toFixed(2)}`}
-          </p>
-        </>
+      {job === null || job.state === "failed" || job.state === "cancelled" ? (
+        <Idle job={job} untranslated={untranslated} />
+      ) : (
+        <Working job={job} />
       )}
 
       {error !== null && (
@@ -213,46 +192,112 @@ export function TranslateRun({
         </p>
       )}
 
-      {finished && (
-        <p>
-          Перевод готов и ждёт человека. Сегменты с замечаниями собраны в
-          очередь: проверки нашли расхождение чисел, нарушение термина или
-          потерянную подстановку — это не приговор переводу, а список мест,
-          на которые стоит посмотреть.
-        </p>
-      )}
-
       <div className="tile__foot">
-        {running ? (
+        {working ? (
           <button
             className="btn btn--ghost btn--small"
             type="button"
-            onClick={() => {
-              stop.current = true;
-            }}
+            disabled={busy}
+            onClick={() => void stop()}
           >
-            Остановить
+            {busy ? "Останавливаем…" : "Остановить"}
           </button>
         ) : (
           <button
             className="btn btn--primary btn--small"
             type="button"
-            onClick={() => void run()}
-            disabled={left === 0}
+            disabled={busy || untranslated === 0}
+            onClick={() => void start()}
           >
-            {tally.done > 0 && left > 0 ? "Продолжить" : "Перевести книгу"}
+            {busy ? "Ставим в очередь…" : job === null ? "Перевести книгу" : "Продолжить перевод"}
           </button>
         )}
       </div>
 
-      {running && (
+      {working && (
         <p className="tile__note wk-seg__foot">
-          Идёт перевод. Страницу можно закрыть — сделанное уже записано, и
-          следующий запуск продолжит с того же места, не заплатив второй раз
-          за переведённое. Но сам перевод при закрытой вкладке остановится:
-          цикл крутит эта страница.
+          Страницу можно закрыть: книгу переводит сервер, а не она. По
+          готовности придёт уведомление — если оно настроено в разделе
+          «Настройки».
         </p>
       )}
     </section>
+  );
+}
+
+/** Книга не в работе: объяснить, что будет, и чем кончилось прошлое. */
+function Idle({ job, untranslated }: { job: TranslationJob | null; untranslated: number }) {
+  return (
+    <>
+      {job?.state === "failed" && (
+        <p className="form__error" role="alert">
+          Прошлый перевод сорвался: {job.error ?? "причина не записана"}
+        </p>
+      )}
+
+      {job?.state === "cancelled" && (
+        <p className="wk-note" role="status">
+          <span aria-hidden="true">✋</span> Перевод остановлен{" "}
+          {when(job.finished_at ?? job.updated_at)} на {thousands(job.segments_done)}{" "}
+          {plural(job.segments_done, "сегменте", "сегментах", "сегментах")}. Сделанное
+          сохранено — продолжение начнётся с остатка.
+        </p>
+      )}
+
+      <p>
+        Книгу переведёт сервер, а не эта страница: {thousands(untranslated)}{" "}
+        {plural(untranslated, "сегмент", "сегмента", "сегментов")} — это работа на минуты, а
+        на большой книге на часы. Поставьте в очередь и закройте вкладку; по готовности
+        придёт уведомление.
+      </p>
+
+      <p className="tile__note">
+        Модель получит сегменты вместе с решёнными терминами и соседними
+        абзацами — без них «он», «указанный выше» и опущенное подлежащее
+        переводятся наугад. Повторы внутри книги и то, что уже есть в памяти
+        переводов, в модель не уйдут вовсе.
+      </p>
+    </>
+  );
+}
+
+/** Книга в работе: где она в очереди и сколько сделано. */
+function Working({ job }: { job: TranslationJob }) {
+  const percent =
+    job.segments_total === 0
+      ? 0
+      : Math.min(100, Math.round((job.segments_done * 100) / job.segments_total));
+
+  if (job.state === "waiting") {
+    return (
+      <>
+        <p>
+          Книга в очереди. Её возьмёт первый освободившийся рабочий — обычно
+          это секунды.
+        </p>
+        {job.attempts > 0 && (
+          <p className="tile__note">
+            Заход {job.attempts}: прошлый оборвался, продолжение пойдёт с остатка.
+          </p>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="tr-bar">
+        <div className="bar">
+          <i style={{ width: `${percent}%` }} />
+        </div>
+        <b>{percent}%</b>
+      </div>
+
+      <p className="tile__note">
+        Переведено {thousands(job.segments_done)} из {thousands(job.segments_total)}{" "}
+        {plural(job.segments_total, "сегмента", "сегментов", "сегментов")}
+        {job.started_at !== null && ` · начали ${when(job.started_at)}`}
+      </p>
+    </>
   );
 }

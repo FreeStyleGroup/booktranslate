@@ -1,0 +1,292 @@
+/* Расход.
+
+   Диаграммы собраны на сетке и полосах, без библиотеки: три простые
+   картинки не стоят сотен килобайт в браузере и зависимости на годы.
+   Цвета моделей приходят разметкой — они должны совпадать между столбцами
+   и лентой, — а всё остальное берётся из переменных оформления, поэтому
+   тёмная тема работает сама.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+/* ── Столбцы по месяцам ── */
+
+.us-months {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+  height: 190px;
+  padding-top: 8px;
+}
+
+.us-month {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  height: 100%;
+  min-width: 0;
+}
+
+/* Столбец растёт снизу и разложен по моделям: куски идут колонкой, и
+   порядок у них обратный — самый крупный оказывается внизу, как и ждёшь
+   от столбчатой диаграммы. */
+.us-month__bar {
+  display: flex;
+  flex-direction: column-reverse;
+  align-self: end;
+  width: 100%;
+  border-radius: 8px 8px 4px 4px;
+  overflow: hidden;
+  background: var(--paper-tint);
+  transition: filter 0.15s var(--ease);
+}
+
+.us-month__bar:hover {
+  filter: brightness(1.15);
+}
+
+.us-month__bar i {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+}
+
+.us-month__name {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* ── Лента долей ── */
+
+.us-share {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--paper-tint);
+}
+
+.us-share i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  transition: filter 0.15s var(--ease);
+}
+
+.us-share i:hover {
+  filter: brightness(1.2);
+}
+
+.us-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.us-legend li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-soft);
+}
+
+.us-legend i,
+.us-model i,
+.us-row__model i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.us-legend b {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ── Модели списком ── */
+
+.us-models {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.us-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 14px;
+}
+
+.us-model span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.us-model b {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Книги ── */
+
+.us-table {
+  display: grid;
+  gap: 2px;
+}
+
+.us-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 170px) 100px 100px 110px;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 10px;
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s var(--ease);
+}
+
+.us-row + .us-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+a.us-row:hover {
+  background: var(--paper-tint);
+}
+
+/* Шапка таблицы: не строка данных, а подписи к колонкам, и вести себя как
+   строка она не должна — ни наведением, ни размером. */
+.us-row--head {
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  padding-bottom: 4px;
+}
+
+.us-row--head + .us-row {
+  border-top: 0;
+}
+
+.us-row__name {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.us-row__name b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.us-row__model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.us-row__usd {
+  text-align: right;
+  font-weight: 500;
+}
+
+/* Плитка с деньгами выделена: это ответ на главный вопрос страницы, и
+   стоять вровень с числом токенов он не должен. */
+.us-fact--money {
+  background: var(--brand-tint);
+  border-color: transparent;
+}
+
+.us-fact--money .stat__value {
+  color: var(--brand-dark);
+}
+
+/* Две строки — в две колонки. Блок стоит во всю ширину, как таблица над
+   ним, и столбик из двух строк слева оставлял бы половину рамки пустой. */
+.us-cache .wk-money {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 40px;
+}
+
+.us-foot {
+  max-width: 74ch;
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 900px) {
+  /* Колонки токенов уходят: на телефоне важны книга, модель и сумма, а
+     разложение на вход и выход смотрят на карточке книги. */
+  .us-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+
+  .us-row--head,
+  .us-row span:nth-child(3),
+  .us-row span:nth-child(4) {
+    display: none;
+  }
+
+  .us-row__usd {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .us-row__model {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .us-months {
+    height: 150px;
+    gap: 5px;
+  }
+
+  /* Подписи месяцев на 375 точках сливаются: остаются сами столбцы, а
+     месяц читается в подсказке по нажатию. */
+  .us-month__name {
+    font-size: 10px;
+  }
+
+  .us-model {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .us-model span:nth-child(2) {
+    display: none;
+  }
+
+  /* Две колонки чисел на 375 точках сжимаются до переноса подписи. */
+  .us-cache .wk-money {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
