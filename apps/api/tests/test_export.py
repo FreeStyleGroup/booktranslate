@@ -11,7 +11,15 @@ import docx
 from httpx import AsyncClient
 
 from tests.conftest import requires_database
-from tests.factories import Account, create_project, epub_bytes, register
+from tests.factories import (
+    Account,
+    PdfLine,
+    PdfPage,
+    create_project,
+    epub_bytes,
+    pdf_bytes,
+    register,
+)
 
 MANUAL = (
     b"# Safety\n"
@@ -95,10 +103,55 @@ async def test_document_says_which_formats_it_exports_to(db_client: AsyncClient)
     markdown = await db_client.get(f"/documents/{markdown_id}", headers=account.headers)
     docx_document = await db_client.get(f"/documents/{docx_id}", headers=account.headers)
 
-    # Markdown обратно в себя не собирается — формата оригинала в списке нет.
-    assert markdown.json()["export_formats"] == ["markdown", "text"]
-    # Word — собирается, и он первым: ради него и приходят.
+    # Markdown обратно в себя не собирается — формата оригинала в списке
+    # нет, зато есть новый документ Word.
+    assert markdown.json()["export_formats"] == ["docx", "markdown", "text"]
+    # Word — собирается по месту, и он первым: ради него и приходят. Второй
+    # «docx» здесь значил бы то же самое и только путал бы.
     assert docx_document.json()["export_formats"] == ["source", "markdown", "text"]
+
+
+@requires_database
+async def test_pdf_is_handed_over_as_a_fresh_word_document(db_client: AsyncClient) -> None:
+    """PDF обратно в PDF не вписать; заказчик получает документ Word со
+    структурой: заголовок, абзацы, список."""
+    account = await register(db_client)
+    document_id = await prepare(
+        db_client,
+        account,
+        data=pdf_bytes(
+            [
+                PdfPage(
+                    lines=(
+                        PdfLine("Safety", size=18),
+                        PdfLine(""),
+                        PdfLine("Open the valve before start."),
+                        PdfLine(""),
+                        PdfLine("- Check the pressure gauge"),
+                        PdfLine("- Close the valve"),
+                    )
+                )
+            ]
+        ),
+        name="manual.pdf",
+        media="application/pdf",
+    )
+
+    response = await db_client.get(
+        f"/documents/{document_id}/export",
+        headers=account.headers,
+        params={"format": "docx"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats")
+
+    document = docx.Document(io.BytesIO(response.content))
+    paragraphs = [(p.style.name, p.text) for p in document.paragraphs if p.text.strip()]
+
+    assert paragraphs[0] == ("Heading 1", "[ru] Safety")
+    assert paragraphs[1][1] == "[ru] Open the valve before start."
+    assert paragraphs[2] == ("List Bullet", "[ru] Check the pressure gauge")
 
 
 @requires_database
@@ -199,8 +252,8 @@ async def test_docx_comes_back_as_docx_with_styles(db_client: AsyncClient) -> No
 
 
 @requires_database
-async def test_docx_is_refused_for_other_sources(db_client: AsyncClient) -> None:
-    """Человек, попросивший DOCX, должен узнать, что получит другое."""
+async def test_docx_from_other_sources_is_a_fresh_document(db_client: AsyncClient) -> None:
+    """Из Markdown документ Word собирается с нуля — со структурой, а не текстом."""
     account = await register(db_client)
     document_id = await prepare(db_client, account)
 
@@ -208,7 +261,13 @@ async def test_docx_is_refused_for_other_sources(db_client: AsyncClient) -> None
         f"/documents/{document_id}/export?format=docx", headers=account.headers
     )
 
-    assert response.status_code == 415
+    assert response.status_code == 200, response.text
+
+    document = docx.Document(io.BytesIO(response.content))
+    styles = [p.style.name for p in document.paragraphs if p.text.strip()]
+
+    assert styles[0] == "Heading 1"
+    assert "List Bullet" in styles
 
 
 @requires_database

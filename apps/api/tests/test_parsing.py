@@ -243,7 +243,8 @@ async def test_broken_file_leaves_reason(db_client: AsyncClient) -> None:
 
 
 @requires_database
-async def test_pdf_is_not_parsed_yet(db_client: AsyncClient) -> None:
+async def test_broken_pdf_leaves_a_reason(db_client: AsyncClient) -> None:
+    """Файл с сигнатурой PDF и мусором внутри — отказ с причиной, а не 500."""
     account = await register(db_client)
     project_id = await create_project(db_client, account)
     document_id = await upload(
@@ -257,8 +258,9 @@ async def test_pdf_is_not_parsed_yet(db_client: AsyncClient) -> None:
 
     response = await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
 
-    assert response.status_code == 415
-    assert "pdf" in response.json()["detail"].lower()
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "failed"
+    assert "PDF" in response.json()["error"]
 
 
 @requires_database

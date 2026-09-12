@@ -12,8 +12,9 @@ from app.models.document import SourceFormat
 from app.models.segment import SegmentKind
 from app.services.parsers import ParsingError, is_supported, parser_for
 from app.services.parsers.markup import EpubParser, HtmlParser
+from app.services.parsers.pdf import PdfParser
 from app.services.parsers.plain import MarkdownParser, PlainTextParser
-from tests.factories import epub_bytes, real_docx_bytes
+from tests.factories import PdfLine, PdfPage, epub_bytes, pdf_bytes, real_docx_bytes
 
 
 def write(tmp_path: Path, name: str, data: bytes | str) -> Path:
@@ -23,11 +24,115 @@ def write(tmp_path: Path, name: str, data: bytes | str) -> Path:
     return path
 
 
-def test_pdf_and_xliff_are_not_parsed_yet() -> None:
+def test_xliff_is_not_parsed_yet() -> None:
     """Неподдержанный формат виден заранее, а не падением при разборе."""
-    assert parser_for(SourceFormat.PDF) is None
+    assert parser_for(SourceFormat.XLIFF) is None
     assert not is_supported(SourceFormat.XLIFF)
+    assert is_supported(SourceFormat.PDF)
     assert is_supported(SourceFormat.DOCX)
+
+
+def _pdf_blocks(tmp_path: Path, pages: list[PdfPage]) -> list:
+    return list(PdfParser().parse(write(tmp_path, "manual.pdf", pdf_bytes(pages))))
+
+
+def test_pdf_restores_paragraphs_headings_and_lists(tmp_path: Path) -> None:
+    """У PDF нет абзацев — есть буквы с координатами; абзацы, заголовок,
+    перенос слова и список восстанавливаются по правилам."""
+    page = PdfPage(
+        lines=(
+            PdfLine("1. Installation", size=18),
+            PdfLine(""),
+            PdfLine("Open the valve before start. Check the"),
+            PdfLine("pressure gauge every day."),
+            PdfLine(""),
+            PdfLine("Warning! Disconnect the power sup-"),
+            PdfLine("ply before service."),
+            PdfLine(""),
+            PdfLine("- Replace the filter"),
+            PdfLine("- Close the valve"),
+        )
+    )
+
+    blocks = _pdf_blocks(tmp_path, [page])
+
+    assert [(block.text, block.kind) for block in blocks] == [
+        ("1. Installation", SegmentKind.HEADING),
+        ("Open the valve before start. Check the pressure gauge every day.", SegmentKind.PARAGRAPH),
+        ("Warning! Disconnect the power supply before service.", SegmentKind.WARNING),
+        ("Replace the filter", SegmentKind.LIST_ITEM),
+        ("Close the valve", SegmentKind.LIST_ITEM),
+    ]
+    assert blocks[0].location == {"page": 1, "block": 0}
+
+
+def test_pdf_drops_running_headers_and_page_numbers(tmp_path: Path) -> None:
+    """Колонтитул повторяется на каждой странице и в книгу не входит."""
+    # Сам текст на страницах разный: одинаковый с точностью до числа считался
+    # бы колонтитулом — и правильно, книга так не пишется.
+    chapters = ("Mounting the pump.", "Starting the pump.", "Servicing the pump.")
+    pages = [
+        PdfPage(
+            lines=(
+                PdfLine("ACME Pump Manual"),
+                PdfLine(""),
+                PdfLine(chapter),
+                PdfLine(""),
+                PdfLine(f"Page {number}"),
+            )
+        )
+        for number, chapter in enumerate(chapters, start=1)
+    ]
+
+    blocks = _pdf_blocks(tmp_path, pages)
+
+    assert [block.text for block in blocks] == list(chapters)
+    assert [block.location["page"] for block in blocks] == [1, 2, 3]
+
+
+def test_pdf_glues_a_paragraph_that_came_line_by_line(tmp_path: Path) -> None:
+    """В плотной вёрстке pdfminer отдаёт каждую строку своим блоком; абзац
+    узнаётся по обрыву строки и склеивается. Телефон крупным кеглем —
+    не заголовок."""
+    page = PdfPage(
+        lines=(
+            PdfLine("800 626 2120", size=18, leading=1.9),
+            PdfLine("The proper selection of power transmission products,", leading=1.9),
+            PdfLine("including the related area of safety, is the", leading=1.9),
+            PdfLine("responsibility of the customer.", leading=1.9),
+            PdfLine("Operating requirements vary.", leading=1.9),
+        )
+    )
+
+    blocks = _pdf_blocks(tmp_path, [page])
+
+    assert [(block.text, block.kind) for block in blocks] == [
+        ("800 626 2120", SegmentKind.PARAGRAPH),
+        (
+            "The proper selection of power transmission products, including the related "
+            "area of safety, is the responsibility of the customer.",
+            SegmentKind.PARAGRAPH,
+        ),
+        ("Operating requirements vary.", SegmentKind.PARAGRAPH),
+    ]
+
+
+def test_pdf_scan_is_named_a_scan(tmp_path: Path) -> None:
+    """Скан — не «текст не нашёлся»: человек пошёл бы чинить исправный файл."""
+    with pytest.raises(ParsingError, match="скан"):
+        _pdf_blocks(tmp_path, [PdfPage(image=True), PdfPage(image=True)])
+
+
+def test_pdf_without_text_or_images_is_reported(tmp_path: Path) -> None:
+    with pytest.raises(ParsingError, match="не нашлось текста"):
+        _pdf_blocks(tmp_path, [PdfPage()])
+
+
+def test_pdf_garbage_is_reported_not_raised(tmp_path: Path) -> None:
+    path = write(tmp_path, "broken.pdf", b"%PDF-1.4\nthis is not a pdf at all")
+
+    with pytest.raises(ParsingError, match="не читается как PDF"):
+        list(PdfParser().parse(path))
 
 
 def test_plain_text_splits_on_blank_lines(tmp_path: Path) -> None:

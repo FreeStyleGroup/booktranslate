@@ -37,7 +37,7 @@ export type DocumentStatus =
 /** Во что собирается перевод: формат оригинала, если он переписывается по
  *  месту, и текстовые — для любого исходника. Список приходит от API:
  *  реестр сборщиков живёт там, и второй список здесь разошёлся бы с ним. */
-export type ExportFormat = "source" | "markdown" | "text";
+export type ExportFormat = "source" | "docx" | "markdown" | "text";
 
 export type Document = {
   id: string;
