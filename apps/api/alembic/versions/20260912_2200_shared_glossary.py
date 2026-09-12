@@ -55,9 +55,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["reviewed_by_id"], ["users.id"], ondelete="SET NULL"),
     )
-    op.create_index(
-        "ix_glossary_uploads_organization_id", "glossary_uploads", ["organization_id"]
-    )
+    op.create_index("ix_glossary_uploads_organization_id", "glossary_uploads", ["organization_id"])
 
     op.add_column(
         "glossary_terms", sa.Column("upload_id", postgresql.UUID(as_uuid=True), nullable=True)
