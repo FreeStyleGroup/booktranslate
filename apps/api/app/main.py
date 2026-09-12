@@ -18,6 +18,7 @@ from app.api.routes import (
     documents,
     health,
     jobs,
+    memory,
     overview,
     preferences,
     projects,
@@ -127,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(translation.router)
     app.include_router(jobs.router)
+    app.include_router(memory.router)
     app.include_router(preferences.router)
     app.include_router(usage.router)
     app.include_router(team.router)

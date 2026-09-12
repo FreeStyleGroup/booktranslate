@@ -35,6 +35,13 @@ class CatalogEntryPublic(BaseModel):
     checked_at: datetime
 
 
+class CatalogSourcePublic(BaseModel):
+    """Чем отвечает справочник: имя модели с выходом в сеть либо «offline»."""
+
+    name: str
+    online: bool
+
+
 class TermLookupRequest(BaseModel):
     """Спросить про слово, которого нет ни в словаре, ни в документе."""
 

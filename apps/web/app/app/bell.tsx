@@ -39,9 +39,7 @@ function live(job: TranslationJob): boolean {
 
 /** Задание, о котором стоит сообщить: кончилось само, а не остановлено. */
 function reportable(job: TranslationJob): boolean {
-  return (
-    job.finished_at !== null && (job.state === "done" || job.state === "failed")
-  );
+  return job.finished_at !== null && (job.state === "done" || job.state === "failed");
 }
 
 function finishedAfter(job: TranslationJob, since: number): boolean {
@@ -129,10 +127,7 @@ export function Bell({ active }: { active: boolean }) {
     }
 
     function onPointer(event: MouseEvent): void {
-      if (
-        root.current !== null &&
-        !root.current.contains(event.target as Node)
-      ) {
+      if (root.current !== null && !root.current.contains(event.target as Node)) {
         setOpen(false);
       }
     }
@@ -160,8 +155,7 @@ export function Bell({ active }: { active: boolean }) {
     setOpen(true);
   }
 
-  const unseen =
-    jobs === null ? 0 : jobs.filter((job) => finishedAfter(job, seen)).length;
+  const unseen = jobs === null ? 0 : jobs.filter((job) => finishedAfter(job, seen)).length;
 
   const label =
     unseen > 0
@@ -190,18 +184,14 @@ export function Bell({ active }: { active: boolean }) {
             strokeLinejoin="round"
           />
         </svg>
-        {unseen > 0 && (
-          <span className="cab__badge">{unseen > 9 ? "9+" : unseen}</span>
-        )}
+        {unseen > 0 && <span className="cab__badge">{unseen > 9 ? "9+" : unseen}</span>}
       </button>
 
       {open && (
         <div className="bell" role="dialog" aria-label="Задания на перевод">
           <div className="bell__head">
             <h4>Перевод книг</h4>
-            <span className="tile__note">
-              {working ? "идёт работа" : "последние задания"}
-            </span>
+            <span className="tile__note">{working ? "идёт работа" : "последние задания"}</span>
           </div>
 
           {failed && jobs === null ? (
@@ -212,8 +202,8 @@ export function Bell({ active }: { active: boolean }) {
             <p className="bell__empty">Спрашиваем…</p>
           ) : jobs.length === 0 ? (
             <p className="bell__empty">
-              Заданий пока нет. Книга ставится в очередь на своей карточке — и
-              её ход будет виден здесь.
+              Заданий пока нет. Книга ставится в очередь на своей карточке — и её ход будет виден
+              здесь.
             </p>
           ) : (
             <ul className="bell__list">
@@ -234,29 +224,15 @@ export function Bell({ active }: { active: boolean }) {
 }
 
 /** Одно задание: книга, что с ней и когда. */
-function Item({
-  job,
-  fresh,
-  onGo,
-}: {
-  job: TranslationJob;
-  fresh: boolean;
-  onGo: () => void;
-}) {
+function Item({ job, fresh, onGo }: { job: TranslationJob; fresh: boolean; onGo: () => void }) {
   const percent =
     job.segments_total === 0
       ? 0
-      : Math.min(
-          100,
-          Math.round((job.segments_done * 100) / job.segments_total),
-        );
+      : Math.min(100, Math.round((job.segments_done * 100) / job.segments_total));
 
   return (
     <li className={fresh ? "bell__item is-new" : "bell__item"}>
-      <span
-        className={`bell__mark bell__mark--${job.state}`}
-        aria-hidden="true"
-      />
+      <span className={`bell__mark bell__mark--${job.state}`} aria-hidden="true" />
       <div className="bell__text">
         <Link href={`/app/documents/${job.document_id}`} onClick={onGo}>
           {job.document_title}
@@ -270,9 +246,7 @@ function Item({
 function describe(job: TranslationJob, percent: number): string {
   switch (job.state) {
     case "waiting":
-      return job.attempts > 0
-        ? `в очереди · заход ${job.attempts + 1}`
-        : "в очереди";
+      return job.attempts > 0 ? `в очереди · заход ${job.attempts + 1}` : "в очереди";
     case "running":
       return `переводится · ${percent}% · ${thousands(job.segments_done)} из ${thousands(job.segments_total)}`;
     case "done":

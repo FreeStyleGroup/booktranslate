@@ -1,0 +1,155 @@
+/* Память переводов.
+
+   Числа наверху, список под ними. Общие поля — из globals.css, заметки и
+   кнопки — из work.css.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+.mm-head p {
+  max-width: 72ch;
+}
+
+.mm-note {
+  margin: -6px 0 0;
+  max-width: 90ch;
+  line-height: 1.6;
+}
+
+.mm-block {
+  margin-bottom: 20px;
+}
+
+/* ── Отбор ── */
+
+.mm-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.mm-filters input,
+.mm-filters select {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.mm-filters input {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.mm-filters input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* ── Список ── */
+
+.mm-list {
+  display: grid;
+  gap: 2px;
+}
+
+.mm-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px;
+  align-items: start;
+  gap: 14px;
+  padding: 12px 4px;
+}
+
+.mm-row + .mm-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Правленная человеком пара помечена полосой: она надёжнее машинных. */
+.mm-row.is-human {
+  box-shadow: inset 3px 0 0 var(--ok);
+  padding-left: 12px;
+}
+
+.mm-row__source {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mm-row__source p,
+.mm-row__target {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.mm-input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.mm-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.mm-input:disabled {
+  background: var(--paper-tint);
+  cursor: progress;
+}
+
+.mm-row .wk-kill {
+  margin-top: 4px;
+}
+
+.mm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 1100px) {
+  .wk-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  /* Исходник сверху, перевод под ним, крестик рядом с переводом. */
+  .mm-row {
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+
+  .mm-row__source {
+    grid-column: 1 / -1;
+  }
+
+  .mm-filters input {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}

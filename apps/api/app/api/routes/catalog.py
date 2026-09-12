@@ -9,11 +9,13 @@ from app.api.deps import ContextDep, LookupDep, SessionDep
 from app.schemas.catalog import (
     CatalogEntryPublic,
     CatalogLookupReport,
+    CatalogSourcePublic,
     DocumentLookupRequest,
     TermLookupRequest,
 )
 from app.services.catalog import CatalogService, LookupReport, Unknown
 from app.services.pricing import estimate_usd
+from app.services.providers.lookup import OFFLINE
 
 router = APIRouter(tags=["catalog"])
 
@@ -39,6 +41,17 @@ async def list_catalog(
     )
 
     return [CatalogEntryPublic.model_validate(entry) for entry in entries]
+
+
+@router.get("/catalog/source", response_model=CatalogSourcePublic)
+async def catalog_source(lookup: LookupDep) -> CatalogSourcePublic:
+    """Чем отвечает справочник сейчас.
+
+    Витрине это нужно до запроса, а не после: выключенный источник
+    отвечает «не нашёл» на всё, и без предупреждения человек решил бы, что
+    слова нет в сети.
+    """
+    return CatalogSourcePublic(name=lookup.name, online=lookup.name != OFFLINE)
 
 
 @router.post("/catalog/lookup", response_model=CatalogLookupReport)

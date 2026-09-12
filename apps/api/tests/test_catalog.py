@@ -238,6 +238,17 @@ async def test_search_looks_into_definitions(db_client: AsyncClient) -> None:
 
 
 @requires_database
+async def test_catalog_tells_which_source_answers(db_client: AsyncClient) -> None:
+    """Выключенный источник отвечает «не нашёл» на всё — об этом надо знать заранее."""
+    account = await register(db_client)
+
+    response = await db_client.get("/catalog/source", headers=account.headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"name": "test-lookup", "online": True}
+
+
+@requires_database
 async def test_catalogue_is_scoped_to_organization(db_client: AsyncClient) -> None:
     owner = await register(db_client)
     await lookup(db_client, owner, ["basis risk"])

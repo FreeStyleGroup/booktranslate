@@ -231,6 +231,65 @@ export type SharedTerm = {
 /** Подсказки из общего словаря; без тематики их нет — и сказано почему. */
 export type Suggestions = { subject: string | null; items: SharedTerm[] };
 
+/** Пара памяти переводов: «этот исходник переведён вот так». */
+export type TranslationUnit = {
+  id: string;
+  source_language: string;
+  target_language: string;
+  source_text: string;
+  target_text: string;
+  // Имя модели либо «human».
+  origin: string;
+  // Сколько раз пара пригодилась — то есть сколько раз за неё не платили.
+  hits: number;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Чего память стоит. Деньги — оценка сверху по текущей модели. */
+export type MemorySummary = {
+  units: number;
+  human_units: number;
+  hits: number;
+  saved_characters: number;
+  saved_usd: number | null;
+};
+
+export type MemoryPage = { total: number; items: TranslationUnit[]; summary: MemorySummary };
+
+export type CatalogReference = { title: string; url: string };
+
+/** Справка по термину: что это, какой перевод предлагают источники. */
+export type CatalogEntry = {
+  id: string;
+  source_language: string;
+  target_language: string;
+  source_term: string;
+  // Ложь — тоже результат: искали и не нашли, второй раз спрашивать незачем.
+  found: boolean;
+  suggested_target: string | null;
+  definition: string | null;
+  expansion: string | null;
+  kind: GlossaryKind;
+  sources: CatalogReference[];
+  // Имя модели, ходившей в сеть, либо «offline».
+  looked_up_by: string;
+  checked_at: string;
+};
+
+/** Чем отвечает справочник сейчас. */
+export type CatalogSource = { name: string; online: boolean };
+
+/** Чем закончился запрос справок. */
+export type CatalogLookupReport = {
+  entries: CatalogEntry[];
+  from_catalog: number;
+  asked: number;
+  found: number;
+  searches: number;
+  estimated_usd: number | null;
+};
+
 /** Ответ API — или причина, по которой его нет.
  *
  * Отказ возвращается страницей, а не бросается: недоступный API это не

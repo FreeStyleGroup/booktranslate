@@ -1,0 +1,225 @@
+/* Каталог справок.
+
+   Форма запроса сверху, справки карточками под ней. Общие поля — из
+   globals.css, заметки и кнопки — из work.css.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+.ct-head p {
+  max-width: 72ch;
+}
+
+.ct-block {
+  margin-bottom: 20px;
+}
+
+/* ── Запрос ── */
+
+.ct-offline {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--warn-tint);
+  color: var(--warn);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.ct-offline code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.ct-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.ct-form__terms,
+.ct-form__sample,
+.ct-check,
+.ct-form .btn {
+  grid-column: 1 / -1;
+}
+
+.ct-form .btn {
+  justify-self: start;
+}
+
+/* Поле для списка слов: у общих полей задана высота строки, а здесь
+   нужна высота абзаца. */
+.ct-form textarea {
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ct-form textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.ct-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.ct-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.ct-check small {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.ct-block .wk-note {
+  margin: 18px 0 0;
+  align-items: flex-start;
+}
+
+/* ── Отбор ── */
+
+.ct-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.ct-filters input {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.ct-filters input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* ── Справки ── */
+
+.ct-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ct-entry {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-tint);
+}
+
+/* Ненайденная справка гаснет, но остаётся: это тоже знание. */
+.ct-entry.is-missing {
+  opacity: 0.7;
+}
+
+.ct-entry__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ct-entry__head b {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ct-entry__expansion {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.ct-entry__target,
+.ct-entry__definition {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ct-entry__target {
+  font-weight: 500;
+}
+
+.ct-entry__sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13.5px;
+}
+
+.ct-entry__sources a {
+  color: var(--brand);
+  overflow-wrap: anywhere;
+}
+
+.ct-entry__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.ct-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 680px) {
+  .ct-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ct-filters input {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}

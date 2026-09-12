@@ -126,6 +126,9 @@ class TermLookupProvider(Protocol):
     async def lookup(self, request: LookupRequest) -> Explanation: ...
 
 
+OFFLINE = "offline"
+
+
 class OfflineLookup:
     """Поиск выключен.
 
@@ -137,7 +140,7 @@ class OfflineLookup:
 
     @property
     def name(self) -> str:
-        return "offline"
+        return OFFLINE
 
     async def lookup(self, request: LookupRequest) -> Explanation:
         return Explanation(found=False, definition="Внешний поиск выключен")
