@@ -9,6 +9,7 @@ import { currentUser } from "../lib/current-user";
 import { accessToken, organizationId, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
 import "./cabinet.css";
+import { Bell } from "./bell";
 import { SideNav, type NavCounts } from "./side-nav";
 import { NavToggle } from "./nav-toggle";
 import { ThemeToggle } from "../theme-toggle";
@@ -92,20 +93,8 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
 
           <div className="cab__tools">
             <ThemeToggle />
-            {/* Контур, а не эмодзи: эмодзи жёлтый в любой теме и спорит с
-                остальными серыми значками шапки. */}
-            <button className="cab__icon" type="button" aria-label="Уведомления">
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path
-                  d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Zm4 4h4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            {/* Задания пространства: без пространства спрашивать не о чем. */}
+            <Bell active={me !== null && me.memberships.length > 0} />
 
             <div className="cab__user">
               <span className="cab__avatar" aria-hidden="true">

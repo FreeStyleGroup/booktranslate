@@ -188,6 +188,26 @@ export async function documentJob(
   }
 }
 
+/** Последние задания пространства — для колокольчика в шапке.
+ *
+ * Тем же действием с любой страницы кабинета: колокольчик живёт в
+ * раскладке, а не на странице, и спрашивает сам, пока что-то переводится.
+ */
+export async function recentJobs(): Promise<{ error?: string; jobs?: TranslationJob[] }> {
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    const jobs = await apiFetch<TranslationJob[]>("/jobs?limit=20", {
+      token,
+      organizationId: organization,
+    });
+
+    return { jobs };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /** Остановить перевод.
  *
  * Сделанное остаётся сделанным: переведённое записано после каждой пачки, и

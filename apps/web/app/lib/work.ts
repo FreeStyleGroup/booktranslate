@@ -98,6 +98,8 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 export type TranslationJob = {
   id: string;
   document_id: string;
+  // Название книги — с заданием: список заданий читают люди.
+  document_title: string;
   state: JobState;
   requested_by_id: string | null;
   attempts: number;

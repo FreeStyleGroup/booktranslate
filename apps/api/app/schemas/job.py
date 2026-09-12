@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
 
 from app.models.job import JobState
 
@@ -20,6 +20,10 @@ class TranslationJobPublic(BaseModel):
 
     id: uuid.UUID
     document_id: uuid.UUID
+    # Название книги — из подгруженной вместе с заданием записи: список
+    # заданий читают люди, а не программы, и «книга такая-то переведена»
+    # без названия им не о чем.
+    document_title: str = Field(validation_alias=AliasPath("document", "title"))
     state: JobState
     requested_by_id: uuid.UUID | None
     attempts: int

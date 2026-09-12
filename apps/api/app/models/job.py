@@ -24,9 +24,10 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.document import Document
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
 
 
@@ -67,6 +68,11 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         nullable=False,
         index=True,
     )
+
+    # Книга подгружается вместе с заданием: задание показывают человеку, а
+    # человеку задание без названия книги ни о чём не говорит. Одним
+    # соединением, а не отдельным запросом на строку списка.
+    document: Mapped[Document] = relationship(lazy="joined")
 
     state: Mapped[JobState] = mapped_column(
         Enum(JobState, name="job_state", native_enum=True),

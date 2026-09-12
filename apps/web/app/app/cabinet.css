@@ -77,7 +77,6 @@
   }
 }
 
-
 .cab__brand {
   display: flex;
   align-items: center;
@@ -111,7 +110,9 @@
   border-radius: 12px;
   font-size: 15px;
   color: var(--ink-soft);
-  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease);
 }
 
 .cab__link i {
@@ -203,13 +204,174 @@
   place-items: center;
   font-size: 16px;
   cursor: pointer;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease),
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease),
     border-color 0.2s var(--ease);
 }
 
 .cab__icon:hover {
   color: var(--ink);
   border-color: color-mix(in srgb, var(--ink) 22%, var(--line));
+}
+
+/* ── Колокольчик ── */
+
+.cab__bell {
+  position: relative;
+}
+
+/* Значок числа и точка работы висят на самой кнопке. */
+.cab__bell .cab__icon {
+  position: relative;
+}
+
+.cab__icon:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Значок числа: что-то кончилось с тех пор, как список открывали. */
+.cab__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* Точка работы: книга переводится, сообщать ещё нечего. */
+.cab__icon.is-live::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--paper);
+}
+
+.bell {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+
+/* На телефоне список выравнивается по экрану, а не по кнопке: прижатый к
+   её правому краю, он уезжал за левый край окна. */
+@media (max-width: 620px) {
+  .bell {
+    position: fixed;
+    top: 72px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.bell__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.bell__head h4 {
+  margin: 0;
+  font-size: 14.5px;
+}
+
+.bell__empty {
+  margin: 0;
+  padding: 18px;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+.bell__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.bell__item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 18px;
+}
+
+.bell__item.is-new {
+  background: var(--brand-tint);
+}
+
+.bell__mark {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.bell__mark--running {
+  background: var(--accent);
+}
+
+.bell__mark--done {
+  background: var(--ok);
+}
+
+.bell__mark--failed {
+  background: var(--danger);
+}
+
+.bell__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bell__text a {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bell__text a:hover {
+  text-decoration: underline;
+}
+
+.bell__line {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
 }
 
 /* Выход стоит рядом с именем, а не в меню разделов: это не раздел. */
@@ -223,7 +385,9 @@
   font: inherit;
   font-size: 14px;
   cursor: pointer;
-  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition:
+    color 0.2s var(--ease),
+    border-color 0.2s var(--ease);
 }
 
 .cab__exit:hover {

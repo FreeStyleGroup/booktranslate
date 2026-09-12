@@ -291,6 +291,9 @@ async def test_job_list_shows_the_book_history(db_client: AsyncClient) -> None:
     assert response.status_code == 200, response.text
     assert len(jobs) == 1
     assert jobs[0]["document_id"] == document_id
+    # Название книги — с заданием: по списку заданий человек ищет книгу, и
+    # идентификатора ему для этого мало.
+    assert jobs[0]["document_title"] == "руководство"
 
 
 @requires_database
