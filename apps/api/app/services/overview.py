@@ -158,11 +158,15 @@ class OverviewService(TenantService):
             )
         ).one()
 
+        # 🔥 int(): сумму по bigint Postgres возвращает типом numeric, и в
+        # Python она приходит Decimal. Пока расход нулевой, coalesce отдаёт
+        # обычный ноль и всё сходится; первая переведённая книга приносит
+        # Decimal, а прейскурант умножает его на float — и сводка падает.
         usage = Usage(
-            input_tokens=row[0],
-            output_tokens=row[1],
-            cached_input_tokens=row[2],
-            cache_write_tokens=row[3],
+            input_tokens=int(row[0]),
+            output_tokens=int(row[1]),
+            cached_input_tokens=int(row[2]),
+            cache_write_tokens=int(row[3]),
         )
 
         return usage, row[4]

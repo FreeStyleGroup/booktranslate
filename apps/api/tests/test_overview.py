@@ -5,11 +5,49 @@
 и чужое рабочее пространство в сводку не попадает.
 """
 
-from httpx import AsyncClient
+import uuid
 
+from httpx import AsyncClient
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.document import Document
 from tests.conftest import requires_database
 from tests.factories import register
 from tests.test_terminology import prepare
+
+
+@requires_database
+async def test_overview_prices_a_real_translation(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """🔥 Сумму токенов Postgres отдаёт как Decimal; прейскурант считает во float.
+
+    Пока расход нулевой, ошибка не проявляется — первая переведённая книга
+    роняла сводку целиком, и кабинет открывался пустым.
+    """
+    account = await register(db_client)
+    document_id = await prepare(db_client, account)
+
+    await session.execute(
+        update(Document)
+        .where(Document.id == uuid.UUID(document_id))
+        .values(
+            input_tokens=1000,
+            output_tokens=500,
+            cached_input_tokens=100,
+            cache_write_tokens=50,
+            translated_by="claude-opus-5",
+        )
+    )
+    await session.commit()
+
+    response = await db_client.get("/overview", headers=account.headers)
+
+    assert response.status_code == 200, response.text
+    usage = response.json()["usage"]
+    assert usage["input_tokens"] == 1000
+    assert usage["estimated_usd"] is not None and usage["estimated_usd"] > 0
 
 
 @requires_database
