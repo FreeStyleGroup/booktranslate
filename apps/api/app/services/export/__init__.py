@@ -69,11 +69,26 @@ def renderer_for(export_format: ExportFormat, source_format: SourceFormat) -> Re
     return _RENDERERS[export_format]
 
 
+def formats_for(source_format: SourceFormat) -> list[ExportFormat]:
+    """Во что собирается перевод документа этого формата.
+
+    Формат оригинала — первым: ради него сюда и приходят. `docx` в перечне
+    не нужен: для документа Word он значит то же, что `source`, а для
+    остальных отвергается. Список отдаётся клиенту вместе с документом —
+    кнопки в кабинете рисуются по нему, а не по второму списку на той
+    стороне, который разошёлся бы с этим при первом новом формате.
+    """
+    in_place = [ExportFormat.SOURCE] if source_format in _IN_PLACE else []
+
+    return [*in_place, ExportFormat.MARKDOWN, ExportFormat.TEXT]
+
+
 __all__ = [
     "ExportError",
     "ExportFormat",
     "Rendered",
     "Renderer",
     "TranslatedBlock",
+    "formats_for",
     "renderer_for",
 ]

@@ -12,6 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api.errors import handle_domain_error
 from app.api.routes import (
     admin,
+    admin_glossary,
     auth,
     catalog,
     documents,
@@ -21,6 +22,7 @@ from app.api.routes import (
     preferences,
     projects,
     segments,
+    team,
     terminology,
     translation,
     usage,
@@ -116,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
+    app.include_router(admin_glossary.router)
     app.include_router(overview.router)
     app.include_router(projects.router)
     app.include_router(documents.router)
@@ -126,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(preferences.router)
     app.include_router(usage.router)
+    app.include_router(team.router)
 
     return app
 

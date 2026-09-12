@@ -4,11 +4,20 @@
    чьи-то данные. Когда страница начнёт показывать реальный проект, константы
    заменятся запросом — разметка останется та же. */
 
+import type { Metadata } from "next";
+
 import { CONTACT_EMAIL, TAGLINE } from "./contacts";
 import { LangSwitch } from "./lang-switch";
 import { MobileMenu } from "./mobile-menu";
 import { ThemeToggle } from "./theme-toggle";
 import { Reveal } from "./reveal";
+import { SiteSchema } from "./site-schema";
+
+// Остальное — заголовок, описание, Open Graph — наследуется от корневой
+// разметки; здесь только адрес, по которому эту страницу считать главной.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 type Verdict = "ok" | "warn" | "danger" | "info";
 
@@ -226,6 +235,8 @@ const FAQ = [
 export default function Home() {
   return (
     <>
+      <SiteSchema faq={FAQ} features={[...OUTCOMES, ...FEATURES].map((item) => item.title)} />
+
       <header className="top">
         <div className="wrap top__inner">
           <div className="logo">

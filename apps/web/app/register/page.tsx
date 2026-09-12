@@ -6,6 +6,7 @@ import { AuthShell } from "../auth-shell";
 export const metadata: Metadata = {
   title: "Регистрация — BookTranslate",
   description: "Создание рабочего пространства BookTranslate.",
+  alternates: { canonical: "/register" },
 };
 
 export default function RegisterPage() {

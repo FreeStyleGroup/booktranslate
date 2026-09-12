@@ -19,7 +19,10 @@ export function CreateUser() {
     <section className="adm-panel">
       <div className="adm-panel__head">
         <h2>Создать пользователя</h2>
-        <span className="muted">Пароль сгенерируется — покажем его один раз</span>
+        <span className="muted">
+          Пароль сгенерируется — покажем его один раз. Идентификатор пространства
+          есть в ответе на создание его первого пользователя.
+        </span>
       </div>
 
       <form className="adm-create" action={action}>
@@ -41,7 +44,9 @@ export function CreateUser() {
         {/* Списка организаций у API нет, поэтому существующее пространство
             указывается идентификатором. Одно из двух полей обязательно —
             проверяет серверное действие, а не `required`: у пары «либо
-            то, либо это» браузерной проверки не бывает. */}
+            то, либо это» браузерной проверки не бывает. Подсказка про
+            идентификатор — в шапке, а не под полем: поле с подписью снизу
+            выше соседних, и строка формы ломается. */}
         <label className="field">
           <span>…или существующее</span>
           <input
@@ -51,7 +56,6 @@ export function CreateUser() {
             autoComplete="off"
             spellCheck={false}
           />
-          <small>Идентификатор из ответа на создание первого пользователя</small>
         </label>
 
         <label className="field">

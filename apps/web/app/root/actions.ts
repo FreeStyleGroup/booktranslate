@@ -68,6 +68,114 @@ export async function changeStatus(_previous: Result, formData: FormData): Promi
   return {};
 }
 
+export type PublishState = Result & { published?: number; at?: number };
+
+/** Одобрить отмеченные термины загрузки в общий словарь под тематикой. */
+export async function publishTerms(
+  _previous: PublishState,
+  formData: FormData,
+): Promise<PublishState> {
+  const token = await accessToken();
+
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  const upload = String(formData.get("upload") ?? "");
+  const subject = String(formData.get("subject") ?? "").trim();
+  const ids = formData.getAll("term").map(String).filter((id) => UUID.test(id));
+
+  if (!UUID.test(upload)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if (subject === "") {
+    return { error: "Выберите тематику: без неё термин попадёт не в те книги" };
+  }
+
+  if (ids.length === 0) {
+    return { error: "Отметьте хотя бы один термин" };
+  }
+
+  try {
+    const answer = await apiFetch<{ published: number }>("/admin/glossary/shared", {
+      method: "POST",
+      token,
+      body: { term_ids: ids, subject },
+    });
+
+    revalidatePath("/root/glossary");
+    revalidatePath(`/root/glossary/${upload}`);
+
+    return { published: answer.published, at: Date.now() };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+}
+
+/** Отметить загрузку просмотренной: она уходит из «новых». */
+export async function markReviewed(_previous: Result, formData: FormData): Promise<Result> {
+  const token = await accessToken();
+  const upload = String(formData.get("upload") ?? "");
+
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  if (!UUID.test(upload)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    await apiFetch(`/admin/glossary/uploads/${upload}/reviewed`, { method: "POST", token });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+
+  revalidatePath("/root");
+  revalidatePath("/root/glossary");
+  revalidatePath(`/root/glossary/${upload}`);
+
+  return {};
+}
+
+/** Снять запись из общего словаря. Принявшие её пространства свой термин
+    не теряют: он их решение. */
+export async function removeShared(_previous: Result, formData: FormData): Promise<Result> {
+  const token = await accessToken();
+  const id = String(formData.get("id") ?? "");
+
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  if (!UUID.test(id)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    await apiFetch(`/admin/glossary/shared/${id}`, { method: "DELETE", token });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+
+  revalidatePath("/root/glossary");
+
+  return {};
+}
+
 /** Завести учётную запись и получить выданный пароль. */
 export async function createUser(
   _previous: CreateState,

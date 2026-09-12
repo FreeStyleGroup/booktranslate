@@ -28,6 +28,7 @@ import {
 } from "../../labels";
 import "../../work.css";
 import { DeleteButton, ParseButton } from "../actions-ui";
+import { ExportPanel } from "../export-panel";
 import { BeforeTranslate, TranslateRun } from "../translate-run";
 
 export const metadata: Metadata = {
@@ -173,6 +174,18 @@ export default async function DocumentPage({
 
       {parsed && (
         <NextStep book={book} profile={profile.data} job={jobs.data?.[0] ?? null} />
+      )}
+
+      {/* Забрать можно, как только переведён хоть один сегмент: середину
+          работы показывают заказчику и отдают на вычитку. Книга, где не
+          переведено ничего, «выгрузилась» бы своим же исходником. */}
+      {parsed && profile.data !== undefined && profile.data.untranslated < profile.data.segments && (
+        <ExportPanel
+          documentId={book.id}
+          sourceFormat={book.source_format}
+          formats={book.export_formats}
+          untranslated={profile.data.untranslated}
+        />
       )}
 
       {parsed && segments.data !== undefined && segments.data.items.length > 0 && (
@@ -338,6 +351,9 @@ function NextStep({
               )} человека: проверки нашли расхождение чисел, нарушение термина или потерянную подстановку. Это не приговор переводу, а список мест, на которые стоит посмотреть.`}
         </p>
         <div className="tile__foot">
+          <a className="btn btn--primary btn--small" href="#export">
+            Скачать перевод
+          </a>
           <Link className="btn btn--ghost btn--small" href="/app/queue">
             Очередь замечаний
           </Link>

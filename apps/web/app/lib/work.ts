@@ -34,12 +34,18 @@ export type DocumentStatus =
   | "done"
   | "failed";
 
+/** Во что собирается перевод: формат оригинала, если он переписывается по
+ *  месту, и текстовые — для любого исходника. Список приходит от API:
+ *  реестр сборщиков живёт там, и второй список здесь разошёлся бы с ним. */
+export type ExportFormat = "source" | "markdown" | "text";
+
 export type Document = {
   id: string;
   project_id: string;
   title: string;
   original_filename: string | null;
   source_format: string;
+  export_formats: ExportFormat[];
   status: DocumentStatus;
   size_bytes: number | null;
   content_hash: string | null;
@@ -121,12 +127,107 @@ export type ReviewProgress = {
   by_check: Record<string, number>;
 };
 
+export type Role = "owner" | "admin" | "manager" | "translator" | "reviewer" | "viewer";
+
+export type Member = {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role: Role;
+  last_login_at: string | null;
+  joined_at: string;
+};
+
+/** Открытое приглашение. Ссылки в нём нет: в базе только её хеш, и после
+ *  выписки она показывается один раз. */
+export type Invitation = {
+  id: string;
+  email: string;
+  role: Role;
+  invited_by: string | null;
+  created_at: string;
+  expires_at: string;
+  expired: boolean;
+};
+
+export type Team = {
+  members: Member[];
+  invitations: Invitation[];
+  // Роль смотрящего: по ней решается, показывать ли управление.
+  my_role: Role;
+};
+
 export type SegmentPage = {
   total: number;
   limit: number;
   offset: number;
   items: Segment[];
 };
+
+export type GlossaryKind = "term" | "abbreviation" | "do_not_translate" | "notation" | "proper_name";
+
+export type GlossaryStatus =
+  | "proposed"
+  | "confirmed"
+  | "needs_review"
+  | "needs_unification"
+  | "retired";
+
+/** Запись словаря: разряд — что это, статус — договорились ли. */
+export type GlossaryTerm = {
+  id: string;
+  project_id: string | null;
+  source_language: string;
+  target_language: string;
+  source_term: string;
+  target_term: string;
+  kind: GlossaryKind;
+  status: GlossaryStatus;
+  note: string | null;
+  reference: string | null;
+  mandatory: boolean;
+  case_sensitive: boolean;
+  expand_on_first_use: boolean;
+  // «manual», «extracted», «platform», «import:<источник>».
+  source: string;
+  upload_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GlossaryPage = { total: number; items: GlossaryTerm[] };
+
+/** Запись о загрузке словаря — с разрешением, под которым она прошла. */
+export type GlossaryUpload = {
+  id: string;
+  filename: string;
+  origin: string;
+  source_language: string;
+  target_language: string;
+  project_id: string | null;
+  total: number;
+  added: number;
+  updated: number;
+  skipped: number;
+  shared: boolean;
+  created_at: string;
+};
+
+/** Термин общего словаря площадки. */
+export type SharedTerm = {
+  id: string;
+  subject: string;
+  source_language: string;
+  target_language: string;
+  source_term: string;
+  target_term: string;
+  kind: GlossaryKind;
+  note: string | null;
+  created_at: string;
+};
+
+/** Подсказки из общего словаря; без тематики их нет — и сказано почему. */
+export type Suggestions = { subject: string | null; items: SharedTerm[] };
 
 /** Ответ API — или причина, по которой его нет.
  *

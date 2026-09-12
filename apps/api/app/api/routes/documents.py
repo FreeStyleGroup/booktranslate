@@ -17,6 +17,7 @@ from app.services.exporting import ExportService
 from app.services.formats import media_type
 from app.services.profiling import ProfilingService
 from app.services.providers import provider_name
+from app.services.workspace import WorkspaceSettingsService
 
 router = APIRouter(tags=["documents"])
 
@@ -120,9 +121,11 @@ async def document_profile(
     узнать цену книги, запустив перевод, можно и так, но платить за это
     придётся уже по-настоящему.
     """
+    # Смета — по модели, которую выбрало пространство: иначе она считала
+    # бы по умолчанию площадки и расходилась бы со счётом вдвое.
     profile = await ProfilingService(session, context).build(
         document_id,
-        model=provider_name(),
+        model=provider_name(await WorkspaceSettingsService(session, context).model()),
         context_segments=get_settings().translation_context_segments,
     )
 

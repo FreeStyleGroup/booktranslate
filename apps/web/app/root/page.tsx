@@ -153,6 +153,20 @@ export default async function RootPage({
     return <AdminLogin unreachable />;
   }
 
+  // Сколько словарей ещё не смотрели — чтобы узнать о новом отсюда, а не
+  // заходя в ленту наугад. Недоступный счётчик страницу не ломает.
+  let uploads = 0;
+
+  try {
+    uploads = (
+      await apiFetch<{ unreviewed: number }>("/admin/glossary/uploads?limit=1", {
+        token: await accessToken(),
+      })
+    ).unreviewed;
+  } catch {
+    // Счётчик — подсказка, а не данные страницы.
+  }
+
   const more = list.items.length > PAGE;
   const items = list.items.slice(0, PAGE);
 
@@ -180,6 +194,9 @@ export default async function RootPage({
           <span className="tag tag--pending">Ждут решения: {list.counts.pending}</span>
           <span className="tag tag--active">С доступом: {list.counts.active}</span>
           <span className="tag tag--suspended">Закрыты: {list.counts.suspended}</span>
+          <Link className="btn btn--ghost btn--small" href="/root/glossary">
+            Словари{uploads > 0 && ` · ${uploads}`}
+          </Link>
           <SignOut className="btn btn--ghost btn--small" />
         </div>
       </header>

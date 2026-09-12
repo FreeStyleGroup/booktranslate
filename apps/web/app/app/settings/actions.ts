@@ -36,6 +36,104 @@ export type Result = {
   savedAt?: number;
 };
 
+export type ModelChoice = {
+  id: string;
+  title: string;
+  note: string;
+  // Долларов за миллион токенов; пусто — модель вне прейскуранта.
+  input_usd: number | null;
+  output_usd: number | null;
+};
+
+export type Subject = { id: string; title: string };
+
+export type WorkspaceSettings = {
+  // Чем переводят на самом деле: выбранное либо умолчание площадки.
+  translation_model: string;
+  // Что выбрало пространство; пусто — идёт по умолчанию.
+  chosen_model: string | null;
+  default_model: string;
+  models: ModelChoice[];
+  // Включена ли настоящая модель, а не заглушка разработки.
+  provider_ready: boolean;
+  // Тематика пространства; пусто — подсказок из общего словаря нет.
+  subject: string | null;
+  subjects: Subject[];
+  // Разрешено ли площадке брать термины загруженных словарей в общий.
+  share_glossary: boolean;
+};
+
+export type ModelResult = {
+  error?: string;
+  saved?: WorkspaceSettings;
+  savedAt?: number;
+};
+
+/** Тематика и разрешение на общий словарь — одной записью. */
+export async function saveSharing(_previous: ModelResult, formData: FormData): Promise<ModelResult> {
+  try {
+    const token = await accessToken();
+
+    if (token === undefined) {
+      return { error: "Сеанс закончился — войдите заново" };
+    }
+
+    const saved = await apiFetch<WorkspaceSettings>("/settings/workspace", {
+      method: "PUT",
+      token,
+      organizationId: await organizationId(),
+      body: {
+        subject: String(formData.get("subject") ?? "").trim() || null,
+        share_glossary: formData.get("share_glossary") === "yes",
+      },
+    });
+
+    revalidatePath("/app/settings");
+    revalidatePath("/app/glossary");
+
+    return { saved, savedAt: Date.now() };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+}
+
+export async function saveModel(_previous: ModelResult, formData: FormData): Promise<ModelResult> {
+  try {
+    const token = await accessToken();
+
+    if (token === undefined) {
+      return { error: "Сеанс закончился — войдите заново" };
+    }
+
+    // Кнопка «вернуться к умолчанию» шлёт ту же форму с признаком сброса:
+    // пустое значение для API и означает «умолчание площадки».
+    const reset = formData.get("reset") === "yes";
+
+    const saved = await apiFetch<WorkspaceSettings>("/settings/workspace", {
+      method: "PUT",
+      token,
+      organizationId: await organizationId(),
+      body: {
+        translation_model: reset ? null : String(formData.get("translation_model") ?? "").trim(),
+      },
+    });
+
+    revalidatePath("/app/settings");
+
+    return { saved, savedAt: Date.now() };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+}
+
 export async function saveNotifications(
   _previous: Result,
   formData: FormData,

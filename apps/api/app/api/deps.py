@@ -18,12 +18,14 @@ from app.db.session import get_session
 from app.models.organization import Membership, User, UserStatus
 from app.services.context import RequestContext
 from app.services.providers import (
+    ProviderFactory,
     TermLookupProvider,
     TranslationProvider,
     get_lookup,
-    get_provider,
+    get_provider_factory,
 )
 from app.services.storage import ObjectStorage, get_storage
+from app.services.workspace import model_for
 
 # auto_error=False: без заголовка отвечаем своей ошибкой на русском,
 # а не стандартным «Not authenticated».
@@ -41,6 +43,26 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    return await _user_by_token(credentials, session)
+
+
+async def get_optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> User | None:
+    """Кто пришёл, если пришёл кто-то.
+
+    Для ручек, у которых два пути — для вошедшего и для постороннего:
+    принятие приглашения. Токен, если он есть, проверяется так же строго,
+    как везде: испорченный или отозванный — отказ, а не «гость».
+    """
+    if credentials is None:
+        return None
+
+    return await _user_by_token(credentials, session)
+
+
+async def _user_by_token(credentials: HTTPAuthorizationCredentials, session: AsyncSession) -> User:
     try:
         payload = decode_access_token(credentials.credentials)
     except TokenError as exc:
@@ -132,10 +154,20 @@ async def get_context(
     )
 
 
+async def get_workspace_provider(
+    context: Annotated[RequestContext, Depends(get_context)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    factory: Annotated[ProviderFactory, Depends(get_provider_factory)],
+) -> TranslationProvider:
+    """Провайдер перевода той моделью, которую выбрало пространство."""
+    return factory(await model_for(session, context.organization_id))
+
+
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+OptionalUserDep = Annotated[User | None, Depends(get_optional_user)]
 SuperuserDep = Annotated[User, Depends(get_superuser)]
 ContextDep = Annotated[RequestContext, Depends(get_context)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 StorageDep = Annotated[ObjectStorage, Depends(get_storage)]
-ProviderDep = Annotated[TranslationProvider, Depends(get_provider)]
+ProviderDep = Annotated[TranslationProvider, Depends(get_workspace_provider)]
 LookupDep = Annotated[TermLookupProvider, Depends(get_lookup)]

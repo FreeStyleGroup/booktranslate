@@ -10,6 +10,7 @@
 пачку сегментов.
 """
 
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Any
 
@@ -81,11 +82,12 @@ def _client() -> Any:
 
 
 @lru_cache
-def get_provider() -> TranslationProvider:
-    """Провайдер перевода приложения.
+def get_provider(model: str | None = None) -> TranslationProvider:
+    """Провайдер перевода — для модели, которую выбрало пространство.
 
-    Функция, а не глобальный объект: так её подменяют в тестах через
-    зависимости FastAPI, не трогая настройки процесса.
+    Пусто — умолчание площадки. Кэш по модели: клиент один на процесс, а
+    провайдер — тонкая обёртка с настройками, и держать по одной на каждую
+    модель из каталога ничего не стоит.
     """
     settings = get_settings()
 
@@ -95,7 +97,7 @@ def get_provider() -> TranslationProvider:
     return ClaudeProvider(
         _client(),
         ClaudeSettings(
-            model=settings.anthropic_model,
+            model=model or settings.anthropic_model,
             max_tokens=settings.anthropic_max_tokens,
             effort=settings.anthropic_effort or None,
             # Запасная модель — возможность самой Anthropic, объявляемая
@@ -109,7 +111,20 @@ def get_provider() -> TranslationProvider:
     )
 
 
-def provider_name() -> str:
+ProviderFactory = Callable[[str | None], TranslationProvider]
+
+
+def get_provider_factory() -> ProviderFactory:
+    """Зависимость обработчиков: провайдер по модели пространства.
+
+    Фабрика, а не готовый провайдер, потому что модель известна только
+    после чтения настроек пространства из базы. Тесты подменяют именно
+    её — и получают заглушку для любой модели.
+    """
+    return get_provider
+
+
+def provider_name(model: str | None = None) -> str:
     """Каким провайдером переводили бы сейчас — без создания клиента.
 
     Смете нужно только имя: по нему берётся прейскурант. Строить ради
@@ -122,7 +137,7 @@ def provider_name() -> str:
     if settings.translation_provider != CLAUDE:
         return STUB
 
-    return settings.anthropic_model
+    return model or settings.anthropic_model
 
 
 @lru_cache
@@ -164,6 +179,7 @@ __all__ = [
     "Neighbourhood",
     "OfflineLookup",
     "ProviderError",
+    "ProviderFactory",
     "Reference",
     "StubProvider",
     "TermLookupProvider",
@@ -173,5 +189,6 @@ __all__ = [
     "Usage",
     "get_lookup",
     "get_provider",
+    "get_provider_factory",
     "provider_name",
 ]

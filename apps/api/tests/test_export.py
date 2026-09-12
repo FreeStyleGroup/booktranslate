@@ -77,6 +77,31 @@ def translated_docx() -> bytes:
 
 
 @requires_database
+async def test_document_says_which_formats_it_exports_to(db_client: AsyncClient) -> None:
+    """Кнопки выгрузки в кабинете рисуются по этому списку, а не по догадке витрины."""
+    account = await register(db_client)
+
+    markdown_id = await upload(
+        db_client, account, data=MANUAL, name="manual.md", media="text/markdown"
+    )
+    docx_id = await upload(
+        db_client,
+        account,
+        data=translated_docx(),
+        name="manual.docx",
+        media="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    markdown = await db_client.get(f"/documents/{markdown_id}", headers=account.headers)
+    docx_document = await db_client.get(f"/documents/{docx_id}", headers=account.headers)
+
+    # Markdown обратно в себя не собирается — формата оригинала в списке нет.
+    assert markdown.json()["export_formats"] == ["markdown", "text"]
+    # Word — собирается, и он первым: ради него и приходят.
+    assert docx_document.json()["export_formats"] == ["source", "markdown", "text"]
+
+
+@requires_database
 async def test_untranslated_document_is_not_handed_over(db_client: AsyncClient) -> None:
     """Книга, где половина абзацев на английском, отданная молча, — худший исход."""
     account = await register(db_client)

@@ -7,8 +7,22 @@
 
 import { headers } from "next/headers";
 
+/** Значение переменной, если оно задано. Пустая строка — не задано:
+ *  `next.config.ts` вписывает `NEXT_PUBLIC_API_URL` в сборку всегда, и без
+ *  переменной она приходит пустой, а не отсутствующей — `??` её пропускал
+ *  бы, и витрина ходила бы по относительному адресу в никуда. */
+function configured(value: string | undefined): string | undefined {
+  return value === undefined || value === "" ? undefined : value;
+}
+
+// 🔥 Умолчание — 127.0.0.1, а не localhost: Node разрешает localhost сначала
+// в ::1, и на машине, где на IPv6-адресе порт занят чем-то посторонним
+// (у Windows это пересыльщик WSL), каждый запрос к API уходил бы в
+// пустоту, а витрина отвечала бы «сервис недоступен» при живом API.
 export const API_URL =
-  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  configured(process.env.API_URL) ??
+  configured(process.env.NEXT_PUBLIC_API_URL) ??
+  "http://127.0.0.1:8000";
 
 /* Адрес посетителя, если запрос пришёл от него.
 
@@ -18,7 +32,7 @@ export const API_URL =
    Первый адрес в X-Forwarded-For ставит наш же прокси перед витриной и
    чужие значения отбрасывает, поэтому ему можно верить. Вне запроса —
    сборка, консоль — адреса нет, и это не ошибка. */
-async function clientAddress(): Promise<string | undefined> {
+export async function clientAddress(): Promise<string | undefined> {
   try {
     const incoming = await headers();
     const forwarded = incoming.get("x-forwarded-for")?.split(",")[0]?.trim();
@@ -92,7 +106,7 @@ export async function apiFetch<T>(path: string, options: Options = {}): Promise<
 }
 
 /** Сообщение об ошибке из ответа API — или из его отсутствия. */
-async function readError(response: Response): Promise<string> {
+export async function readError(response: Response): Promise<string> {
   try {
     const payload: unknown = await response.json();
 

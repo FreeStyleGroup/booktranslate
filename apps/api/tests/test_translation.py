@@ -554,7 +554,7 @@ async def test_glossary_is_scoped_to_organization(db_client: AsyncClient) -> Non
     listing = await db_client.get("/glossary", headers=stranger.headers)
 
     assert listing.status_code == 200
-    assert listing.json() == []
+    assert listing.json()["items"] == []
 
 
 @requires_database

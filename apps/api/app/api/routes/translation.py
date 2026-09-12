@@ -8,16 +8,24 @@ from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 from app.api.deps import ContextDep, ProviderDep, SessionDep
 from app.api.uploads import read_capped
 from app.core.config import get_settings
+from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
 from app.schemas.glossary import (
-    DictionaryImportResult,
+    GlossaryPagePublic,
     GlossaryTermCreate,
     GlossaryTermPublic,
     GlossaryTermUpdate,
     TranslationResult,
 )
+from app.schemas.shared import (
+    DictionaryImportResult,
+    GlossaryUploadPublic,
+    SharedTermPublic,
+    SuggestionsPublic,
+)
 from app.services.dictionaries import read_dictionary
 from app.services.glossary import MAX_REASONS, GlossaryService
 from app.services.pricing import estimate_usd
+from app.services.shared_glossary import SuggestionService
 from app.services.translation import TranslationService
 
 router = APIRouter(tags=["translation"])
@@ -99,19 +107,71 @@ async def translate_document(
     )
 
 
-@router.get("/glossary", response_model=list[GlossaryTermPublic])
+@router.get("/glossary", response_model=GlossaryPagePublic)
 async def list_glossary(
     context: ContextDep,
     session: SessionDep,
     project_id: Annotated[uuid.UUID | None, Query()] = None,
+    query: Annotated[
+        str | None, Query(max_length=300, description="Часть термина или перевода")
+    ] = None,
+    kind: Annotated[GlossaryEntryKind | None, Query()] = None,
+    status_filter: Annotated[GlossaryTermStatus | None, Query(alias="status")] = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
-) -> list[GlossaryTermPublic]:
-    terms = await GlossaryService(session, context).list(
-        project_id=project_id, limit=limit, offset=offset
+) -> GlossaryPagePublic:
+    """Словарь пространства страницей, с отбором по слову, разряду и состоянию."""
+    page = await GlossaryService(session, context).list(
+        project_id=project_id,
+        query=query,
+        kind=kind,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
     )
 
-    return [GlossaryTermPublic.model_validate(term) for term in terms]
+    return GlossaryPagePublic(
+        total=page.total, items=[GlossaryTermPublic.model_validate(term) for term in page.items]
+    )
+
+
+@router.get("/glossary/uploads", response_model=list[GlossaryUploadPublic])
+async def list_glossary_uploads(
+    context: ContextDep, session: SessionDep
+) -> list[GlossaryUploadPublic]:
+    """Что загружали в словарь: последние первыми."""
+    uploads = await GlossaryService(session, context).uploads()
+
+    return [GlossaryUploadPublic.model_validate(upload) for upload in uploads]
+
+
+@router.get("/glossary/suggestions", response_model=SuggestionsPublic)
+async def list_glossary_suggestions(context: ContextDep, session: SessionDep) -> SuggestionsPublic:
+    """Подсказки из общего словаря площадки по тематике пространства.
+
+    Только то, чего в своём словаре нет: своё решение подсказку снимает.
+    Без тематики список пуст — и ответ говорит об этом, а не молчит.
+    """
+    suggestions = await SuggestionService(session, context).suggest()
+
+    return SuggestionsPublic(
+        subject=suggestions.subject,
+        items=[SharedTermPublic.model_validate(item) for item in suggestions.items],
+    )
+
+
+@router.post(
+    "/glossary/suggestions/{shared_id}",
+    response_model=GlossaryTermPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+async def accept_glossary_suggestion(
+    shared_id: uuid.UUID, context: ContextDep, session: SessionDep
+) -> GlossaryTermPublic:
+    """Принять подсказку: она становится своим подтверждённым термином."""
+    term = await SuggestionService(session, context).accept(shared_id)
+
+    return GlossaryTermPublic.model_validate(term)
 
 
 @router.post("/glossary", response_model=GlossaryTermPublic, status_code=status.HTTP_201_CREATED)
@@ -155,6 +215,16 @@ async def import_glossary(
     overwrite_manual: Annotated[
         bool, Form(description="Перезаписывать записи, заведённые вручную")
     ] = False,
+    share: Annotated[
+        bool | None,
+        Form(
+            description=(
+                "Разрешить площадке взять термины этой загрузки в общий словарь. Не "
+                "передано — по настройке пространства; иное значение меняет настройку и "
+                "требует прав администратора пространства"
+            )
+        ),
+    ] = None,
 ) -> DictionaryImportResult:
     """Загрузить словарь из файла.
 
@@ -165,12 +235,13 @@ async def import_glossary(
     Ответ — сводка, а не список: по числу добавленных и причинам пропуска
     сразу видно, тот ли файл загрузили и не перепутаны ли колонки местами.
     """
+    filename = file.filename or ""
     contents = read_dictionary(
         # Не `file.read()`: он берёт в память столько, сколько принесли, и
         # многогигабайтный «словарь» кладёт процесс раньше, чем дело дойдёт
         # до разбора.
         await read_capped(file, limit_bytes=get_settings().max_upload_bytes),
-        file.filename or "",
+        filename,
         source_language=source_language,
         target_language=target_language,
     )
@@ -180,9 +251,13 @@ async def import_glossary(
         source_language=source_language,
         target_language=target_language,
         project_id=project_id,
-        source=f"import:{origin}",
+        origin=origin,
+        filename=filename,
         overwrite_manual=overwrite_manual,
+        share=share,
+        unreadable=len(contents.skipped),
     )
+    assert report.upload is not None  # noqa: S101 — загрузка записывается всегда
 
     # Причины из разбора файла и из записи в базу — это одно и то же для
     # того, кто загружает: он хочет видеть, что не доехало, а не где именно
@@ -193,6 +268,7 @@ async def import_glossary(
         updated=report.updated,
         skipped=report.skipped + len(contents.skipped),
         reasons=[*contents.skipped[:MAX_REASONS], *report.reasons][:MAX_REASONS],
+        upload=GlossaryUploadPublic.model_validate(report.upload),
     )
 
 

@@ -420,10 +420,12 @@
 
 /* ── Призыв к действию на карточке ── */
 
+/* Во всю ширину, и текст тоже: рамка уже соседних плиток читалась как
+   обрезанная, а текст, упирающийся в невидимую границу посреди широкой
+   карточки, — как недовёрстанный. */
 .wk-call {
   display: grid;
   gap: 10px;
-  max-width: 760px;
   margin-bottom: 20px;
 }
 
@@ -618,6 +620,75 @@
   margin: 14px 0 0;
   max-width: 70ch;
   line-height: 1.6;
+}
+
+/* ── Выгрузка ── */
+
+/* Форматы — плитками с подписью, а не выпадающим списком: выбор между
+   тремя вещами, и цена каждой должна быть видна до нажатия, а не после
+   раскрытия списка. */
+.ex-formats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.ex-format {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+
+.ex-format:hover {
+  border-color: var(--brand);
+}
+
+.ex-format.is-active {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+/* Радиокнопка спрятана размером, а не display:none — иначе до неё не
+   добраться с клавиатуры, а выбранная плитка и так подсвечена рамкой. */
+.ex-format input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ex-format:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.ex-format b {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.ex-format span {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ex-draft {
+  align-items: flex-start;
+}
+
+.ex-saved {
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
 }
 
 /* ── Узкие экраны ── */

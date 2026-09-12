@@ -70,23 +70,19 @@ class GlossaryTermPublic(BaseModel):
     mandatory: bool
     case_sensitive: bool
     expand_on_first_use: bool
-    # Откуда запись: «manual», «extracted», «import:<источник>». Нужна в
-    # интерфейсе, чтобы отличить загруженную пачку от ручной работы.
+    # Откуда запись: «manual», «extracted», «platform», «import:<источник>».
+    # Нужна в интерфейсе, чтобы отличить загруженную пачку от ручной работы.
     source: str
+    upload_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
 
 
-class DictionaryImportResult(BaseModel):
-    """Чем закончилась загрузка словаря."""
+class GlossaryPagePublic(BaseModel):
+    """Страница словаря: сколько всего подходит под отбор и что показано."""
 
     total: int
-    added: int
-    updated: int
-    skipped: int
-    # Причины пропуска, а не одно число: по ним видно, перепутаны ли колонки
-    # местами и тот ли файл загрузили.
-    reasons: list[str]
+    items: list[GlossaryTermPublic]
 
 
 class TranslationResult(BaseModel):

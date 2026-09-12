@@ -127,7 +127,7 @@ async def test_accepted_term_reaches_translation(db_client: AsyncClient) -> None
     assert report.status_code == 200, report.text
     assert report.json() == {"accepted": 2, "rejected": 0, "remaining": 0}
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     terms = {item["source_term"]: item for item in glossary}
 
     assert terms["check valve"]["source"] == "extracted"
@@ -172,7 +172,7 @@ async def test_abbreviation_keeps_expansion_in_note(db_client: AsyncClient) -> N
         json={"decisions": [{"candidate_id": plc["id"], "accept": True, "target_term": "ПЛК"}]},
     )
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     term = next(item for item in glossary if item["source_term"] == "PLC")
 
     assert term["note"] == "Programmable Logic Controller"

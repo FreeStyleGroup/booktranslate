@@ -61,6 +61,10 @@ services:
       - api_storage:/var/booktranslate/storage
     command: python -m app.worker
     stop_grace_period: 30s
+    # Проверка живости из образа — запрос к порту API, которого у рабочего
+    # нет: без этой строки контейнер навсегда «unhealthy».
+    healthcheck:
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy

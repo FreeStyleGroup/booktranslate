@@ -12,6 +12,7 @@ from app.models.memory import (
     GlossaryEntryKind,
     GlossaryTerm,
     GlossaryTermStatus,
+    GlossaryUpload,
     TranslationUnit,
 )
 from app.models.notification import NotificationSettings
@@ -19,7 +20,10 @@ from app.models.organization import Membership, Organization, Role, User, UserSt
 from app.models.project import Project
 from app.models.segment import Segment, SegmentKind, SegmentStatus
 from app.models.session import RefreshSession
+from app.models.shared import SharedTerm
+from app.models.team import Invitation
 from app.models.terminology import TermCandidate, TermCandidateStatus
+from app.models.workspace import WorkspaceSettings
 
 __all__ = [
     "CatalogEntry",
@@ -28,6 +32,8 @@ __all__ = [
     "GlossaryEntryKind",
     "GlossaryTerm",
     "GlossaryTermStatus",
+    "GlossaryUpload",
+    "Invitation",
     "JobState",
     "Membership",
     "NotificationSettings",
@@ -38,6 +44,7 @@ __all__ = [
     "Segment",
     "SegmentKind",
     "SegmentStatus",
+    "SharedTerm",
     "SourceFormat",
     "TermCandidate",
     "TermCandidateStatus",
@@ -45,4 +52,5 @@ __all__ = [
     "TranslationUnit",
     "User",
     "UserStatus",
+    "WorkspaceSettings",
 ]

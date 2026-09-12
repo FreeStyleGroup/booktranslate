@@ -90,6 +90,40 @@ export const GLOSSARY_KIND_HINT: Record<string, string> = {
   proper_name: "фирма, продукт, стандарт — решает человек",
 };
 
+/** Состояние решения по термину: договорились ли, а не что это. */
+export const GLOSSARY_STATUS: Record<string, string> = {
+  proposed: "Предложен",
+  confirmed: "Подтверждён",
+  needs_review: "Перепроверить",
+  needs_unification: "Унифицировать",
+  retired: "Снят",
+};
+
+export const GLOSSARY_STATUS_HINT: Record<string, string> = {
+  proposed: "уходит модели подсказкой, сегмент не помечает",
+  confirmed: "применяется как требование — и проверяется",
+  needs_review: "решение под вопросом, подсказкой пока идёт",
+  needs_unification: "в разных главах названо по-разному",
+  retired: "дубликат или ошибка — в работу не идёт",
+};
+
+/** Откуда запись словаря. Загрузка называется по источнику из файла. */
+export function glossarySource(source: string): string {
+  if (source === "manual") {
+    return "вручную";
+  }
+
+  if (source === "extracted") {
+    return "из книги";
+  }
+
+  if (source === "platform") {
+    return "из общего словаря";
+  }
+
+  return source.startsWith("import:") ? `загрузка: ${source.slice(7)}` : source;
+}
+
 export const CHECK_LABEL: Record<string, string> = {
   numbers: "Числа",
   placeholders: "Подстановки",
@@ -106,6 +140,27 @@ export const CHECK_CHIP: Record<string, string> = {
   first_use: "chip chip--info",
   untranslated: "chip chip--warn",
   empty: "chip chip--danger",
+};
+
+/** Роль в рабочем пространстве. */
+export const ROLE_LABEL: Record<string, string> = {
+  owner: "Владелец",
+  admin: "Администратор",
+  manager: "Менеджер",
+  translator: "Переводчик",
+  reviewer: "Редактор",
+  viewer: "Наблюдатель",
+};
+
+/** Что роль разрешает — там, где роль выбирают: без пояснения «менеджер»
+ *  и «администратор» выглядят одинаково. Списано с проверок прав в API. */
+export const ROLE_HINT: Record<string, string> = {
+  owner: "всё, включая назначение владельцев",
+  admin: "команда, настройки и вся работа с книгами",
+  manager: "проекты, книги, термины, перевод и приёмка",
+  translator: "загрузка и перевод книг, словарь, правка",
+  reviewer: "правка и приёмка перевода, выгрузка",
+  viewer: "только просмотр и выгрузка",
 };
 
 /** Формат исходника — так, как его называет человек, а не разборщик. */

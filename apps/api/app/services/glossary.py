@@ -10,9 +10,16 @@
 хватает одного, а словарь заказчика измеряется сотнями строк, а не
 миллионами — он помещается в память целиком.
 
-Сюда же будет подключаться импорт внешних баз (Microsoft Terminology,
-UNTERM, WIPO Pearl, глоссарий заказчика): у термина есть поле `source`,
-и загруженная пачка отличима от того, что правил человек.
+Импорт внешних баз (Microsoft Terminology, UNTERM, WIPO Pearl, глоссарий
+заказчика) идёт через поле `source`: загруженная пачка отличима от того,
+что правил человек. У каждой загрузки есть своя запись — кто, что и с
+каким итогом принёс — и разрешение пространства отдать её термины
+площадке.
+
+Общий словарь площадки подмешивается в работу подсказками: термины по
+тематике пространства, которых в его словаре нет, уходят модели как
+рекомендации — необязательные и неустоявшиеся, чтобы ни один сегмент не
+получил замечание из-за чужого решения.
 """
 
 import re
@@ -21,21 +28,36 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import or_, text
+from sqlalchemy import Select, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.config import get_settings
-from app.models.memory import GlossaryEntryKind, GlossaryTerm, GlossaryTermStatus
+from app.models.memory import (
+    GlossaryEntryKind,
+    GlossaryTerm,
+    GlossaryTermStatus,
+    GlossaryUpload,
+)
 from app.models.organization import Role
 from app.models.project import Project
+from app.models.shared import SharedTerm
 from app.services.base import TenantService
 from app.services.dictionaries import ImportedTerm
-from app.services.errors import ConflictError, InvalidInputError, NotFoundError
+from app.services.errors import (
+    AccessDeniedError,
+    ConflictError,
+    InvalidInputError,
+    NotFoundError,
+)
+from app.services.search import ESCAPE, contains
+from app.services.workspace import SETTINGS_ROLES, WorkspaceSettingsService, subject_for
 
 EDITING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
 
 # Метка записи, заведённой человеком. Загруженная пачка её не перезаписывает.
 MANUAL = "manual"
+# Метка записи, принятой из общего словаря площадки.
+PLATFORM = "platform"
 
 # Сколько строк уходит в базу одним оператором. Двадцать тысяч отдельных
 # вставок — это минуты вместо секунд.
@@ -99,10 +121,18 @@ class ImportReport:
     # Причины пропуска, а не одно число: «пропущено 240» ничего не говорит,
     # а «нет перевода» говорит, что колонки перепутаны местами.
     reasons: list[str] = field(default_factory=list)
+    # Запись о загрузке — с разрешением, под которым она прошла.
+    upload: GlossaryUpload | None = None
 
     def reason(self, text: str) -> None:
         if len(self.reasons) < MAX_REASONS:
             self.reasons.append(text)
+
+
+@dataclass(slots=True)
+class GlossaryPage:
+    total: int
+    items: list[GlossaryTerm]
 
 
 class Glossary:
@@ -217,21 +247,122 @@ class GlossaryService(TenantService):
                 expand_on_first_use=row.expand_on_first_use,
             )
 
+        # Общий словарь площадки — подсказками и только там, где своего
+        # решения нет: своё слово заказчика всегда важнее чужого. Термин
+        # приходит необязательным и неустоявшимся, поэтому модель его
+        # видит, а проверка сегмент за него не помечает. В потолок он
+        # укладывается вместе со своими.
+        for shared in await self._shared(
+            source_language=source_language,
+            target_language=target_language,
+            known=chosen,
+            limit=limit - len(rows),
+        ):
+            chosen[shared.source_term_normalized] = Term(
+                source=shared.source_term,
+                target=shared.target_term,
+                mandatory=False,
+                note=shared.note,
+                kind=shared.kind,
+                case_sensitive=shared.kind
+                in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
+                settled=False,
+            )
+
         return Glossary(list(chosen.values()))
 
+    async def _shared(
+        self,
+        *,
+        source_language: str,
+        target_language: str,
+        known: Mapping[str, Term],
+        limit: int,
+    ) -> list[SharedTerm]:
+        """Термины общего словаря по тематике пространства, которых нет в своём."""
+        if limit <= 0:
+            return []
+
+        subject = await subject_for(self._session, self.organization_id)
+        if subject is None:
+            return []
+
+        query = (
+            select(SharedTerm)
+            .where(
+                SharedTerm.subject == subject,
+                SharedTerm.source_language == source_language,
+                SharedTerm.target_language == target_language,
+            )
+            .order_by(SharedTerm.source_term_normalized)
+            .limit(limit + len(known))
+        )
+
+        rows = await self._session.scalars(query)
+
+        return [row for row in rows if row.source_term_normalized not in known][:limit]
+
     async def list(
-        self, *, project_id: uuid.UUID | None = None, limit: int = 200, offset: int = 0
-    ) -> list[GlossaryTerm]:
-        query = self.scoped(GlossaryTerm)
+        self,
+        *,
+        project_id: uuid.UUID | None = None,
+        query: str | None = None,
+        kind: GlossaryEntryKind | None = None,
+        status: GlossaryTermStatus | None = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> GlossaryPage:
+        """Страница словаря с отбором.
+
+        Общее число считается по тому же отбору отдельным запросом: страница
+        показывает двести строк из двух тысяч, а человеку нужно знать, сколько
+        всего подходит под его условие.
+        """
+        statement = self.scoped(GlossaryTerm)
 
         if project_id is not None:
-            query = query.where(
+            statement = statement.where(
                 or_(GlossaryTerm.project_id.is_(None), GlossaryTerm.project_id == project_id)
             )
 
-        query = query.order_by(GlossaryTerm.source_term_normalized).limit(limit).offset(offset)
+        if query:
+            pattern = contains(query)
+            statement = statement.where(
+                or_(
+                    GlossaryTerm.source_term_normalized.ilike(pattern, escape=ESCAPE),
+                    GlossaryTerm.target_term.ilike(pattern, escape=ESCAPE),
+                )
+            )
 
-        return list(await self._session.scalars(query))
+        if kind is not None:
+            statement = statement.where(GlossaryTerm.kind == kind)
+
+        if status is not None:
+            statement = statement.where(GlossaryTerm.status == status)
+
+        total = await self._count(statement)
+        rows = await self._session.scalars(
+            statement.order_by(GlossaryTerm.source_term_normalized).limit(limit).offset(offset)
+        )
+
+        return GlossaryPage(total=total, items=list(rows))
+
+    async def _count(self, statement: Select[tuple[GlossaryTerm]]) -> int:
+        counted = await self._session.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+
+        return int(counted or 0)
+
+    # Sequence, а не list: в теле класса имя `list` уже занято методом выше,
+    # и аннотация `list[...]` разрешилась бы в него.
+    async def uploads(self, *, limit: int = 50) -> Sequence[GlossaryUpload]:
+        """История загрузок пространства: последние первыми."""
+        return list(
+            await self._session.scalars(
+                self.scoped(GlossaryUpload).order_by(GlossaryUpload.created_at.desc()).limit(limit)
+            )
+        )
 
     async def add(
         self,
@@ -365,9 +496,12 @@ class GlossaryService(TenantService):
         *,
         source_language: str,
         target_language: str,
-        source: str,
+        origin: str,
+        filename: str,
         project_id: uuid.UUID | None = None,
         overwrite_manual: bool = False,
+        share: bool | None = None,
+        unreadable: int = 0,
     ) -> ImportReport:
         """Загрузить пачку записей из внешнего словаря.
 
@@ -379,6 +513,14 @@ class GlossaryService(TenantService):
 
         Запись идёт одним оператором на пачку, а не строкой за строкой:
         двадцать тысяч отдельных вставок — это минуты вместо секунд.
+
+        `share` — разрешение отдать термины этой загрузки площадке. Не
+        передано — берётся то, что стоит в настройках пространства; передано
+        и отличается — становится новой настройкой, и на это нужны права
+        администратора пространства: это распоряжение чужими данными, а не
+        работа с текстом. `unreadable` — строки, которые не разобрал сам
+        файл: они входят в итог загрузки, чтобы запись о ней сходилась с
+        тем, что видел человек.
         """
         self._context.require(*EDITING_ROLES)
         await self._require_project(project_id)
@@ -387,16 +529,32 @@ class GlossaryService(TenantService):
         if len(terms) > limit:
             raise InvalidInputError(f"За раз загружается не больше {limit} записей")
 
+        shared = await self._consent(share)
+
         report = ImportReport(total=len(terms))
         prepared: dict[str, dict[str, Any]] = {}
+        # Идентификатор задаётся здесь, а не при записи в базу: термины
+        # ссылаются на загрузку, и ссылка нужна до того, как она записана.
+        upload = GlossaryUpload(
+            id=uuid.uuid4(),
+            organization_id=self.organization_id,
+            uploaded_by_id=self._context.user.id,
+            project_id=project_id,
+            filename=filename[:255] or "словарь",
+            origin=origin,
+            source_language=source_language,
+            target_language=target_language,
+            shared=shared,
+        )
 
         for term in terms:
             row = self._import_row(
                 term,
                 source_language=source_language,
                 target_language=target_language,
-                source=source,
+                source=f"import:{origin}",
                 project_id=project_id,
+                upload_id=upload.id,
                 report=report,
             )
             if row is not None:
@@ -405,9 +563,6 @@ class GlossaryService(TenantService):
                 # «ON CONFLICT DO UPDATE command cannot affect row a second
                 # time», и не загрузилось бы вообще ничего.
                 prepared[str(row["source_term_normalized"])] = row
-
-        if not prepared:
-            return report
 
         existing = await self._existing_sources(
             list(prepared),
@@ -432,12 +587,40 @@ class GlossaryService(TenantService):
 
             writable.append(row)
 
+        # Запись о загрузке — до терминов: они ссылаются на неё.
+        upload.total = report.total + unreadable
+        upload.added = report.added
+        upload.updated = report.updated
+        upload.skipped = report.skipped + unreadable
+        self._session.add(upload)
+        await self._session.flush()
+
         await self._write_imported(
             writable, project_id=project_id, overwrite_manual=overwrite_manual
         )
         await self._session.commit()
+        await self._session.refresh(upload)
+
+        report.upload = upload
 
         return report
+
+    async def _consent(self, share: bool | None) -> bool:
+        """Под каким разрешением идёт загрузка."""
+        settings = await WorkspaceSettingsService(self._session, self._context).load()
+        current = settings is not None and settings.share_glossary
+
+        if share is None or share == current:
+            return current
+
+        if self._context.role is not Role.OWNER and self._context.role not in SETTINGS_ROLES:
+            raise AccessDeniedError(
+                "Разрешение на общий словарь даёт владелец или администратор пространства"
+            )
+
+        await WorkspaceSettingsService(self._session, self._context).save(share_glossary=share)
+
+        return share
 
     def _import_row(
         self,
@@ -447,6 +630,7 @@ class GlossaryService(TenantService):
         target_language: str,
         source: str,
         project_id: uuid.UUID | None,
+        upload_id: uuid.UUID,
         report: ImportReport,
     ) -> dict[str, Any] | None:
         normalized = normalize_term(term.source_term)
@@ -483,6 +667,7 @@ class GlossaryService(TenantService):
             "case_sensitive": term.kind
             in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
             "expand_on_first_use": term.expand_on_first_use,
+            "upload_id": upload_id,
         }
 
     async def _existing_sources(
@@ -556,6 +741,7 @@ class GlossaryService(TenantService):
                     "status",
                     "case_sensitive",
                     "expand_on_first_use",
+                    "upload_id",
                 )
             }
 

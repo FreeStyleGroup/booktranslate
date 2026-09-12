@@ -181,7 +181,7 @@ async def test_decision_keeps_the_source_of_the_answer(db_client: AsyncClient) -
     )
     assert decided.status_code == 200, decided.text
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     term = next(item for item in glossary if item["source_term"] == "check valve")
 
     assert term["reference"] == "https://example.org/term"
@@ -215,7 +215,7 @@ async def test_own_reference_wins_over_the_catalogue(db_client: AsyncClient) -> 
         },
     )
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     term = next(item for item in glossary if item["source_term"] == "check valve")
 
     assert term["reference"] == "ГОСТ 24856-2014"

@@ -4,25 +4,28 @@ import { currentUser } from "../../lib/current-user";
 import { load } from "../../lib/work";
 import "../work.css";
 import "./settings.css";
+import { Models } from "./models";
 import { Notifications } from "./notifications";
-import type { NotificationSettings } from "./actions";
+import { Sharing } from "./sharing";
+import type { NotificationSettings, WorkspaceSettings } from "./actions";
 
 export const metadata: Metadata = {
   title: "Настройки — BookTranslate",
-  description: "Уведомления о готовности книги и настройки рабочего пространства.",
+  description: "Модель перевода, уведомления о готовности книги и настройки рабочего пространства.",
 };
 
 /* Настройки рабочего пространства.
 
-   Пока здесь один блок — уведомления, — и раздел сделан не «под будущее», а
-   под него: книга переводится без человека, и без уведомления фоновый
-   перевод ничем не лучше вкладки, в которую надо заглядывать.
+   Три блока, и все — про пространство целиком: чем переводить, чем
+   делиться и кому сообщать о готовности. Модель первой: она решает,
+   сколько это будет стоить, а уведомление — лишь когда об этом узнают.
 
    Списка «что появится потом» на странице нет намеренно: обещания в
    интерфейсе стареют раньше, чем сбываются, и место им в журнале работ, а
    не перед глазами у того, кто пришёл настроить почту. */
 
 export default async function SettingsPage() {
+  const workspace = await load<WorkspaceSettings>("/settings/workspace", "/app/settings");
   const settings = await load<NotificationSettings>(
     "/settings/notifications",
     "/app/settings",
@@ -43,6 +46,17 @@ export default async function SettingsPage() {
           </p>
         </div>
       </header>
+
+      {workspace.error !== undefined ? (
+        <section className="tile">
+          <p className="tile__empty">{workspace.error}</p>
+        </section>
+      ) : (
+        <>
+          <Models settings={workspace.data} />
+          <Sharing settings={workspace.data} />
+        </>
+      )}
 
       {settings.error !== undefined ? (
         <section className="tile">

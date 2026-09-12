@@ -29,6 +29,14 @@
   gap: 18px;
 }
 
+/* Отзыв о записи и отказ стоят после формы, а не внутри неё: между
+   кнопками и полосой нужен воздух, иначе полоса читается как их часть. */
+.st-form + .wk-note,
+.st-form + .form__error,
+.st-block .form__error + .wk-note {
+  margin-top: 18px;
+}
+
 .st-channel {
   display: grid;
   gap: 12px;
@@ -82,6 +90,36 @@
   cursor: pointer;
 }
 
+/* Переключатель с пояснением под ним — для разрешений, у которых есть
+   что объяснить: флажок выровнен по первой строке, а не по середине. */
+.st-switch--block {
+  display: flex;
+  align-items: flex-start;
+  font-size: 15px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-tint);
+}
+
+.st-switch--block input {
+  flex: none;
+  margin-top: 3px;
+}
+
+.st-switch--block:has(input:checked) {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line-soft));
+}
+
+.st-switch__note {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
 /* Состояние связи с ботом: не подпись и не ошибка, а ответ на вопрос
    «дойдёт ли до меня сообщение». */
 .st-state {
@@ -97,4 +135,78 @@
   background: var(--brand-tint);
   color: var(--brand-dark);
   border-color: transparent;
+}
+
+/* ── Модель перевода ── */
+
+/* Плитками с ценой, а не выпадающим списком: выбор между тремя вещами, и
+   цена каждой должна быть видна до нажатия. */
+.st-models {
+  display: grid;
+  gap: 10px;
+}
+
+.st-model {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+
+.st-model:hover {
+  border-color: var(--brand);
+}
+
+/* Подсветка идёт от самой радиокнопки, а не от класса: после выбора
+   другой плитки до отправки формы класс ещё старый, а рамка должна
+   переехать сразу. */
+.st-model:has(input:checked) {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+
+/* Радиокнопка спрятана размером, а не display:none — иначе до неё не
+   добраться с клавиатуры. */
+.st-model input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.st-model:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.st-model__top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.st-model__top b {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.st-model__note {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.st-model__price {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
 }

@@ -76,14 +76,22 @@ export async function saveSession(
   });
 
   if (organization !== undefined) {
-    jar.set(ORGANIZATION_COOKIE, organization, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: SECURE,
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    await saveOrganization(organization);
   }
+}
+
+/** Запомнить выбранное пространство — например, только что принятое по
+ *  приглашению: человек ждёт увидеть его, а не то, где был до этого. */
+export async function saveOrganization(organization: string): Promise<void> {
+  const jar = await cookies();
+
+  jar.set(ORGANIZATION_COOKIE, organization, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: SECURE,
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
 }
 
 export async function clearSession(): Promise<void> {

@@ -45,6 +45,7 @@ from app.services.notify import NotificationService, ready_message
 from app.services.providers import get_provider
 from app.services.review import ReviewService
 from app.services.translation import TranslationService
+from app.services.workspace import model_for
 
 logger = logging.getLogger("app.worker")
 
@@ -116,7 +117,11 @@ async def run_job(
     stop: asyncio.Event,
 ) -> Outcome:
     """Перевести книгу задания до конца — или до причины остановиться."""
-    service = TranslationService(session, context, get_provider())
+    # Модель — та, что выбрало пространство книги, а не умолчание процесса:
+    # рабочий один на всех, а платят за него по-разному.
+    service = TranslationService(
+        session, context, get_provider(await model_for(session, job.organization_id))
+    )
     batch = get_settings().worker_batch
     done = job.segments_done
 

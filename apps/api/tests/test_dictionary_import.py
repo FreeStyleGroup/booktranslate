@@ -59,7 +59,7 @@ async def test_import_fills_glossary(db_client: AsyncClient) -> None:
     assert report["_status"] == 200, report
     assert (report["added"], report["updated"], report["skipped"]) == (2, 0, 0)
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     terms = {item["source_term"]: item for item in glossary}
 
     assert terms["valve"]["target_term"] == "клапан"
@@ -81,7 +81,7 @@ async def test_import_does_not_overwrite_manual(db_client: AsyncClient) -> None:
     assert (report["added"], report["skipped"]) == (1, 1)
     assert any("заведён вручную" in reason for reason in report["reasons"])
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     terms = {item["source_term"]: item for item in glossary}
 
     assert terms["valve"]["target_term"] == "вентиль"
@@ -97,7 +97,7 @@ async def test_import_overwrites_manual_when_asked(db_client: AsyncClient) -> No
 
     assert (report["added"], report["updated"], report["skipped"]) == (1, 1, 0)
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     terms = {item["source_term"]: item for item in glossary}
 
     assert terms["valve"]["target_term"] == "клапан"
@@ -112,7 +112,7 @@ async def test_second_import_updates_rather_than_duplicates(db_client: AsyncClie
 
     assert (report["added"], report["updated"]) == (0, 1)
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
 
     assert len(glossary) == 2
     assert next(item for item in glossary if item["source_term"] == "valve")["target_term"] == (
@@ -132,7 +132,7 @@ async def test_repeated_row_inside_file_does_not_break_import(db_client: AsyncCl
     assert report["_status"] == 200, report
     assert report["added"] == 1
 
-    glossary = (await db_client.get("/glossary", headers=account.headers)).json()
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
 
     assert glossary[0]["target_term"] == "затвор"
 
@@ -185,4 +185,4 @@ async def test_import_is_scoped_to_organization(db_client: AsyncClient) -> None:
     stranger = await register(db_client, email="other@example.com", organization_name="Чужие")
     listing = await db_client.get("/glossary", headers=stranger.headers)
 
-    assert listing.json() == []
+    assert listing.json()["items"] == []

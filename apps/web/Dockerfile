@@ -49,6 +49,9 @@ RUN addgroup -S app && adduser -S app -G app
 # рядом — иначе страница откроется без стилей и скриптов.
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
+# Файлы, отдаваемые как есть (иконки для манифеста), в сборку тоже не
+# входят — без этой строки манифест ссылался бы на несуществующие картинки.
+COPY --from=build --chown=app:app /app/public ./public
 
 USER app
 

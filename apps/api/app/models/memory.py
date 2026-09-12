@@ -17,9 +17,11 @@
 
 import enum
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    DateTime,
     Enum,
     ForeignKey,
     Index,
@@ -217,3 +219,55 @@ class GlossaryTerm(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # ведёт себя по-разному: обязательный при отсутствии в переводе помечает
     # сегмент, рекомендованный — нет.
     mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Из какой загрузки запись. Повторная загрузка переписывает ссылку на
+    # себя: термин принадлежит последнему файлу, в котором он был. SET NULL —
+    # удалённая запись о загрузке не уносит термины.
+    upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("glossary_uploads.id", ondelete="SET NULL"),
+        index=True,
+    )
+
+
+class GlossaryUpload(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
+    """Запись о загруженном словаре: кто, что и с каким итогом.
+
+    Нужна двум людям. Загрузившему — чтобы видеть историю: какие файлы
+    приходили и что из них доехало. Администратору площадки — чтобы
+    узнать, что появился новый словарь, и решить, что из него годится в
+    общий. Второе возможно только с разрешения пространства, и разрешение
+    записывается сюда на момент загрузки: передумавший позже не отзывает
+    уже одобренного, а новые загрузки идут по новому решению.
+    """
+
+    __tablename__ = "glossary_uploads"
+
+    uploaded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE")
+    )
+
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Как назвал источник тот, кто грузил: имя базы или заказчика.
+    origin: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    source_language: Mapped[str] = mapped_column(String(10), nullable=False)
+    target_language: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Разрешило ли пространство отдать термины этой загрузки площадке.
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Когда и кто из администраторов площадки посмотрел загрузку. Лента в
+    # админке открывается ради непросмотренных.
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )

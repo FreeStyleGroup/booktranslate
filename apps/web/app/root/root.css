@@ -133,6 +133,15 @@
   display: none;
 }
 
+/* 🔥 Поле — по ширине колонки, а не по своей врождённой: у input она
+   около 260px, и в колонке уже этого он вылезал в зазор сетки — соседние
+   поля слипались в одну рейку. */
+.adm-create input,
+.adm-create select {
+  width: 100%;
+  min-width: 0;
+}
+
 @media (max-width: 1400px) {
   .adm-create {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -356,6 +365,165 @@
 
   .adm-table__actions {
     justify-content: flex-start;
+  }
+}
+
+/* ── Словари ── */
+
+/* Свои колонки у лент словарей: у них другие поля, и общая сетка
+   пользователей поставила бы заголовки не над своими значениями. */
+.adm-table--uploads .adm-table__head,
+.adm-table--uploads .adm-table__row {
+  grid-template-columns: 1.2fr 1.3fr 0.7fr 1fr 0.9fr 220px;
+}
+
+.adm-table--shared .adm-table__head,
+.adm-table--shared .adm-table__row {
+  grid-template-columns: 1fr 1.2fr 1.2fr 0.8fr 0.8fr 90px;
+}
+
+/* Непросмотренная загрузка отмечена полосой слева: ради них лента и
+   открывается. */
+.adm-table__row.is-new {
+  box-shadow: inset 3px 0 0 var(--warn);
+  padding-left: 12px;
+}
+
+.adm-select {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper-tint);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+}
+
+.adm-more {
+  margin: 14px 0 0;
+  font-size: 14px;
+}
+
+.adm-upload__meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+
+/* Одобрение: полоса с выбором и тематикой прилипает к верху — список
+   длинный, а тематика нужна на виду. */
+.adm-publish__bar {
+  position: sticky;
+  top: 76px;
+  z-index: 5;
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.adm-publish__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.adm-publish__all input,
+.adm-terms__row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.adm-publish__subject {
+  min-width: 260px;
+}
+
+.adm-publish__subject select {
+  height: 44px;
+  font-size: 15px;
+}
+
+/* Отклик на одобрение — полосой во всю ширину, как отклики в кабинете:
+   стили кабинета сюда не подключены, поэтому свой. */
+.adm-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.adm-publish .form__error {
+  margin: 0 0 12px;
+}
+
+.adm-terms {
+  display: grid;
+}
+
+.adm-terms__row {
+  display: grid;
+  grid-template-columns: 18px 1.3fr 1.3fr 0.8fr 0.8fr;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 4px;
+  cursor: pointer;
+}
+
+.adm-terms__row + .adm-terms__row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.adm-terms__source b {
+  display: block;
+  font-weight: 600;
+}
+
+.adm-terms__source small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  line-height: 1.4;
+}
+
+.adm-terms__target {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .adm-table--uploads .adm-table__row,
+  .adm-table--shared .adm-table__row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adm-terms__row {
+    grid-template-columns: 18px minmax(0, 1fr);
+    row-gap: 4px;
+  }
+
+  .adm-terms__row > :nth-child(n + 3) {
+    grid-column: 2;
   }
 }
 

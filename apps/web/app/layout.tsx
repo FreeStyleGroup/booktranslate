@@ -1,16 +1,28 @@
 import type { Metadata } from "next";
+
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "./contacts";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BookTranslate — профессиональный перевод технических книг",
-  description:
-    "Профессиональный перевод технических книг и документации: терминология решается до перевода, каталог справок по незнакомым словам, проверки на каждом сегменте и сборка обратно в исходный файл. Для студентов и для компаний.",
+  // От этого адреса считаются канонические ссылки и адреса в Open Graph:
+  // без него Next отдал бы их относительными, а поисковику относительный
+  // канонический адрес ни о чём не говорит.
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
   openGraph: {
-    title: "BookTranslate — профессиональный перевод технических книг",
+    title: SITE_TITLE,
     description:
       "Термины решаются до перевода, числа и обозначения не разъезжаются, книга собирается обратно в свой формат со всем оформлением.",
+    siteName: SITE_NAME,
     locale: "ru_RU",
     type: "website",
+  },
+  // Подтверждение прав на сайт в Яндекс.Вебмастере. Код — не секрет: он
+  // и так виден в разметке каждой страницы, на этом проверка и построена.
+  verification: {
+    yandex: "163424560b1443f9",
   },
 };
 

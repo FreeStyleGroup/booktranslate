@@ -8,9 +8,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 from app.models.document import DocumentStatus, SourceFormat
+from app.services.export import ExportFormat, formats_for
 
 
 class DocumentPublic(BaseModel):
@@ -41,6 +42,14 @@ class DocumentPublic(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    # Во что собирается перевод. Считается здесь, а не в витрине: реестр
+    # сборщиков живёт в API, и по нему же отвечает сама выгрузка — второй
+    # список на другой стороне однажды пообещал бы формат, которого нет.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def export_formats(self) -> list[ExportFormat]:
+        return formats_for(self.source_format)
 
 
 class CostEstimate(BaseModel):

@@ -10,7 +10,7 @@
 """
 
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 
 import pytest
@@ -33,7 +33,7 @@ from app.services.providers import (
     TranslationRequest,
     Usage,
     get_lookup,
-    get_provider,
+    get_provider_factory,
 )
 from app.services.storage import LocalStorage, ObjectStorage, get_storage
 
@@ -222,15 +222,17 @@ async def db_client(
     def override_storage() -> ObjectStorage:
         return LocalStorage(storage_root)
 
-    def override_provider() -> TranslationProvider:
-        return RecordingProvider(provider_log)
+    # Провайдер подбирается по модели пространства через фабрику; в тестах
+    # любая модель — одна и та же заглушка с журналом запросов.
+    def override_provider_factory() -> Callable[[str | None], TranslationProvider]:
+        return lambda _model: RecordingProvider(provider_log)
 
     def override_lookup() -> TermLookupProvider:
         return ScriptedLookup(lookup_log, lookup_answers)
 
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_storage] = override_storage
-    app.dependency_overrides[get_provider] = override_provider
+    app.dependency_overrides[get_provider_factory] = override_provider_factory
     app.dependency_overrides[get_lookup] = override_lookup
 
     async with AsyncClient(

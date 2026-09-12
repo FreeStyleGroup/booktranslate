@@ -1,0 +1,193 @@
+/* Команда.
+
+   Список участников — строки с аватаром, именем и ролью; у тех, кем можно
+   распоряжаться, роль — это выбор, у остальных — метка. Кнопки, ведущие к
+   отказу API, не рисуются вовсе.
+
+   🔥 Базовые правила идут до медиазапросов: правило ниже своего
+   медиазапроса молча его отменяет. */
+
+.tm-block {
+  margin-bottom: 20px;
+}
+
+/* Подпись под заголовком — в одну строку: она короткая, и перенос двух
+   слов на вторую строку читается как сноска. */
+.tm-head p {
+  max-width: none;
+}
+
+/* ── Приглашение ── */
+
+.tm-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+/* 🔥 Список ролей не ужимается сам: у select своя минимальная ширина по
+   самому длинному пункту, и без явного ограничения он вылезал из колонки
+   под кнопку. */
+.tm-invite .field {
+  min-width: 0;
+}
+
+.tm-invite .field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.tm-issued {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  background: var(--paper-tint);
+}
+
+.tm-issued p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Ссылка — моноширинным и с переносом: она длинная, и обрезанная
+   многоточием ссылка бесполезна. */
+.tm-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.tm-link code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  overflow-wrap: anywhere;
+}
+
+/* ── Списки ── */
+
+.tm-list {
+  display: grid;
+  gap: 2px;
+}
+
+.tm-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto 38px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 6px;
+}
+
+.tm-row + .tm-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.tm-row--waiting {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+}
+
+.tm-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  background: var(--brand-tint);
+  color: var(--brand-dark);
+}
+
+.tm-who {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tm-who b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-who .tile__note {
+  overflow-wrap: anywhere;
+}
+
+/* Выбор роли в строке — без ярлыка над ним: ярлык нужен экранному
+   диктору, а глазами роль и так понятна по месту. */
+.tm-row .field > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.tm-row .field {
+  position: relative;
+  min-width: 0;
+  width: min(320px, 100%);
+}
+
+.tm-row .field select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Плашка роли — у правого края, через обе служебные колонки: у строки без
+   кнопок она иначе висит посреди пустого места, а плашки соседних строк
+   не встают в один столбец. */
+.tm-role {
+  grid-column: 3 / -1;
+  justify-self: end;
+}
+
+.tm-expired {
+  color: var(--danger);
+}
+
+/* ── Узкие экраны ── */
+
+@media (max-width: 900px) {
+  .tm-invite {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tm-invite .btn {
+    justify-self: start;
+  }
+
+  /* Роль уходит под имя: в строку на телефоне она не помещается. */
+  .tm-row {
+    grid-template-columns: 40px minmax(0, 1fr) 38px;
+  }
+
+  .tm-row .field,
+  .tm-role {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .tm-row--waiting {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .tm-row--waiting .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .tm-link {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
