@@ -48,6 +48,10 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booktranslate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-booktranslate}
       STORAGE_ROOT: /var/booktranslate/storage
+      # Адрес витрины для ссылок в письмах и приглашениях. Выводится из
+      # домена: `.env`, заведённый до появления WEB_URL, иначе рассылал бы
+      # ссылки на localhost.
+      WEB_URL: ${WEB_URL:-https://${WEB_DOMAIN}}
       # Заголовкам источника верим только из своей сети: подставить
       # X-Forwarded-For может кто угодно, и с открытым списком ограничитель
       # частоты считает всех одним клиентом либо каждого — новым. В этой
@@ -83,6 +87,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-booktranslate}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-booktranslate}
       STORAGE_ROOT: /var/booktranslate/storage
+      WEB_URL: ${WEB_URL:-https://${WEB_DOMAIN}}
     volumes:
       - api_storage:/var/booktranslate/storage
     mem_limit: 1g

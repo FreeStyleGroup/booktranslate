@@ -390,7 +390,9 @@ function hasTerms(profile: DocumentProfile | undefined): boolean {
 function statuses(profile: DocumentProfile): string {
   return Object.entries(profile.by_status)
     .sort(([, first], [, second]) => second - first)
-    .map(([status, amount]) => `${SEGMENT_LABEL[status] ?? status} — ${thousands(amount)}`)
+    // Неразрывные пробелы вокруг тире: иначе число отрывалось от подписи и
+    // переносилось на следующую строку в одиночку — «С замечаниями — / 1».
+    .map(([status, amount]) => `${SEGMENT_LABEL[status] ?? status} — ${thousands(amount)}`)
     .join(", ");
 }
 
