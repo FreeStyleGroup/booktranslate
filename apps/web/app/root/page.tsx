@@ -8,6 +8,7 @@ import { accessToken, renewUrl } from "../lib/session";
 import { SignOut } from "../sign-out";
 import { AdminLogin } from "./admin-login";
 import { CreateUser } from "./create-user";
+import { EditUser, RoleSelect } from "./member-forms";
 import "./root.css";
 import { StatusForm } from "./status-form";
 
@@ -28,7 +29,7 @@ type AdminUser = {
   last_login_at: string | null;
   status_changed_at: string | null;
   status_changed_by: string | null;
-  organizations: string[];
+  memberships: { organization_id: string; organization_name: string; role: string }[];
 };
 
 type UserList = {
@@ -243,9 +244,22 @@ export default async function RootPage({
                 <span>
                   <b>{user.full_name ?? user.email}</b>
                   <small>{user.email}</small>
+                  <EditUser id={user.id} email={user.email} fullName={user.full_name} />
                 </span>
-                <span className="adm-table__soft">
-                  {user.organizations.length === 0 ? "—" : user.organizations.join(", ")}
+                <span className="adm-table__soft adm-memberships">
+                  {user.memberships.length === 0
+                    ? "—"
+                    : user.memberships.map((membership) => (
+                        <span className="adm-membership" key={membership.organization_id}>
+                          <span>{membership.organization_name}</span>
+                          <RoleSelect
+                            userId={user.id}
+                            organizationId={membership.organization_id}
+                            role={membership.role}
+                            label={membership.organization_name}
+                          />
+                        </span>
+                      ))}
                 </span>
                 <span className="adm-table__soft">{moment(user.created_at)}</span>
                 <span className="adm-table__soft">{moment(user.last_login_at)}</span>

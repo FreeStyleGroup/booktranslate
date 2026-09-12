@@ -13,12 +13,15 @@ from fastapi import APIRouter, Query, status
 from app.api.deps import SessionDep, SuperuserDep
 from app.models.organization import UserStatus
 from app.schemas.admin import (
+    AdminMembershipPublic,
     AdminUserPublic,
+    MembershipRoleChange,
     StatusChange,
     UserCounts,
     UserCreate,
     UserCreated,
     UserListPublic,
+    UserUpdate,
 )
 from app.services.admin import AdminService, UserCard
 
@@ -71,6 +74,41 @@ async def change_status(
     return _card(card)
 
 
+@router.patch("/users/{user_id}", response_model=AdminUserPublic)
+async def update_user(
+    user_id: uuid.UUID,
+    payload: UserUpdate,
+    admin: SuperuserDep,
+    session: SessionDep,
+) -> AdminUserPublic:
+    """Поправить почту или имя. Меняется только присланное."""
+    changes = payload.model_dump(exclude_unset=True)
+    card = await AdminService(session).update_user(
+        user_id, email=changes.get("email"), full_name=changes.get("full_name")
+    )
+
+    return _card(card)
+
+
+@router.patch("/users/{user_id}/memberships/{organization_id}", response_model=AdminUserPublic)
+async def change_role(
+    user_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    payload: MembershipRoleChange,
+    admin: SuperuserDep,
+    session: SessionDep,
+) -> AdminUserPublic:
+    """Сменить роль в пространстве.
+
+    Единственный способ дать владельца пространству, заведённому
+    администратором с ролью ниже: внутри команды владельца назначает
+    только владелец, а его там нет.
+    """
+    card = await AdminService(session).set_role(user_id, organization_id, payload.role)
+
+    return _card(card)
+
+
 @router.post("/users", response_model=UserCreated, status_code=status.HTTP_201_CREATED)
 async def create_user(
     payload: UserCreate,
@@ -103,7 +141,13 @@ async def create_user(
             last_login_at=created.user.last_login_at,
             status_changed_at=created.user.status_changed_at,
             status_changed_by=admin.email,
-            organizations=[created.organization.name],
+            memberships=[
+                AdminMembershipPublic(
+                    organization_id=created.organization.id,
+                    organization_name=created.organization.name,
+                    role=payload.role,
+                )
+            ],
         ),
         password=created.password,
         organization_id=created.organization.id,
@@ -122,5 +166,12 @@ def _card(card: UserCard) -> AdminUserPublic:
         last_login_at=card.user.last_login_at,
         status_changed_at=card.user.status_changed_at,
         status_changed_by=card.changed_by,
-        organizations=card.organizations,
+        memberships=[
+            AdminMembershipPublic(
+                organization_id=item.organization_id,
+                organization_name=item.organization_name,
+                role=item.role,
+            )
+            for item in card.memberships
+        ],
     )

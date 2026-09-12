@@ -31,15 +31,26 @@ from app.services.slug import slugify
 
 
 @dataclass(slots=True)
+class MembershipCard:
+    """Участие пользователя в пространстве — с ролью, которую можно сменить."""
+
+    organization_id: uuid.UUID
+    organization_name: str
+    role: Role
+
+
+@dataclass(slots=True)
 class UserCard:
     """Пользователь в списке администратора.
 
-    Организации приложены сразу: без них список — это столбец почт, по
-    которому нельзя понять, кто пришёл и зачем.
+    Участия приложены сразу: без них список — это столбец почт, по
+    которому нельзя понять, кто пришёл и зачем. С ролью — потому что
+    роль, выданную при заведении, менять больше некому: в пространстве,
+    заведённом администратором с ролью ниже владельца, владельца нет.
     """
 
     user: User
-    organizations: list[str] = field(default_factory=list)
+    memberships: list[MembershipCard] = field(default_factory=list)
     # Почта того, кто последним менял состояние доступа. Не идентификатор:
     # в списке нужен человек, а не строка из 36 знаков.
     changed_by: str | None = None
@@ -197,6 +208,65 @@ class AdminService:
 
         return CreatedUser(user=user, password=password, organization=organization)
 
+    async def update_user(
+        self, user_id: uuid.UUID, *, email: str | None, full_name: str | None
+    ) -> UserCard:
+        """Поправить почту или имя.
+
+        Почта — это и вход, и адрес писем, поэтому меняется только на
+        свободную. Смена почты сеансы не гасит: человек тот же, менялся
+        только адрес.
+        """
+        user = await self._session.get(User, user_id)
+        if user is None:
+            raise NotFoundError("Пользователь не найден")
+
+        if email is not None:
+            normalized = email.strip().lower()
+            if not normalized:
+                raise InvalidInputError("Почта не может быть пустой")
+
+            taken = await self._session.scalar(
+                select(User.id).where(User.email == normalized, User.id != user.id)
+            )
+            if taken is not None:
+                raise ConflictError("Пользователь с такой почтой уже заведён")
+
+            user.email = normalized
+
+        if full_name is not None:
+            user.full_name = full_name.strip() or None
+
+        await self._session.commit()
+        await self._session.refresh(user)
+
+        return (await self._cards([user]))[0]
+
+    async def set_role(
+        self, user_id: uuid.UUID, organization_id: uuid.UUID, role: Role
+    ) -> UserCard:
+        """Сменить роль в пространстве.
+
+        Администратор площадки не связан правилами команды — он и есть
+        последняя инстанция для пространства, где владельца нет. Поэтому
+        здесь можно и назначить владельца, и понизить единственного.
+        """
+        membership = await self._session.scalar(
+            select(Membership).where(
+                Membership.user_id == user_id, Membership.organization_id == organization_id
+            )
+        )
+        if membership is None:
+            raise NotFoundError("Человек не состоит в этом пространстве")
+
+        membership.role = role
+        await self._session.commit()
+
+        user = await self._session.get(User, user_id)
+        assert user is not None  # noqa: S101 — участие без пользователя невозможно
+
+        return (await self._cards([user]))[0]
+
     async def _organization(
         self, organization_id: uuid.UUID | None, organization_name: str | None
     ) -> Organization:
@@ -231,15 +301,19 @@ class AdminService:
         ids = [user.id for user in users]
 
         rows = await self._session.execute(
-            select(Membership.user_id, Organization.name)
+            select(
+                Membership.user_id, Membership.organization_id, Organization.name, Membership.role
+            )
             .join(Organization, Organization.id == Membership.organization_id)
             .where(Membership.user_id.in_(ids))
             .order_by(Organization.name)
         )
 
-        organizations: dict[uuid.UUID, list[str]] = {}
-        for user_id, name in rows.all():
-            organizations.setdefault(user_id, []).append(name)
+        memberships: dict[uuid.UUID, list[MembershipCard]] = {}
+        for user_id, organization_id, name, role in rows.all():
+            memberships.setdefault(user_id, []).append(
+                MembershipCard(organization_id=organization_id, organization_name=name, role=role)
+            )
 
         changed_ids = {user.status_changed_by_id for user in users if user.status_changed_by_id}
         editors: dict[uuid.UUID, str] = {}
@@ -253,7 +327,7 @@ class AdminService:
         return [
             UserCard(
                 user=user,
-                organizations=organizations.get(user.id, []),
+                memberships=memberships.get(user.id, []),
                 changed_by=editors.get(user.status_changed_by_id)
                 if user.status_changed_by_id
                 else None,

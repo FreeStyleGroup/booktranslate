@@ -68,6 +68,85 @@ export async function changeStatus(_previous: Result, formData: FormData): Promi
   return {};
 }
 
+const ROLES = new Set(["owner", "admin", "manager", "translator", "reviewer", "viewer"]);
+
+/** Сменить роль в пространстве. Единственный способ дать владельца
+    пространству, заведённому с ролью ниже: внутри команды его назначает
+    только владелец, а его там нет. */
+export async function changeMemberRole(
+  userId: string,
+  organizationId: string,
+  role: string,
+): Promise<Result> {
+  const token = await accessToken();
+
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  if (!UUID.test(userId) || !UUID.test(organizationId) || !ROLES.has(role)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    await apiFetch(`/admin/users/${userId}/memberships/${organizationId}`, {
+      method: "PATCH",
+      token,
+      body: { role },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+
+  revalidatePath("/root");
+
+  return {};
+}
+
+export type EditState = Result & { at?: number };
+
+/** Поправить почту или имя. Меняется только присланное. */
+export async function updateUser(_previous: EditState, formData: FormData): Promise<EditState> {
+  const token = await accessToken();
+  const id = String(formData.get("id") ?? "");
+  const email = String(formData.get("email") ?? "").trim();
+  const fullName = String(formData.get("full_name") ?? "").trim();
+
+  if (token === undefined) {
+    return { error: "Сеанс закончился — войдите заново" };
+  }
+
+  if (!UUID.test(id)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if (email === "") {
+    return { error: "Почта не может быть пустой" };
+  }
+
+  try {
+    await apiFetch(`/admin/users/${id}`, {
+      method: "PATCH",
+      token,
+      body: { email, full_name: fullName === "" ? null : fullName },
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+
+  revalidatePath("/root");
+
+  return { at: Date.now() };
+}
+
 export type PublishState = Result & { published?: number; at?: number };
 
 /** Одобрить отмеченные термины загрузки в общий словарь под тематикой. */

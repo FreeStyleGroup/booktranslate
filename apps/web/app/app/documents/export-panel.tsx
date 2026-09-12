@@ -14,7 +14,7 @@
    сборщиков в API, и рисовать кнопку по своему списку значило бы однажды
    пообещать формат, которого нет. */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { ExportFormat } from "../../lib/work";
 import { FORMAT_LABEL, plural, thousands } from "../labels";
@@ -41,6 +41,9 @@ export function ExportPanel({
   sourceFormat,
   formats,
   untranslated,
+  title,
+  lead,
+  actions,
 }: {
   documentId: string;
   sourceFormat: string;
@@ -48,6 +51,12 @@ export function ExportPanel({
   // Сегментов без перевода. Ноль — книга целиком; иначе — черновик, и
   // человек обязан это видеть до нажатия, а не после.
   untranslated: number;
+  // У переведённой книги панель и есть её итог: заголовок «Книга
+  // переведена», слова о замечаниях и ссылка на очередь стоят здесь же,
+  // а не в соседней карточке с второй кнопкой «Скачать».
+  title?: string;
+  lead?: string;
+  actions?: ReactNode;
 }) {
   const [format, setFormat] = useState<ExportFormat>(formats[0] ?? "text");
   const [busy, setBusy] = useState(false);
@@ -97,9 +106,11 @@ export function ExportPanel({
   return (
     <section className="tile ex" id="export">
       <div className="tile__head">
-        <h3>Забрать перевод</h3>
+        <h3>{title ?? "Забрать перевод"}</h3>
         <span className="tile__note">{draft ? "черновик" : "книга целиком"}</span>
       </div>
+
+      {lead !== undefined && <p className="ex-lead">{lead}</p>}
 
       <div className="ex-formats" role="radiogroup" aria-label="Формат файла">
         {formats.map((option) => (
@@ -157,6 +168,7 @@ export function ExportPanel({
         >
           {busy ? "Собираем файл…" : draft ? "Скачать черновик" : "Скачать перевод"}
         </button>
+        {actions}
       </div>
 
       <p className="tile__note wk-seg__foot">

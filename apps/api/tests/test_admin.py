@@ -77,7 +77,8 @@ async def test_approval_opens_the_door(db_client: AsyncClient) -> None:
     # Видно, кто открыл доступ: иначе список отвечает на «кто закрыт», но
     # не на «кто закрыл».
     assert body["status_changed_by"] is not None
-    assert body["organizations"] == ["Новое бюро"]
+    assert [item["organization_name"] for item in body["memberships"]] == ["Новое бюро"]
+    assert body["memberships"][0]["role"] == "owner"
 
     entered = await db_client.post(
         "/auth/login", json={"email": APPLICANT["email"], "password": PASSWORD}
@@ -267,6 +268,79 @@ async def test_duplicate_email_is_refused(db_client: AsyncClient) -> None:
     )
 
     assert response.status_code == 409
+
+
+@requires_database
+async def test_admin_changes_role_where_the_workspace_has_no_owner(
+    db_client: AsyncClient,
+) -> None:
+    """Заведённый переводчиком не может создать проект, а повысить его некому."""
+    root = await admin_headers(db_client)
+
+    created = await db_client.post(
+        "/admin/users",
+        headers=root,
+        json={"email": "solo@example.com", "organization_name": "Одиночка", "role": "translator"},
+    )
+    body = created.json()
+    headers = {
+        "Authorization": "Bearer "
+        + (
+            await db_client.post(
+                "/auth/login", json={"email": "solo@example.com", "password": body["password"]}
+            )
+        ).json()["access_token"]
+    }
+
+    refused = await db_client.post(
+        "/projects",
+        headers=headers,
+        json={"name": "Книга", "source_language": "en", "target_language": "ru"},
+    )
+    assert refused.status_code == 403
+
+    promoted = await db_client.patch(
+        f"/admin/users/{body['user']['id']}/memberships/{body['organization_id']}",
+        headers=root,
+        json={"role": "owner"},
+    )
+    assert promoted.status_code == 200, promoted.text
+    assert promoted.json()["memberships"][0]["role"] == "owner"
+
+    allowed = await db_client.post(
+        "/projects",
+        headers=headers,
+        json={"name": "Книга", "source_language": "en", "target_language": "ru"},
+    )
+    assert allowed.status_code == 201, allowed.text
+
+
+@requires_database
+async def test_admin_edits_email_and_name_but_not_onto_a_taken_email(
+    db_client: AsyncClient,
+) -> None:
+    account = await register(db_client, email="old@example.com")
+    await register(db_client, email="taken@example.com", organization_name="Другие")
+    root = await admin_headers(db_client)
+
+    renamed = await db_client.patch(
+        f"/admin/users/{account.user_id}",
+        headers=root,
+        json={"email": "New@Example.com", "full_name": "Новое Имя"},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["email"] == "new@example.com"
+    assert renamed.json()["full_name"] == "Новое Имя"
+
+    entered = await db_client.post(
+        "/auth/login", json={"email": "new@example.com", "password": PASSWORD}
+    )
+    assert entered.status_code == 200, entered.text
+
+    clash = await db_client.patch(
+        f"/admin/users/{account.user_id}", headers=root, json={"email": "taken@example.com"}
+    )
+    assert clash.status_code == 409
 
 
 @requires_database

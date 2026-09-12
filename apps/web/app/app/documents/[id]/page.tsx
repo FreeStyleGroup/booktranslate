@@ -176,10 +176,14 @@ export default async function DocumentPage({
         <NextStep book={book} profile={profile.data} job={jobs.data?.[0] ?? null} />
       )}
 
-      {/* Забрать можно, как только переведён хоть один сегмент: середину
-          работы показывают заказчику и отдают на вычитку. Книга, где не
-          переведено ничего, «выгрузилась» бы своим же исходником. */}
-      {parsed && profile.data !== undefined && profile.data.untranslated < profile.data.segments && (
+      {/* Черновик можно забрать, как только переведён хоть один сегмент:
+          середину работы показывают заказчику и отдают на вычитку. Книга,
+          где не переведено ничего, «выгрузилась» бы своим же исходником.
+          Переведённую целиком выгружает карточка итога выше. */}
+      {parsed &&
+        profile.data !== undefined &&
+        profile.data.untranslated > 0 &&
+        profile.data.untranslated < profile.data.segments && (
         <ExportPanel
           documentId={book.id}
           sourceFormat={book.source_format}
@@ -334,31 +338,34 @@ function NextStep({
     );
   }
 
+  /* Переведённая книга: итог и выгрузка — одна карточка. Две соседние, с
+     кнопкой «Скачать» в каждой, читались как два разных действия. */
   if (profile !== undefined && profile.untranslated === 0) {
     const flagged = profile.by_status.flagged ?? 0;
 
     return (
-      <section className="tile wk-call">
-        <h3>Книга переведена</h3>
-        <p>
-          {flagged === 0
-            ? "Непереведённых сегментов не осталось, и проверки ни к чему не придрались."
+      <ExportPanel
+        documentId={book.id}
+        sourceFormat={book.source_format}
+        formats={book.export_formats}
+        untranslated={0}
+        title="Книга переведена"
+        lead={
+          flagged === 0
+            ? "Непереведённых сегментов не осталось, и проверки ни к чему не придрались. Выберите формат и заберите файл."
             : `Непереведённых сегментов не осталось. ${thousands(flagged)} ${plural(
                 flagged,
                 "сегмент ждёт",
                 "сегмента ждут",
                 "сегментов ждут",
-              )} человека: проверки нашли расхождение чисел, нарушение термина или потерянную подстановку. Это не приговор переводу, а список мест, на которые стоит посмотреть.`}
-        </p>
-        <div className="tile__foot">
-          <a className="btn btn--primary btn--small" href="#export">
-            Скачать перевод
-          </a>
+              )} человека: проверки нашли расхождение чисел, нарушение термина или потерянную подстановку. Это не приговор переводу, а список мест, на которые стоит посмотреть.`
+        }
+        actions={
           <Link className="btn btn--ghost btn--small" href="/app/queue">
             Очередь замечаний
           </Link>
-        </div>
-      </section>
+        }
+      />
     );
   }
 

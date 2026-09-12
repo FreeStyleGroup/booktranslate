@@ -20,8 +20,9 @@ import {
    открывают чаще всего, и собирать его десятком запросов значит открывать
    три секунды. Без сеанса показывается тот же экран на демонстрационных
    числах — с пометкой, чтобы никто не принял их за свои. Отказ API при
-   живом сеансе демонстрацией не прикрывается: страница уходит на
-   продление (см. lib/current-user.ts). */
+   живом сеансе демонстрацией не прикрывается: отвергнутый токен уводит на
+   продление (см. lib/current-user.ts), любой другой отказ показывается
+   словами. */
 
 type Overview = {
   projects: number;
@@ -159,8 +160,12 @@ const DEMO: Overview = {
   ],
 };
 
+type Loaded =
+  | { data: Overview; live: boolean; error?: undefined }
+  | { data?: undefined; live?: undefined; error: string };
+
 /** Сводка своего пространства — или демонстрационная, если сеанса нет. */
-async function load(): Promise<{ data: Overview; live: boolean }> {
+async function load(): Promise<Loaded> {
   const token = await accessToken();
 
   if (token === undefined) {
@@ -177,14 +182,33 @@ async function load(): Promise<{ data: Overview; live: boolean }> {
     };
   } catch (error) {
     // Токен отвергнут — сеанс кончился раньше печенья; продление либо
-    // выдаст новый, либо выведет ко входу. Недоступный API — не повод
-    // показать пустой экран; демонстрация честно помечена.
+    // выдаст новый, либо выведет ко входу.
     if (unauthorized(error)) {
       redirect(renewUrl("/app"));
     }
 
-    return { data: DEMO, live: false };
+    // 🔥 Вошедшему демонстрацию не показывают: он примет чужие числа за
+    // свои, а пометку внизу не прочтёт. Отказ API — это отказ, и сказать
+    // о нём надо словами.
+    return { error: error instanceof Error ? error.message : "Сервис недоступен" };
   }
+}
+
+/** API не ответил при живом сеансе: экран говорит об этом, а не подменяет
+    числа. */
+function Unavailable({ reason }: { reason: string }) {
+  return (
+    <section className="tile soon">
+      <span className="soon__mark" aria-hidden="true">
+        ⏳
+      </span>
+      <h2>Сводка сейчас недоступна</h2>
+      <p className="lead">
+        Сервер не ответил на запрос сводки: {reason}. Обновите страницу через
+        минуту; книги и очередь замечаний открываются из меню.
+      </p>
+    </section>
+  );
 }
 
 /* Вошедший без организации. Демонстрацию ему показывать нельзя: он вошёл
@@ -218,7 +242,13 @@ export default async function DashboardPage() {
     return <NoWorkspace superuser={me.user.is_superuser} />;
   }
 
-  const { data, live } = await load();
+  const loaded = await load();
+
+  if (loaded.error !== undefined) {
+    return <Unavailable reason={loaded.error} />;
+  }
+
+  const { data, live } = loaded;
 
   const approved = data.segments_by_status.approved ?? 0;
   const ready = data.segments === 0 ? 0 : Math.round((approved * 100) / data.segments);

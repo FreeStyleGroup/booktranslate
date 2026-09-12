@@ -67,7 +67,9 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
   return (
     <div className="cab">
       <aside className="cab__side">
-        <Link className="cab__brand" href="/">
+        {/* Логотип ведёт на обзор, а не на главную сайта: вошедший
+            остаётся в кабинете, витрина ему сейчас не нужна. */}
+        <Link className="cab__brand" href="/app">
           <span className="logo__mark" aria-hidden="true">
             📖
           </span>

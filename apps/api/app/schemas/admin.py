@@ -8,6 +8,14 @@ from pydantic import BaseModel, EmailStr, Field
 from app.models.organization import Role, UserStatus
 
 
+class AdminMembershipPublic(BaseModel):
+    """Участие в пространстве — с ролью, которую администратор может сменить."""
+
+    organization_id: uuid.UUID
+    organization_name: str
+    role: Role
+
+
 class AdminUserPublic(BaseModel):
     """Пользователь в списке администратора."""
 
@@ -26,7 +34,18 @@ class AdminUserPublic(BaseModel):
     status_changed_at: datetime | None
     status_changed_by: str | None
 
-    organizations: list[str]
+    memberships: list[AdminMembershipPublic]
+
+
+class UserUpdate(BaseModel):
+    """Правка учётной записи. Присылается только то, что меняется."""
+
+    email: EmailStr | None = None
+    full_name: str | None = Field(default=None, max_length=200)
+
+
+class MembershipRoleChange(BaseModel):
+    role: Role
 
 
 class UserCounts(BaseModel):

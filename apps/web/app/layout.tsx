@@ -30,7 +30,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="ru">
+    // 🔥 data-scroll-behavior: у страницы плавная прокрутка (globals.css), и
+    // при переходе между разделами Next прокручивал к верху с анимацией,
+    // которую переход обрывал, — новая страница открывалась сдвинутой под
+    // шапку. С атрибутом Next на время перехода выключает плавность.
+    <html lang="ru" data-scroll-behavior="smooth">
       <head>
         {/* Тема проставляется до первой отрисовки: иначе выбравший тёмную
             каждый раз видит вспышку светлой. Скрипт крошечный и намеренно
