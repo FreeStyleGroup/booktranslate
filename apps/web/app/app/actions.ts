@@ -56,6 +56,19 @@ export async function createProject(_previous: Result, formData: FormData): Prom
     return { error: "Название проекта — хотя бы два знака" };
   }
 
+  // Те же пределы, что в API: сказать здесь быстрее, чем получить отказ.
+  if (name.length > 120) {
+    return { error: "Название проекта — не длиннее 120 знаков" };
+  }
+
+  if (name.split(/\s+/).some((word) => word.length > 40)) {
+    return { error: "Слово в названии длиннее 40 знаков — так не бывает" };
+  }
+
+  if (description.length > 1000) {
+    return { error: "Описание — не длиннее 1000 знаков" };
+  }
+
   // Пара «с русского на русский» — не перевод, а опечатка в форме. API её
   // тоже отвергнет, но сказать об этом здесь быстрее и понятнее.
   if (source.toLowerCase() === target.toLowerCase()) {
@@ -82,6 +95,35 @@ export async function createProject(_previous: Result, formData: FormData): Prom
 
   revalidatePath("/app/projects");
   revalidatePath("/app/documents");
+
+  return { done: true };
+}
+
+/** Удалить проект вместе с книгами.
+ *
+ * Необратимо, поэтому подтверждение спрашивает кнопка, а действие только
+ * выполняет. Отказ API — например, идущий перевод — уходит словами.
+ */
+export async function deleteProject(id: string): Promise<Result> {
+  if (!UUID.test(id)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/projects/${id}`, {
+      method: "DELETE",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath("/app/projects");
+  revalidatePath("/app/documents");
+  revalidatePath("/app");
 
   return { done: true };
 }

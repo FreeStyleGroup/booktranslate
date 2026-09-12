@@ -100,7 +100,7 @@ function Form({
             type="text"
             required
             minLength={2}
-            maxLength={200}
+            maxLength={120}
             placeholder="Документация к API платформы"
             autoComplete="off"
           />
@@ -133,7 +133,7 @@ function Form({
           <input
             name="description"
             type="text"
-            maxLength={5000}
+            maxLength={1000}
             placeholder="Чем этот проект отличается от соседнего"
             autoComplete="off"
           />

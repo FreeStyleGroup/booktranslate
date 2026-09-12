@@ -108,6 +108,14 @@
   font-weight: 600;
   letter-spacing: -0.015em;
   min-width: 0;
+  /* Слово длиннее карточки переносится по буквам, а не вылезает за край:
+     переносить его больше негде. */
+  overflow-wrap: anywhere;
+}
+
+/* Языковая пара не сжимается под длинное название. */
+.wk-card__top .chip {
+  flex: none;
 }
 
 .wk-card__lead {
@@ -115,6 +123,7 @@
   color: var(--ink-soft);
   font-size: 14.5px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .wk-card__foot {
@@ -124,6 +133,73 @@
   gap: 12px;
   flex-wrap: wrap;
   margin-top: 4px;
+}
+
+/* Языковая пара и крестик удаления — в правом верхнем углу карточки. */
+.wk-card__side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* ── Подтверждение необратимого ── */
+
+.wk-dialog {
+  border: 0;
+  padding: 0;
+  border-radius: 18px;
+  background: var(--paper);
+  color: var(--ink);
+  width: min(460px, calc(100vw - 32px));
+  box-shadow: var(--shadow-lift);
+}
+
+.wk-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.wk-dialog__body {
+  padding: 24px 26px;
+  display: grid;
+  gap: 14px;
+}
+
+.wk-dialog h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.wk-dialog__text {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.wk-dialog__text p {
+  margin: 0;
+}
+
+.wk-dialog .wk-actions {
+  margin-top: 4px;
+}
+
+/* Опасное действие окрашено: две одинаковые кнопки — это и есть способ
+   нажать не ту. */
+.wk-dialog .btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.wk-dialog .btn--danger:hover {
+  filter: brightness(1.08);
 }
 
 /* ── Формы ── */

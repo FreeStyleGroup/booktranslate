@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { currentUser } from "../../lib/current-user";
+import { organizationId } from "../../lib/session";
 import { load, type Document, type Project } from "../../lib/work";
 import { plural, thousands, when } from "../labels";
 import "../work.css";
+import { DeleteProject } from "./delete-project";
 import { NewProject } from "./new-project";
+
+// Кто удаляет проекты — те же, кто их заводит: это решение о деньгах и
+// сроках, а не работа с текстом. Списано с проверки прав в API.
+const MANAGING = new Set(["owner", "admin", "manager"]);
 
 export const metadata: Metadata = {
   title: "Проекты — BookTranslate",
@@ -22,8 +29,12 @@ export const metadata: Metadata = {
    это список названий, по которому не видно, где идёт работа. */
 
 export default async function ProjectsPage() {
-  const projects = await load<Project[]>("/projects?limit=200", "/app/projects");
-  const documents = await load<Document[]>("/documents?limit=200", "/app/projects");
+  const [projects, documents, me, organization] = await Promise.all([
+    load<Project[]>("/projects?limit=200", "/app/projects"),
+    load<Document[]>("/documents?limit=200", "/app/projects"),
+    currentUser("/app/projects"),
+    organizationId(),
+  ]);
 
   if (projects.error !== undefined) {
     return (
@@ -40,6 +51,10 @@ export default async function ProjectsPage() {
     counts.set(document.project_id, (counts.get(document.project_id) ?? 0) + 1);
   }
 
+  const membership =
+    me?.memberships.find((item) => item.organization_id === organization) ?? me?.memberships[0];
+  const manages = membership !== undefined && MANAGING.has(membership.role);
+
   return (
     <>
       {/* Ключ по числу проектов: после удачного создания список
@@ -49,8 +64,8 @@ export default async function ProjectsPage() {
         <div>
           <h1>Проекты</h1>
           <p className="tile__note">
-            Языковая пара, словарь и книги одного заказчика. Термины и память
-            переводов копятся внутри проекта.
+            Языковая пара, словарь и книги одного заказчика. Термины и память переводов копятся
+            внутри проекта.
           </p>
         </div>
       </NewProject>
@@ -60,8 +75,8 @@ export default async function ProjectsPage() {
           <span aria-hidden="true">🗃</span>
           <h2>Здесь пока пусто</h2>
           <p>
-            Заведите первый проект — он задаёт языковую пару. Дальше в него
-            загружаются книги: разбор, терминология и перевод идут уже внутри.
+            Заведите первый проект — он задаёт языковую пару. Дальше в него загружаются книги:
+            разбор, терминология и перевод идут уже внутри.
           </p>
         </section>
       )}
@@ -72,8 +87,20 @@ export default async function ProjectsPage() {
             <article className="tile wk-card" key={project.id}>
               <div className="wk-card__top">
                 <h3>{project.name}</h3>
-                <span className="chip chip--info">
-                  {project.source_language} → {project.target_language}
+                {/* Языковая пара и крестик — в углу, подальше от рабочей
+                    кнопки внизу: удаление не должно стоять рядом с тем,
+                    на что нажимают каждый день. */}
+                <span className="wk-card__side">
+                  <span className="chip chip--info">
+                    {project.source_language} → {project.target_language}
+                  </span>
+                  {manages && (
+                    <DeleteProject
+                      id={project.id}
+                      name={project.name}
+                      books={counts.get(project.id) ?? 0}
+                    />
+                  )}
                 </span>
               </div>
 

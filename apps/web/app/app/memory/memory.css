@@ -47,6 +47,23 @@
   flex: 1 1 220px;
 }
 
+/* Своя стрелка с отступом: нативная прилипает к правому краю поля. */
+.mm-filters select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-faint) 50%),
+    linear-gradient(135deg, var(--ink-faint) 50%, transparent 50%);
+  background-position:
+    right 18px center,
+    right 13px center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
 .mm-filters input::-webkit-search-cancel-button {
   appearance: none;
 }

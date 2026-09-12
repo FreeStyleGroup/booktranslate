@@ -3,9 +3,9 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import ContextDep, SessionDep
+from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.schemas.project import ProjectCreate, ProjectPublic
 from app.services.projects import ProjectService
 
@@ -46,3 +46,19 @@ async def get_project(
     project = await ProjectService(session, context).get(project_id)
 
     return ProjectPublic.model_validate(project)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> Response:
+    """Удалить проект со всеми книгами, сегментами, переводами и терминами.
+
+    Необратимо: файлы книг удаляются из хранилища. Память переводов
+    остаётся — она принадлежит пространству, а не проекту, и следующая
+    книга той же пары возьмёт из неё готовые переводы. Проект с книгой в
+    очереди на перевод не удаляется, пока задание не остановлено.
+    """
+    await ProjectService(session, context).delete(project_id, storage=storage)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
