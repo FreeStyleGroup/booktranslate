@@ -133,7 +133,7 @@ export function Upload({ projects, current }: { projects: Project[]; current?: s
     <section className="tile wk-upload">
       <div className="tile__head">
         <h3>Загрузить книгу</h3>
-        <span className="tile__note">DOCX, EPUB, HTML, Markdown, текст — до 50 МБ</span>
+        <span className="tile__note">PDF, DOCX, EPUB, HTML, Markdown, текст — до 50 МБ</span>
       </div>
 
       <div

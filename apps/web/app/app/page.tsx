@@ -287,13 +287,12 @@ export default async function DashboardPage() {
             📚
           </span>
           <div className="stat__value">{thousands(data.documents)}</div>
-          {/* Число проектов — частью фразы, а не после двоеточия: два
-              числа подряд в плитке читаются как одно и то же, повторённое
-              дважды. */}
+          {/* Два счёта через точку, а не одной фразой: «1 книга в 2
+              проектах» грамматически верно, но по смыслу ложно — книга
+              лежит в одном проекте, а проектов всего два. */}
           <div className="stat__label">
-            {plural(data.documents, "книга", "книги", "книг")} в{" "}
-            {thousands(data.projects)}{" "}
-            {plural(data.projects, "проекте", "проектах", "проектах")}
+            {plural(data.documents, "книга", "книги", "книг")} · {thousands(data.projects)}{" "}
+            {plural(data.projects, "проект", "проекта", "проектов")}
           </div>
         </section>
 
