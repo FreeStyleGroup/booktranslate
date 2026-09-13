@@ -2,39 +2,40 @@
 
 /* Переключатель языка.
 
-   Интерфейс пока только на русском, английский в работе. Кнопка стоит в
-   шапке уже сейчас по двум причинам. Первая: место под неё — часть
-   раскладки, и добавить её потом значит переверстать полосу заново, а на
-   телефоне там счёт идёт на десяток точек. Вторая: посетитель из-за
-   рубежа должен видеть, что о языке думали, даже если второй ещё не готов.
+   Переводит на тот же адрес, а не на главную: человек, переключивший язык
+   на регистрации, должен остаться на регистрации. Возврат на главную —
+   самая частая ошибка языковых переключателей и самая раздражающая.
 
-   🔥 Английский помечен как недоступный и не переключается. Кнопка,
-   которая делает вид, что переключает, но оставляет русский текст, хуже
-   отсутствующей: человек решает, что сайт сломан. */
+   Ссылками, а не кнопками с переходом: адрес второго языка существует, и
+   его надо дать браузеру — чтобы открывалось в новой вкладке, копировалось
+   из контекстного меню и виделось поисковиком как обычная ссылка. */
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { LOCALES, localeOf, switchPath, type Locale } from "./i18n/config";
 import { useDismiss } from "./use-dismiss";
 
-type Lang = {
-  code: string;
-  short: string;
-  title: string;
-  ready: boolean;
+const TITLES: Record<Locale, { short: string; title: string }> = {
+  ru: { short: "RU", title: "Русский" },
+  en: { short: "EN", title: "English" },
 };
 
-const LANGS: Lang[] = [
-  { code: "ru", short: "RU", title: "Русский", ready: true },
-  { code: "en", short: "EN", title: "English", ready: false },
-];
-
-export function LangSwitch({ className = "top__theme" }: { className?: string }) {
+export function LangSwitch({
+  label,
+  className = "top__theme",
+}: {
+  label: string;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   useDismiss(open, box, () => setOpen(false));
 
-  const current = LANGS[0];
+  const current = localeOf(pathname);
 
   return (
     <div className="lang" ref={box}>
@@ -43,7 +44,7 @@ export function LangSwitch({ className = "top__theme" }: { className?: string })
         type="button"
         aria-expanded={open}
         aria-controls="lang-panel"
-        aria-label="Язык интерфейса"
+        aria-label={label}
         onClick={() => setOpen((was) => !was)}
       >
         {/* Глобус, а не флаг: флаг обозначает страну, а не язык, и на нём
@@ -60,18 +61,18 @@ export function LangSwitch({ className = "top__theme" }: { className?: string })
       </button>
 
       <div className="lang__panel" id="lang-panel" hidden={!open}>
-        {LANGS.map((lang) => (
-          <button
-            key={lang.code}
-            type="button"
-            className={"lang__item" + (lang.code === current.code ? " is-active" : "")}
-            disabled={!lang.ready}
+        {LOCALES.map((locale) => (
+          <Link
+            key={locale}
+            href={switchPath(pathname, locale)}
+            hrefLang={locale}
+            className={"lang__item" + (locale === current ? " is-active" : "")}
+            aria-current={locale === current ? "true" : undefined}
             onClick={() => setOpen(false)}
           >
-            <b>{lang.short}</b>
-            <span>{lang.title}</span>
-            {!lang.ready && <i>в работе</i>}
-          </button>
+            <b>{TITLES[locale].short}</b>
+            <span>{TITLES[locale].title}</span>
+          </Link>
         ))}
       </div>
     </div>

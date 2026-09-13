@@ -6,15 +6,21 @@
  * вёрстки. Написано вручную, а не собрано из страницы: страница сделана
  * для чтения глазами, а здесь важны факты, а не подача.
  *
+ * Файл один и двуязычный: у соглашения нет языковых версий, а модель,
+ * прочитавшая его целиком, отвечает на любом из двух языков. Английская
+ * часть — не перевод русской, а её сжатое изложение: дублировать текст
+ * дважды значит удвоить работу по его поддержанию.
+ *
  * Статический ответ: содержимое меняется только вместе с выкатом. */
 
-import { CONTACT_EMAIL, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "../contacts";
+import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "../contacts";
+import { dictionary } from "../i18n";
 
 export const dynamic = "force-static";
 
 const TEXT = `# ${SITE_NAME}
 
-> ${SITE_DESCRIPTION}
+> ${dictionary("ru").meta.description}
 
 ${SITE_NAME} — сервис перевода технических книг и документации с английского
 на русский. Не «текст на другом языке», а готовая к работе книга: в своём
@@ -70,6 +76,7 @@ ${SITE_NAME} — сервис перевода технических книг �
 - [Главная](${SITE_URL}/): что это, как работает, форматы, вопросы и ответы.
 - [Регистрация](${SITE_URL}/register): заявка на рабочее пространство.
 - [Вход](${SITE_URL}/login): кабинет для тех, у кого пространство уже есть.
+- [Home (English)](${SITE_URL}/en): то же самое по-английски.
 
 ## Контакты
 
@@ -77,14 +84,25 @@ ${SITE_NAME} — сервис перевода технических книг �
 
 ## In English
 
-${SITE_NAME} translates technical books and documentation from English into
+> ${dictionary("en").meta.description}
+
+${SITE_NAME} translates technical books and documentation between English and
 Russian. Terminology is settled before translation and enforced across the
 whole book; every segment passes six checks (numbers and units, placeholders
 and markup, glossary usage, abbreviation expansion, untranslated fragments,
 empty output); DOCX, EPUB and HTML are rewritten in place, so formatting,
-images, tables and the table of contents survive. Translation memory and
-in-book repetitions are reused instead of being re-translated. Interface is
-in Russian; English is in progress.
+images, tables and the table of contents survive. PDF with a text layer is
+parsed and handed back as a new Word document; scanned PDFs are not yet
+recognised. Translation memory and in-book repetitions are reused instead of
+being re-translated, and every run reports what memory covered, what went to
+the model and what it cost.
+
+- [Home](${SITE_URL}/en)
+- [Sign up](${SITE_URL}/en/register)
+- [Sign in](${SITE_URL}/en/login)
+
+The public site is available in Russian and English; the workspace itself is
+in Russian for now.
 `;
 
 export function GET(): Response {

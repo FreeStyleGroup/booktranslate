@@ -15,8 +15,18 @@ const STORAGE_KEY = "bt-theme";
 
 /* Класс кнопки задаётся снаружи: в кабинете это квадратная иконка в
    панели, на главной — круглая в стеклянной полосе. Поведение и значки
-   при этом одни, и расходиться им негде. */
-export function ThemeToggle({ className = "cab__icon" }: { className?: string }) {
+   при этом одни, и расходиться им негде.
+
+   Подпись — тоже снаружи: у кнопки без текста она единственное, что
+   слышит человек с экранным диктором, и на английской странице она обязана
+   быть английской. */
+export function ThemeToggle({
+  className = "cab__icon",
+  label = "Сменить тему",
+}: {
+  className?: string;
+  label?: string;
+}) {
   function toggle(): void {
     const root = document.documentElement;
     const current = root.dataset.theme;
@@ -41,7 +51,7 @@ export function ThemeToggle({ className = "cab__icon" }: { className?: string })
   // месяц посреди серой панели читается как посторонний предмет. Контур
   // наследует цвет кнопки и живёт по её же правилам наведения.
   return (
-    <button className={className} type="button" onClick={toggle} aria-label="Сменить тему">
+    <button className={className} type="button" onClick={toggle} aria-label={label}>
       <svg className="theme-light" viewBox="0 0 24 24" aria-hidden="true">
         <path
           d="M20.4 14.3A8.6 8.6 0 0 1 9.7 3.6a8.6 8.6 0 1 0 10.7 10.7Z"

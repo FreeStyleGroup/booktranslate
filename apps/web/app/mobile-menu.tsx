@@ -15,22 +15,26 @@
 
 import { useRef, useState } from "react";
 
+import { localePath, type Locale } from "./i18n/config";
+import type { Dictionary } from "./i18n/ru";
 import { useDismiss } from "./use-dismiss";
 
-const SECTIONS = [
-  { href: "#how", title: "Как работает" },
-  { href: "#terms", title: "Терминология" },
-  { href: "#who", title: "Кому" },
-  { href: "#formats", title: "Форматы" },
-  { href: "#price", title: "Стоимость" },
-  { href: "#faq", title: "Вопросы" },
-];
-
-export function MobileMenu() {
+/* Подписи приходят готовыми, а не выбираются здесь по языку: иначе в
+   браузер уехали бы оба словаря целиком. */
+export function MobileMenu({ lang, nav }: { lang: Locale; nav: Dictionary["nav"] }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
   useDismiss(open, box, () => setOpen(false));
+
+  const sections = [
+    { href: "#how", title: nav.how },
+    { href: "#terms", title: nav.terms },
+    { href: "#who", title: nav.who },
+    { href: "#formats", title: nav.formats },
+    { href: "#price", title: nav.price },
+    { href: "#faq", title: nav.faq },
+  ];
 
   return (
     <div className="mmenu" ref={box}>
@@ -39,7 +43,7 @@ export function MobileMenu() {
         type="button"
         aria-expanded={open}
         aria-controls="mmenu-panel"
-        aria-label={open ? "Закрыть меню" : "Открыть меню"}
+        aria-label={open ? nav.menuClose : nav.menuOpen}
         onClick={() => setOpen((was) => !was)}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -67,7 +71,7 @@ export function MobileMenu() {
           браузер заново считает раскладку и список прыгает. */}
       <div className="mmenu__panel" id="mmenu-panel" hidden={!open}>
         <nav className="mmenu__nav">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <a key={section.href} href={section.href} onClick={() => setOpen(false)}>
               {section.title}
             </a>
@@ -75,11 +79,11 @@ export function MobileMenu() {
         </nav>
 
         <div className="mmenu__actions">
-          <a className="btn btn--ghost btn--small" href="/login">
-            Войти
+          <a className="btn btn--ghost btn--small" href={localePath(lang, "/login")}>
+            {nav.login}
           </a>
-          <a className="btn btn--primary btn--small" href="/register">
-            Регистрация <i aria-hidden="true">↗</i>
+          <a className="btn btn--primary btn--small" href={localePath(lang, "/register")}>
+            {nav.register} <i aria-hidden="true">↗</i>
           </a>
         </div>
       </div>

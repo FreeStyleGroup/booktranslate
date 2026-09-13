@@ -7,16 +7,39 @@
  * поисковики наказывают.
  *
  * Вопросы и ответы берутся те же, что показаны на странице: разметка
- * обязана описывать видимое, а не то, что хотелось бы показать роботу. */
+ * обязана описывать видимое, а не то, что хотелось бы показать роботу.
+ *
+ * 🔥 У страниц на разных языках разные `@id`. Один и тот же
+ * идентификатор на двух документах означает для поисковика, что это один
+ * документ, — и один из двух он выкинет. Общими остаются организация и
+ * сайт: они и правда одни.
+ */
 
-import { CONTACT_EMAIL, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "./contacts";
+import { CONTACT_EMAIL, SITE_NAME, SITE_URL } from "./contacts";
+import { dictionary } from "./i18n";
+import { localePath, type Locale } from "./i18n/config";
 
 export type Faq = { q: string; a: string };
 
 const ORGANIZATION = `${SITE_URL}/#organization`;
 const WEBSITE = `${SITE_URL}/#website`;
 
-export function SiteSchema({ faq, features }: { faq: Faq[]; features: string[] }) {
+export function SiteSchema({
+  lang,
+  faq,
+  features,
+}: {
+  lang: Locale;
+  faq: Faq[];
+  features: string[];
+}) {
+  const t = dictionary(lang);
+  const home = `${SITE_URL}${localePath(lang, "/")}`;
+  // У русской главной адрес кончается косой чертой, у английской — нет:
+  // `/en/` и `/en` для поисковика два разных адреса, и канонический из них
+  // тот, что стоит в ссылках и в карте сайта.
+  const page = lang === "ru" ? `${SITE_URL}/` : home;
+
   const graph = {
     "@context": "https://schema.org",
     "@graph": [
@@ -33,17 +56,17 @@ export function SiteSchema({ faq, features }: { faq: Faq[]; features: string[] }
         "@id": WEBSITE,
         url: `${SITE_URL}/`,
         name: SITE_NAME,
-        description: SITE_DESCRIPTION,
-        inLanguage: "ru",
+        description: t.meta.description,
+        inLanguage: t.htmlLang,
         publisher: { "@id": ORGANIZATION },
       },
       {
         "@type": "WebPage",
-        "@id": `${SITE_URL}/#webpage`,
-        url: `${SITE_URL}/`,
-        name: `${SITE_NAME} — профессиональный перевод технических книг`,
-        description: SITE_DESCRIPTION,
-        inLanguage: "ru",
+        "@id": `${page}#webpage`,
+        url: page,
+        name: t.meta.pageName,
+        description: t.meta.description,
+        inLanguage: t.htmlLang,
         isPartOf: { "@id": WEBSITE },
         about: { "@id": ORGANIZATION },
       },
@@ -52,16 +75,17 @@ export function SiteSchema({ faq, features }: { faq: Faq[]; features: string[] }
         "@id": `${SITE_URL}/#application`,
         name: SITE_NAME,
         url: `${SITE_URL}/`,
-        description: SITE_DESCRIPTION,
+        description: t.meta.description,
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
-        inLanguage: "ru",
+        inLanguage: t.htmlLang,
         featureList: features,
         publisher: { "@id": ORGANIZATION },
       },
       {
         "@type": "FAQPage",
-        "@id": `${SITE_URL}/#faq`,
+        "@id": `${page}#faq`,
+        inLanguage: t.htmlLang,
         mainEntity: faq.map((item) => ({
           "@type": "Question",
           name: item.q,

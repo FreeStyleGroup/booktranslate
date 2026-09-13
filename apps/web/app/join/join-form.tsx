@@ -1,29 +1,46 @@
 "use client";
 
 /* Принятие приглашения: что нужно сделать зависит от того, кто открыл
-   ссылку. Четыре случая, и у каждого своя кнопка — или её отсутствие. */
+   ссылку. Четыре случая, и у каждого своя кнопка — или её отсутствие.
+
+   Подписи приходят готовым набором, а не выбираются здесь по языку: иначе
+   в браузер уехали бы оба словаря целиком. */
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { fill } from "../i18n/config";
+import type { Dictionary } from "../i18n/ru";
+import type { Preview } from "../join-page";
 import { SignOut } from "../sign-out";
-import type { Preview } from "./page";
 
 const MIN_PASSWORD = 12;
+
+export type JoinTexts = {
+  join: Dictionary["join"];
+  form: Dictionary["form"];
+  /** Адрес страницы входа на том же языке. */
+  loginHref: string;
+  signIn: string;
+};
 
 export function JoinForm({
   token,
   preview,
   me,
+  texts,
 }: {
   token: string;
   preview: Preview;
   // Почта вошедшего. Пусто — ссылку открыл гость.
   me: string | null;
+  texts: JoinTexts;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const t = texts.join;
 
   async function accept(body: Record<string, unknown>): Promise<void> {
     setError(null);
@@ -39,7 +56,7 @@ export function JoinForm({
       const payload = (await response.json()) as { error?: string; home?: string };
 
       if (!response.ok) {
-        setError(payload.error ?? "Не получилось. Попробуйте ещё раз.");
+        setError(payload.error ?? texts.form.failed);
         return;
       }
 
@@ -48,7 +65,7 @@ export function JoinForm({
       router.push(payload.home ?? "/app");
       router.refresh();
     } catch {
-      setError("Сеть недоступна. Проверьте соединение.");
+      setError(texts.form.offline);
     } finally {
       setBusy(false);
     }
@@ -60,11 +77,8 @@ export function JoinForm({
     return (
       <div className="sent" role="status">
         <span aria-hidden="true">🚪</span>
-        <h2>Вы вошли как {me}</h2>
-        <p>
-          Приглашение выписано на {preview.email}. Выйдите и откройте ссылку
-          снова — под той почтой, на которую оно пришло.
-        </p>
+        <h2>{fill(t.wrongAccountTitle, { email: me })}</h2>
+        <p>{fill(t.wrongAccountText, { email: preview.email })}</p>
         <SignOut className="btn btn--ghost" />
       </div>
     );
@@ -85,7 +99,7 @@ export function JoinForm({
           disabled={busy}
           onClick={() => void accept({})}
         >
-          {busy ? "Секунду…" : "Принять приглашение"}
+          {busy ? texts.form.busy : t.accept}
           <i aria-hidden="true">↗</i>
         </button>
       </div>
@@ -99,13 +113,10 @@ export function JoinForm({
     return (
       <div className="sent" role="status">
         <span aria-hidden="true">🔑</span>
-        <h2>У вас уже есть учётная запись</h2>
-        <p>
-          Войдите под почтой {preview.email} и откройте ссылку из письма ещё
-          раз — приглашение примется одним нажатием.
-        </p>
-        <a className="btn btn--primary" href="/login">
-          Войти
+        <h2>{t.hasAccountTitle}</h2>
+        <p>{fill(t.hasAccountText, { email: preview.email })}</p>
+        <a className="btn btn--primary" href={texts.loginHref}>
+          {texts.signIn}
         </a>
       </div>
     );
@@ -125,25 +136,30 @@ export function JoinForm({
   return (
     <form className="form" onSubmit={submit} noValidate>
       <label className="field">
-        <span>Как вас зовут</span>
-        <input name="full_name" type="text" autoComplete="name" placeholder="Анна Петрова" />
+        <span>{texts.form.name}</span>
+        <input
+          name="full_name"
+          type="text"
+          autoComplete="name"
+          placeholder={texts.form.namePlaceholder}
+        />
       </label>
 
       <label className="field">
-        <span>Почта</span>
+        <span>{texts.form.email}</span>
         <input type="email" value={preview.email} readOnly autoComplete="email" />
-        <small>На неё выписано приглашение — сменить её здесь нельзя.</small>
+        <small>{t.emailHint}</small>
       </label>
 
       <label className="field">
-        <span>Пароль</span>
+        <span>{texts.form.password}</span>
         <input
           name="password"
           type="password"
           required
           minLength={MIN_PASSWORD}
           autoComplete="new-password"
-          placeholder={`Не короче ${MIN_PASSWORD} знаков`}
+          placeholder={fill(texts.form.passwordHint, { n: MIN_PASSWORD })}
         />
       </label>
 
@@ -154,7 +170,7 @@ export function JoinForm({
       )}
 
       <button className="btn btn--primary" type="submit" disabled={busy}>
-        {busy ? "Секунду…" : "Принять и войти"}
+        {busy ? texts.form.busy : t.acceptAndEnter}
         <i aria-hidden="true">↗</i>
       </button>
     </form>

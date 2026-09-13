@@ -1,22 +1,25 @@
 import type { Metadata } from "next";
 
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "./contacts";
+import { SITE_NAME, SITE_URL } from "./contacts";
+import { alternates, dictionary } from "./i18n";
 import "./globals.css";
+
+const ru = dictionary("ru");
 
 export const metadata: Metadata = {
   // От этого адреса считаются канонические ссылки и адреса в Open Graph:
   // без него Next отдал бы их относительными, а поисковику относительный
   // канонический адрес ни о чём не говорит.
   metadataBase: new URL(SITE_URL),
-  title: SITE_TITLE,
-  description: SITE_DESCRIPTION,
+  title: ru.meta.title,
+  description: ru.meta.description,
   applicationName: SITE_NAME,
+  alternates: alternates("ru", "/"),
   openGraph: {
-    title: SITE_TITLE,
-    description:
-      "Термины решаются до перевода, числа и обозначения не разъезжаются, книга собирается обратно в свой формат со всем оформлением.",
+    title: ru.meta.title,
+    description: ru.meta.ogDescription,
     siteName: SITE_NAME,
-    locale: "ru_RU",
+    locale: ru.ogLocale,
     type: "website",
   },
   // Подтверждение прав на сайт в Яндекс.Вебмастере. Код — не секрет: он
@@ -26,15 +29,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
+    // Язык разметки — русский: он основной и живёт на голых адресах.
+    // Английская половина сайта помечает себя сама (`app/en/layout.tsx`):
+    // `lang` — обычный атрибут, и вложенный узел перекрывает им документ.
+    //
     // 🔥 data-scroll-behavior: у страницы плавная прокрутка (globals.css), и
     // при переходе между разделами Next прокручивал к верху с анимацией,
     // которую переход обрывал, — новая страница открывалась сдвинутой под
     // шапку. С атрибутом Next на время перехода выключает плавность.
-    <html lang="ru" data-scroll-behavior="smooth">
+    <html lang={ru.htmlLang} data-scroll-behavior="smooth">
       <head>
         {/* Тема проставляется до первой отрисовки: иначе выбравший тёмную
             каждый раз видит вспышку светлой. Скрипт крошечный и намеренно

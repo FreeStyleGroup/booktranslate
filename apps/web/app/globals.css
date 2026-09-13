@@ -339,14 +339,7 @@ a {
   letter-spacing: 0.08em;
 }
 
-.lang__item i {
-  margin-left: auto;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--ink-faint);
-}
-
-.lang__item:hover:not(:disabled) {
+.lang__item:hover {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink);
 }
@@ -354,11 +347,6 @@ a {
 .lang__item.is-active {
   color: var(--ink);
   background: var(--brand-tint);
-}
-
-.lang__item:disabled {
-  cursor: default;
-  opacity: 0.55;
 }
 
 /* ── Меню на узких экранах ──
@@ -1561,6 +1549,12 @@ h3 {
 
 /* Строка с почтой под формой. Ровно на ширину карточки, чтобы не
    расползалась по всей колонке. */
+.auth__bottom {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+}
+
 .auth__contact {
   margin: 18px 0 0;
   width: 100%;

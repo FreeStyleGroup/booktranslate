@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { CONTACT_EMAIL, TAGLINE } from "../contacts";
+import { CONTACT_EMAIL } from "../contacts";
+import { dictionary } from "../i18n";
 import { apiFetch, unauthorized, type CurrentUser } from "../lib/api";
 import { currentUser } from "../lib/current-user";
 import { accessToken, organizationId, renewUrl } from "../lib/session";
@@ -129,7 +130,10 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
             страница сайта, и человеку, который провёл в нём час, некуда
             написать, если что-то пошло не так. */}
         <footer className="cab__foot">
-          <span>BookTranslate · {TAGLINE}</span>
+          {/* Кабинет пока только на русском: витрина переведена, разделы
+              за входом — следующая работа. Подпись берётся из словаря
+              явно, чтобы это было видно в коде, а не подразумевалось. */}
+          <span>BookTranslate · {dictionary("ru").meta.tagline}</span>
           <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </footer>
       </div>

@@ -1,22 +1,16 @@
 import type { Metadata } from "next";
 
-import { AuthForm } from "../auth-form";
-import { AuthShell } from "../auth-shell";
+import { AuthPage } from "../auth-page";
+import { alternates, dictionary } from "../i18n";
+
+const t = dictionary("ru");
 
 export const metadata: Metadata = {
-  title: "Вход — BookTranslate",
-  description: "Вход в рабочее пространство BookTranslate.",
-  alternates: { canonical: "/login" },
+  title: t.login.metaTitle,
+  description: t.login.metaDescription,
+  alternates: alternates("ru", "/login"),
 };
 
 export default function LoginPage() {
-  return (
-    <AuthShell
-      title="С возвращением"
-      lead="Очередь замечаний ждёт там же, где вы её оставили."
-      footer={{ text: "Ещё нет рабочего пространства?", href: "/register", link: "Регистрация" }}
-    >
-      <AuthForm mode="login" />
-    </AuthShell>
-  );
+  return <AuthPage lang="ru" mode="login" />;
 }

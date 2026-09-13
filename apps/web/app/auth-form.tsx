@@ -3,20 +3,35 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { fill } from "./i18n/config";
+import type { Dictionary } from "./i18n/ru";
+
 /* Форма входа и регистрации.
 
    Одна на два случая: поля различаются двумя строками, а поведение —
-   ничем. Две почти одинаковые формы разъезжаются на первой же правке. */
+   ничем. Две почти одинаковые формы разъезжаются на первой же правке.
+
+   🔥 Тексты приходят готовым набором, а не выбираются здесь по языку.
+   Иначе в браузер уехали бы оба словаря целиком — и английский посетитель
+   скачивал бы русскую страницу вместе со своей. */
 
 const MIN_PASSWORD = 12;
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export type AuthTexts = {
+  form: Dictionary["form"];
+  submit: string;
+  /** Экран «заявка отправлена». У входа его нет — там сразу кабинет. */
+  sent: { title: string; text: string } | null;
+};
+
+export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: AuthTexts }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const register = mode === "register";
+  const t = texts.form;
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -45,7 +60,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       };
 
       if (!response.ok) {
-        setError(payload.error ?? "Не получилось. Попробуйте ещё раз.");
+        setError(payload.error ?? t.failed);
         return;
       }
 
@@ -64,21 +79,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       router.push(payload.home ?? "/app");
       router.refresh();
     } catch {
-      setError("Сеть недоступна. Проверьте соединение.");
+      setError(t.offline);
     } finally {
       setBusy(false);
     }
   }
 
-  if (sent) {
+  if (sent && texts.sent !== null) {
     return (
       <div className="sent" role="status">
         <span aria-hidden="true">📬</span>
-        <h2>Заявка отправлена</h2>
-        <p>
-          Доступ открывает администратор. Как только заявку одобрят, вы
-          войдёте той же почтой и паролем — на странице входа.
-        </p>
+        <h2>{texts.sent.title}</h2>
+        <p>{texts.sent.text}</p>
       </div>
     );
   }
@@ -87,47 +99,44 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     <form className="form" onSubmit={submit} noValidate>
       {register && (
         <label className="field">
-          <span>Как вас зовут</span>
-          <input name="full_name" type="text" autoComplete="name" placeholder="Анна Петрова" />
+          <span>{t.name}</span>
+          <input name="full_name" type="text" autoComplete="name" placeholder={t.namePlaceholder} />
         </label>
       )}
 
       <label className="field">
-        <span>Почта</span>
+        <span>{t.email}</span>
         <input
           name="email"
           type="email"
           required
           autoComplete="email"
-          placeholder="you@company.ru"
+          placeholder={t.emailPlaceholder}
         />
       </label>
 
       <label className="field">
-        <span>Пароль</span>
+        <span>{t.password}</span>
         <input
           name="password"
           type="password"
           required
           minLength={register ? MIN_PASSWORD : 1}
           autoComplete={register ? "new-password" : "current-password"}
-          placeholder={register ? `Не короче ${MIN_PASSWORD} знаков` : "Ваш пароль"}
+          placeholder={register ? fill(t.passwordHint, { n: MIN_PASSWORD }) : t.passwordPlaceholder}
         />
       </label>
 
       {register && (
         <label className="field">
-          <span>Рабочее пространство</span>
+          <span>{t.workspace}</span>
           <input
             name="organization_name"
             type="text"
             required
-            placeholder="Бюро переводов «Пример»"
+            placeholder={t.workspacePlaceholder}
           />
-          <small>
-            Проекты, словари и каталог терминов принадлежат ему. Коллег
-            пригласите позже.
-          </small>
+          <small>{t.workspaceHint}</small>
         </label>
       )}
 
@@ -138,7 +147,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       )}
 
       <button className="btn btn--primary" type="submit" disabled={busy}>
-        {busy ? "Секунду…" : register ? "Создать рабочее пространство" : "Войти"}
+        {busy ? t.busy : texts.submit}
         <i aria-hidden="true">↗</i>
       </button>
     </form>
