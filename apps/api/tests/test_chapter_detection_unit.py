@@ -7,8 +7,8 @@
 
 from pathlib import Path
 
+from app.models.block import BlockKind
 from app.models.chapter import Chapter, ChapterOrigin
-from app.models.segment import SegmentKind
 from app.services.chapter_detection import chapter_level, propose, sections_of
 from app.services.parsers.base import ParsedBlock
 from app.services.parsers.markup import EpubParser, HtmlParser
@@ -147,7 +147,7 @@ def test_markdown_chapter_points_to_its_line(tmp_path: Path) -> None:
 def test_heading_text_is_one_line() -> None:
     """Перенос строки внутри заголовка в названии главы не нужен."""
     blocks = [
-        ParsedBlock(text="Chapter 1.\nPumps", kind=SegmentKind.HEADING, location={"level": 1}),
+        ParsedBlock(text="Chapter 1.\nPumps", kind=BlockKind.HEADING, location={"level": 1}),
         ParsedBlock(text="Text.", location={}),
     ]
 

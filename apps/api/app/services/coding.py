@@ -39,20 +39,34 @@ class CodeAllocator(TenantService):
         оставила бы дыру в нумерации при откате, а отдельная фиксация
         записи — две записи с одним номером.
         """
+        return (await self.reserve(kind, owner_id, 1))[0]
+
+    async def reserve(self, kind: CodeKind, owner_id: uuid.UUID, count: int) -> range:
+        """Подряд идущие номера для `count` записей — одним запросом.
+
+        Глава — это сотни блоков. Номер на каждый отдельным запросом — сотни
+        походов в базу ради того, что делается одним: счётчик сдвигается на
+        `count`, и его новое значение — последний номер выданного отрезка.
+        Номера отрезка подряд, и чужая выдача между ними встать не может:
+        строка счётчика заблокирована до конца транзакции.
+        """
+        if count < 1:
+            return range(0)
+
         statement = (
             insert(CodeCounter)
             .values(
                 organization_id=self.organization_id,
                 kind=kind,
                 owner_id=owner_id,
-                last_value=1,
+                last_value=count,
             )
             .on_conflict_do_update(
                 constraint="code_counter_scope",
                 # Ссылка на колонку таблицы, а не на `excluded`: нужно
                 # увеличить уже сохранённое значение, а не подставить
-                # единицу из неудавшейся вставки.
-                set_={"last_value": CodeCounter.last_value + 1, "updated_at": func.now()},
+                # число из неудавшейся вставки.
+                set_={"last_value": CodeCounter.last_value + count, "updated_at": func.now()},
             )
             .returning(CodeCounter.last_value)
         )
@@ -61,7 +75,9 @@ class CodeAllocator(TenantService):
 
         # Ровно одна строка: upsert с RETURNING либо вставляет, либо
         # обновляет, третьего исхода нет. `scalar_one` не подстраховка,
-        # а запись этого требования: пустой ответ означал бы, что номер
-        # не выдан, и продолжать с подставленным нулём нельзя — два
-        # замечания получили бы один код.
-        return result.scalar_one()
+        # а запись этого требования: пустой ответ означал бы, что номера
+        # не выданы, и продолжать с подставленными нельзя — две записи
+        # получили бы один код.
+        last = result.scalar_one()
+
+        return range(last - count + 1, last + 1)

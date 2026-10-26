@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from app.models.block import BlockKind
 from app.models.document import SourceFormat
-from app.models.segment import SegmentKind
 from app.services.parsers import ParsingError, is_supported, parser_for
 from app.services.parsers.docx import DocxParser
 from app.services.parsers.markup import EpubParser, HtmlParser
@@ -58,11 +58,11 @@ def test_pdf_restores_paragraphs_headings_and_lists(tmp_path: Path) -> None:
     blocks = _pdf_blocks(tmp_path, [page])
 
     assert [(block.text, block.kind) for block in blocks] == [
-        ("1. Installation", SegmentKind.HEADING),
-        ("Open the valve before start. Check the pressure gauge every day.", SegmentKind.PARAGRAPH),
-        ("Warning! Disconnect the power supply before service.", SegmentKind.WARNING),
-        ("Replace the filter", SegmentKind.LIST_ITEM),
-        ("Close the valve", SegmentKind.LIST_ITEM),
+        ("1. Installation", BlockKind.HEADING),
+        ("Open the valve before start. Check the pressure gauge every day.", BlockKind.PARAGRAPH),
+        ("Warning! Disconnect the power supply before service.", BlockKind.WARNING),
+        ("Replace the filter", BlockKind.LIST_ITEM),
+        ("Close the valve", BlockKind.LIST_ITEM),
     ]
     # Единственный заголовок — самый крупный, значит первого уровня.
     assert blocks[0].location == {"page": 1, "block": 0, "level": 1}
@@ -132,13 +132,13 @@ def test_pdf_glues_a_paragraph_that_came_line_by_line(tmp_path: Path) -> None:
     blocks = _pdf_blocks(tmp_path, [page])
 
     assert [(block.text, block.kind) for block in blocks] == [
-        ("800 626 2120", SegmentKind.PARAGRAPH),
+        ("800 626 2120", BlockKind.PARAGRAPH),
         (
             "The proper selection of power transmission products, including the related "
             "area of safety, is the responsibility of the customer.",
-            SegmentKind.PARAGRAPH,
+            BlockKind.PARAGRAPH,
         ),
-        ("Operating requirements vary.", SegmentKind.PARAGRAPH),
+        ("Operating requirements vary.", BlockKind.PARAGRAPH),
     ]
 
 
@@ -165,7 +165,7 @@ def test_plain_text_splits_on_blank_lines(tmp_path: Path) -> None:
     blocks = list(PlainTextParser().parse(path))
 
     assert [block.text for block in blocks] == ["Первый абзац.", "Второй абзац."]
-    assert all(block.kind is SegmentKind.PARAGRAPH for block in blocks)
+    assert all(block.kind is BlockKind.PARAGRAPH for block in blocks)
 
 
 def test_windows_encoding_is_read(tmp_path: Path) -> None:
@@ -196,11 +196,11 @@ def test_markdown_recognizes_structure(tmp_path: Path) -> None:
     kinds = [block.kind for block in blocks]
 
     assert kinds == [
-        SegmentKind.HEADING,
-        SegmentKind.PARAGRAPH,
-        SegmentKind.LIST_ITEM,
-        SegmentKind.LIST_ITEM,
-        SegmentKind.CODE,
+        BlockKind.HEADING,
+        BlockKind.PARAGRAPH,
+        BlockKind.LIST_ITEM,
+        BlockKind.LIST_ITEM,
+        BlockKind.CODE,
     ]
     assert blocks[0].text == "Заголовок первого уровня"
     assert blocks[0].location["level"] == 1
@@ -211,7 +211,7 @@ def test_markdown_recognizes_structure(tmp_path: Path) -> None:
 def test_markdown_unclosed_code_fence_is_not_lost(tmp_path: Path) -> None:
     blocks = list(MarkdownParser().parse(write(tmp_path, "draft.md", "```\nкод без конца\n")))
 
-    assert [block.kind for block in blocks] == [SegmentKind.CODE]
+    assert [block.kind for block in blocks] == [BlockKind.CODE]
     assert blocks[0].text == "код без конца"
 
 
@@ -226,10 +226,10 @@ def test_docx_keeps_order_of_paragraphs_and_tables(tmp_path: Path) -> None:
         "Параметр",
         "Значение",
     ]
-    assert blocks[0].kind is SegmentKind.HEADING
-    assert blocks[1].kind is SegmentKind.PARAGRAPH
-    assert blocks[2].kind is SegmentKind.LIST_ITEM
-    assert blocks[3].kind is SegmentKind.TABLE_CELL
+    assert blocks[0].kind is BlockKind.HEADING
+    assert blocks[1].kind is BlockKind.PARAGRAPH
+    assert blocks[2].kind is BlockKind.LIST_ITEM
+    assert blocks[3].kind is BlockKind.TABLE_CELL
 
 
 def test_broken_docx_raises_parsing_error(tmp_path: Path) -> None:
@@ -258,10 +258,10 @@ def test_html_does_not_duplicate_nested_blocks(tmp_path: Path) -> None:
         "Абзац с выделением внутри.",
     ]
     assert [block.kind for block in blocks] == [
-        SegmentKind.HEADING,
-        SegmentKind.LIST_ITEM,
-        SegmentKind.LIST_ITEM,
-        SegmentKind.PARAGRAPH,
+        BlockKind.HEADING,
+        BlockKind.LIST_ITEM,
+        BlockKind.LIST_ITEM,
+        BlockKind.PARAGRAPH,
     ]
 
 
@@ -343,5 +343,30 @@ def test_russian_caption_style_is_not_a_heading(tmp_path: Path) -> None:
     path = _docx_with_styles(tmp_path, [("Название объекта", "Рисунок 1. Насос")])
     blocks = list(DocxParser().parse(path))
 
-    assert blocks[0].kind is SegmentKind.CAPTION
+    assert blocks[0].kind is BlockKind.CAPTION
     assert "level" not in blocks[0].location
+
+
+def test_html_code_listing_keeps_indentation(tmp_path: Path) -> None:
+    """Отступ в листинге — содержимое: мастер обязан хранить его знак в знак."""
+    source = (
+        "<pre>\ndef entropy(p):\n    return -sum(p * log(p))\n\n    # tail\n</pre>"
+        "<p>Text  with   spaces.</p>"
+    )
+    blocks = list(HtmlParser().parse(write(tmp_path, "page.html", source)))
+
+    assert blocks[0].kind is BlockKind.CODE
+    # Перевод строки сразу после <pre> по правилам HTML содержимым не
+    # является — он и срезан; всё остальное на месте.
+    assert blocks[0].text == "def entropy(p):\n    return -sum(p * log(p))\n\n    # tail"
+    # Внутри текстового узла пробелы не трогаются: извлечение не правит
+    # исходник, даже когда браузер показал бы его иначе.
+    assert blocks[1].text == "Text  with   spaces."
+
+
+def test_markdown_code_keeps_first_line_indent(tmp_path: Path) -> None:
+    source = "Text.\n\n```\n    indented()\n  less()\n```\n"
+    blocks = list(MarkdownParser().parse(write(tmp_path, "book.md", source)))
+
+    assert blocks[1].kind is BlockKind.CODE
+    assert blocks[1].text == "    indented()\n  less()"

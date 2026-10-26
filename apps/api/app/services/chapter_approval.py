@@ -29,6 +29,7 @@ from sqlalchemy import update
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeKind
 from app.models.document import Document, SourceRole
+from app.models.master import ChapterMaster
 from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.books import MANAGING_ROLES, BookService
@@ -126,6 +127,7 @@ class ChapterApprovalService(TenantService):
         self._context.require(*MANAGING_ROLES)
 
         chapter = await self._locked(chapter_id)
+        await self._require_no_master(chapter)
         sections: list[dict[str, Any]] = chapter.sections
         starts = [section["start"] for section in sections]
 
@@ -201,6 +203,9 @@ class ChapterApprovalService(TenantService):
 
         if following is None:
             raise ConflictError("Это последняя глава книги — присоединять к ней нечего")
+
+        await self._require_no_master(chapter)
+        await self._require_no_master(following)
 
         if following.source_document_id != chapter.source_document_id:
             # Номера блоков двух разных файлов в одну последовательность не
@@ -329,6 +334,24 @@ class ChapterApprovalService(TenantService):
                 "decided_by": "user",
             },
         )
+
+    async def _require_no_master(self, chapter: Chapter) -> None:
+        """У главы ещё нет мастера — значит, её блоки ещё без кодов.
+
+        После извлечения у блоков коды вида `CH03-B0042`: в них код главы.
+        Перенеси разделение или слияние блок в другую главу — и его
+        постоянный код сменился бы, а на него уже могли сослаться. Поэтому
+        границы главы с мастером не двигаются.
+        """
+        extracted = await self._session.scalar(
+            self.scoped(ChapterMaster).where(ChapterMaster.chapter_id == chapter.id).limit(1)
+        )
+
+        if extracted is not None:
+            raise ConflictError(
+                f"У главы {chapter.code or chapter.ordinal} уже извлечён мастер: её блоки получили "
+                "коды с кодом главы, и перенос блоков между главами сменил бы их"
+            )
 
     @staticmethod
     def _reopen(chapter: Chapter) -> None:

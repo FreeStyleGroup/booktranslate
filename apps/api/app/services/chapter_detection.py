@@ -27,11 +27,12 @@ from typing import Any
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.block import BlockKind
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.document import Document, SourceRole
-from app.models.segment import SegmentKind
 from app.services.audit import AuditService
 from app.services.base import TenantService
+from app.services.block_reconcile import heading_title
 from app.services.books import MANAGING_ROLES, BookService
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, InvalidInputError
@@ -43,10 +44,6 @@ from app.services.storage import ObjectStorage
 # Markdown. Номер блока сюда не входит — он хранится отдельно и человеку
 # ничего не говорит.
 LOCATOR_KEYS = ("href", "page", "line")
-
-# Предел длины названия главы — от колонки. Заголовок длиннее — почти
-# всегда склеенный абзац, и хранить его целиком в названии незачем.
-TITLE_MAX = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,11 +102,11 @@ def sections_of(blocks: Sequence[ParsedBlock]) -> list[Section]:
     if not blocks:
         return []
 
-    if any(block.kind is SegmentKind.HEADING for block in blocks):
+    if any(block.kind is BlockKind.HEADING for block in blocks):
         starts = [
             index
             for index, block in enumerate(blocks)
-            if index == 0 or block.kind is SegmentKind.HEADING
+            if index == 0 or block.kind is BlockKind.HEADING
         ]
     else:
         # Заголовков нет: якорем служит смена файла EPUB или страницы PDF.
@@ -187,7 +184,7 @@ def _without_headings(sections: Sequence[Section]) -> list[Proposal]:
 
 def _section(blocks: Sequence[ParsedBlock], start: int, end: int) -> Section:
     first = blocks[start]
-    heading = first.kind is SegmentKind.HEADING
+    heading = first.kind is BlockKind.HEADING
     level = first.location.get("level") if heading else None
 
     return Section(
@@ -195,7 +192,7 @@ def _section(blocks: Sequence[ParsedBlock], start: int, end: int) -> Section:
         end=end,
         # Заголовок без уровня — первого: так его покажет и сборщик.
         level=(level if isinstance(level, int) else 1) if heading else None,
-        title=" ".join(first.text.split())[:TITLE_MAX] if heading else None,
+        title=heading_title(first.text) if heading else None,
         locator={key: first.location[key] for key in LOCATOR_KEYS if key in first.location},
         kinds=dict(Counter(block.kind.value for block in blocks[start:end])),
     )

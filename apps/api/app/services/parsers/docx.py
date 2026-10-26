@@ -18,7 +18,7 @@ from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 from app.services.parsers.base import ParsedBlock, ParsingError
 
@@ -59,7 +59,7 @@ class DocxParser:
                     kind = _kind_of(paragraph)
                     place: dict[str, object] = {"block": index, "style": _style_name(paragraph)}
 
-                    if kind is SegmentKind.HEADING:
+                    if kind is BlockKind.HEADING:
                         place["level"] = _heading_level(_style_name(paragraph))
 
                     yield ParsedBlock(text=text, kind=kind, location=place)
@@ -76,7 +76,7 @@ class DocxParser:
 
                         yield ParsedBlock(
                             text=text,
-                            kind=SegmentKind.TABLE_CELL,
+                            kind=BlockKind.TABLE_CELL,
                             location={"block": index, "row": row_no, "column": cell_no},
                         )
                 index += 1
@@ -94,7 +94,7 @@ def _style_name(paragraph: Paragraph) -> str:
     return (style.name or "") if style is not None else ""
 
 
-def _kind_of(paragraph: Paragraph) -> SegmentKind:
+def _kind_of(paragraph: Paragraph) -> BlockKind:
     name = _style_name(paragraph).strip().lower()
 
     # Подпись проверяется раньше заголовка: в русской сборке Word стиль
@@ -102,15 +102,15 @@ def _kind_of(paragraph: Paragraph) -> SegmentKind:
     # стиль заголовка книги. В обратном порядке каждая подпись к рисунку
     # становилась заголовком — и отдельным разделом главы.
     if name.startswith(_CAPTION_PREFIXES):
-        return SegmentKind.CAPTION
+        return BlockKind.CAPTION
 
     if name.startswith(_HEADING_PREFIXES):
-        return SegmentKind.HEADING
+        return BlockKind.HEADING
 
     if name.startswith(_LIST_PREFIXES) or _is_numbered(paragraph):
-        return SegmentKind.LIST_ITEM
+        return BlockKind.LIST_ITEM
 
-    return SegmentKind.PARAGRAPH
+    return BlockKind.PARAGRAPH
 
 
 def _heading_level(style: str) -> int:

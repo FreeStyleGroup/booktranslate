@@ -52,10 +52,11 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.block import BlockKind
 from app.models.document import Document, DocumentStatus
 from app.models.organization import Role
 from app.models.project import Project
-from app.models.segment import Segment, SegmentKind, SegmentStatus
+from app.models.segment import Segment, SegmentStatus
 from app.services import checks
 from app.services.base import TenantService
 from app.services.context import RequestContext
@@ -722,7 +723,7 @@ class TranslationService(TenantService):
             # Заголовок обновляется после того, как записан контекст: для
             # самого заголовка предметную область задаёт предыдущий, а не он
             # сам.
-            if segment.kind is SegmentKind.HEADING:
+            if segment.kind is BlockKind.HEADING:
                 heading = segment.source_text
 
         return context

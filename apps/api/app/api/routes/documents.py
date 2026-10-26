@@ -10,9 +10,10 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.api.uploads import chunks
 from app.core.config import get_settings
-from app.models.document import SourceRole
+from app.models.document import SourceFormat, SourceRole
 from app.schemas.document import DocumentProfilePublic, DocumentPublic
 from app.services.documents import DocumentService
+from app.services.errors import InvalidInputError
 from app.services.export import ExportFormat
 from app.services.exporting import ExportService
 from app.services.formats import media_type
@@ -143,19 +144,41 @@ async def document_profile(
 
 @router.get("/documents/{document_id}/content")
 async def download_document(
-    document_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+    document_id: uuid.UUID,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+    view: Annotated[
+        bool, Query(description="Открыть PDF для просмотра в браузере, а не скачать")
+    ] = False,
 ) -> StreamingResponse:
+    """Исходный файл — скачать или, если это PDF, посмотреть в браузере.
+
+    Просмотр — только для PDF. Его просят ради визуального эталона: мастер
+    главы сверяют со страницей вёрстки. Любой другой формат отдаётся только
+    на скачивание: HTML или SVG, загруженный заказчиком и открытый с домена
+    сервиса, выполнил бы свои скрипты от имени сервиса.
+    """
     service = DocumentService(session, context, storage)
     document = await service.get(document_id)
+
+    if view and document.source_format is not SourceFormat.PDF:
+        raise InvalidInputError("Посмотреть в браузере можно только PDF — остальное скачивается")
 
     # filename* с процентным кодированием: имена файлов бывают русскими, а
     # в обычном filename за пределы latin-1 выходить нельзя.
     name = quote(document.original_filename or document.title)
+    disposition = "inline" if view else "attachment"
 
     return StreamingResponse(
         service.stream(document),
         media_type=media_type(document.source_format),
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{name}"},
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{name}",
+            # Тип файла — тот, что объявлен, а не угаданный браузером по
+            # содержимому: угадывание и превращает «картинку» в страницу.
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

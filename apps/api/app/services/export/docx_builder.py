@@ -16,7 +16,7 @@ from pathlib import Path
 
 import docx
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.export.base import Rendered, TranslatedBlock
 from app.services.export.docx_writer import MEDIA_TYPE
 
@@ -45,16 +45,16 @@ class DocxBuilder:
             if not text:
                 continue
 
-            if block.kind is SegmentKind.HEADING:
+            if block.kind is BlockKind.HEADING:
                 document.add_heading(text, level=_heading_level(block))
-            elif block.kind is SegmentKind.LIST_ITEM:
+            elif block.kind is BlockKind.LIST_ITEM:
                 document.add_paragraph(text, style="List Bullet")
-            elif block.kind is SegmentKind.CODE:
+            elif block.kind is BlockKind.CODE:
                 run = document.add_paragraph().add_run(text)
                 run.font.name = MONOSPACE
-            elif block.kind is SegmentKind.WARNING:
+            elif block.kind is BlockKind.WARNING:
                 document.add_paragraph().add_run(text).bold = True
-            elif block.kind is SegmentKind.CAPTION:
+            elif block.kind is BlockKind.CAPTION:
                 document.add_paragraph().add_run(text).italic = True
             else:
                 # Ячейка таблицы — абзацем: сколько в строке колонок, знал

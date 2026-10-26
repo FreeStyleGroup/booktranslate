@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.glossary import Glossary, Term, normalize_term
 
 # Вес находки в оценке сегмента. Не абсолютная величина, а порядок: по нему
@@ -72,7 +72,7 @@ class Finding:
 
 
 def run_checks(
-    source_text: str, target_text: str, *, glossary: Glossary, kind: SegmentKind
+    source_text: str, target_text: str, *, glossary: Glossary, kind: BlockKind
 ) -> list[Finding]:
     """Проверить один сегмент."""
     if not target_text.strip():
@@ -113,14 +113,14 @@ def as_json(findings: Sequence[Finding]) -> dict[str, Any] | None:
     }
 
 
-def _looks_untranslated(source_text: str, target_text: str, kind: SegmentKind) -> bool:
+def _looks_untranslated(source_text: str, target_text: str, kind: BlockKind) -> bool:
     """Перевод дословно повторяет исходник.
 
     Код и обозначения повторяют исходник законно, короткие строки — тоже:
     «230 В» и «max» в обоих языках выглядят одинаково. Строка без единой
     буквы (номер, формула, артикул) проверке не подлежит вовсе.
     """
-    if kind is SegmentKind.CODE or len(source_text.strip()) < MIN_UNTRANSLATED_LENGTH:
+    if kind is BlockKind.CODE or len(source_text.strip()) < MIN_UNTRANSLATED_LENGTH:
         return False
 
     if not _LETTERS.search(source_text):

@@ -31,7 +31,7 @@ from bs4.element import NavigableString, PageElement
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.parsers.archives import ArchiveTooLargeError, check_archive, read_member
 from app.services.parsers.base import ParsedBlock, ParsingError
 from app.services.parsers.plain import read_text
@@ -43,23 +43,26 @@ from app.services.parsers.plain import read_text
 # разметку тем же списком, и разойтись они не могут — иначе переводы встанут
 # не в свои абзацы.
 BLOCK_KINDS = {
-    "h1": SegmentKind.HEADING,
-    "h2": SegmentKind.HEADING,
-    "h3": SegmentKind.HEADING,
-    "h4": SegmentKind.HEADING,
-    "h5": SegmentKind.HEADING,
-    "h6": SegmentKind.HEADING,
-    "p": SegmentKind.PARAGRAPH,
-    "li": SegmentKind.LIST_ITEM,
-    "td": SegmentKind.TABLE_CELL,
-    "th": SegmentKind.TABLE_CELL,
-    "figcaption": SegmentKind.CAPTION,
-    "caption": SegmentKind.CAPTION,
-    "blockquote": SegmentKind.PARAGRAPH,
-    "pre": SegmentKind.CODE,
+    "h1": BlockKind.HEADING,
+    "h2": BlockKind.HEADING,
+    "h3": BlockKind.HEADING,
+    "h4": BlockKind.HEADING,
+    "h5": BlockKind.HEADING,
+    "h6": BlockKind.HEADING,
+    "p": BlockKind.PARAGRAPH,
+    "li": BlockKind.LIST_ITEM,
+    "td": BlockKind.TABLE_CELL,
+    "th": BlockKind.TABLE_CELL,
+    "figcaption": BlockKind.CAPTION,
+    "caption": BlockKind.CAPTION,
+    "blockquote": BlockKind.PARAGRAPH,
+    "pre": BlockKind.CODE,
 }
 
 HEADING_LEVELS = {f"h{level}": level for level in range(1, 7)}
+
+# Теги, текст которых — содержимое знак в знак, а не форматирование.
+VERBATIM_TAGS = frozenset({"pre"})
 
 # Служебное содержимое: разметка, стили, скрипты. Переводить его нечего, а
 # попав в сегменты, оно ломает и оценку объёма, и счёт денег.
@@ -131,10 +134,32 @@ def block_strings(element: Tag) -> list[NavigableString]:
 
 
 def block_text(element: Tag) -> str:
-    """Текст блока: то же, что `get_text(" ", strip=True)`, но без служебных тегов."""
+    """Текст блока: то же, что `get_text(" ", strip=True)`, но без служебных тегов.
+
+    Соседние текстовые узлы соединяются одним пробелом, а их края
+    обрезаются: перенос строки между тегами в исходном HTML — разметка
+    файла, а не текст. Внутри узла ничего не трогается. В `<pre>` иначе:
+    отступ в листинге и есть содержимое, и текст берётся знак в знак.
+    """
+    if element.name in VERBATIM_TAGS:
+        return _verbatim_text(element)
+
     parts = (str(node).strip() for node in block_strings(element))
 
     return " ".join(part for part in parts if part)
+
+
+def _verbatim_text(element: Tag) -> str:
+    """Текст `<pre>` как есть: отступы, пустые строки и табуляция на месте.
+
+    Срезается только то, что по правилам HTML содержимым не является:
+    перевод строки сразу после открывающего тега и переводы строк перед
+    закрывающим. Листинг из одних пробелов — пустой блок.
+    """
+    text = "".join(str(node) for node in block_strings(element))
+    text = text.removeprefix("\r\n").removeprefix("\n").rstrip("\r\n")
+
+    return text if text.strip() else ""
 
 
 def _under_ignored(node: PageElement, stop: Tag) -> bool:

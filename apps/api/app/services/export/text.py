@@ -12,7 +12,7 @@ Markdown размечает то, что известно из разбора: �
 
 from pathlib import Path
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.export.base import Rendered, TranslatedBlock
 
 # Уровень заголовка известен только там, где его записал разборщик
@@ -65,7 +65,7 @@ class MarkdownRenderer:
     def _line(block: TranslatedBlock) -> str:
         text = block.text.strip()
 
-        if block.kind is SegmentKind.HEADING:
+        if block.kind is BlockKind.HEADING:
             level = block.location.get("level")
             depth = (
                 int(level) if isinstance(level, int) and 1 <= level <= 6 else DEFAULT_HEADING_LEVEL
@@ -73,24 +73,24 @@ class MarkdownRenderer:
 
             return "#" * depth + " " + text
 
-        if block.kind is SegmentKind.LIST_ITEM:
+        if block.kind is BlockKind.LIST_ITEM:
             return "- " + text
 
-        if block.kind is SegmentKind.CODE:
+        if block.kind is BlockKind.CODE:
             return "```\n" + text + "\n```"
 
-        if block.kind is SegmentKind.WARNING:
+        if block.kind is BlockKind.WARNING:
             # Цитатой: предупреждение обязано быть видно и в исходном тексте
             # файла, а не только после отрисовки.
             return "> " + text.replace("\n", "\n> ")
 
-        if block.kind is SegmentKind.TABLE_CELL:
+        if block.kind is BlockKind.TABLE_CELL:
             # Собрать обратно таблицу по одной ячейке нельзя: сколько в
             # строке колонок, известно только исходнику. Ячейка отдаётся
             # строкой — потеря вёрстки, но не содержимого.
             return "| " + text + " |"
 
-        if block.kind is SegmentKind.CAPTION:
+        if block.kind is BlockKind.CAPTION:
             return "*" + text + "*"
 
         return text
