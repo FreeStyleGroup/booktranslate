@@ -37,6 +37,20 @@ class SourceFormat(str, enum.Enum):
     TXT = "txt"
 
 
+class SourceRole(str, enum.Enum):
+    """Зачем файл загружен в книгу.
+
+    Роль решает, что с файлом делать, и потому назначается явно, а не
+    угадывается по формату: PDF бывает и единственным источником текста,
+    и визуальным эталоном при EPUB.
+    """
+
+    PRIMARY_TEXT = "primary_text"  # отсюда берётся текст книги
+    VISUAL_REFERENCE = "visual_reference"  # по нему сверяют вёрстку, текст не берут
+    AUXILIARY = "auxiliary"  # приложения, письма, справочные материалы
+    CODE_SOURCE = "code_source"  # листинги и примеры кода отдельным файлом
+
+
 class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     __tablename__ = "documents"
     __table_args__ = (
@@ -51,6 +65,17 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("content_hash IS NOT NULL"),
         ),
+        # У издания один основной источник текста. Без этого ограничения
+        # загрузка одноимённого файла молча добавляла бы второй, и книга
+        # переводилась бы наполовину из одного, наполовину из другого.
+        # Сменить основной источник можно — сняв роль с прежнего, то есть
+        # решением, а не случайностью.
+        Index(
+            "documents_book_primary_text",
+            "book_id",
+            unique=True,
+            postgresql_where=text("source_role = 'PRIMARY_TEXT' AND book_id IS NOT NULL"),
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -58,6 +83,17 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+
+    # Книга, в комплект которой входит файл. Пусто у документов, которые
+    # перевели поштучно, до появления книг.
+    book_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("book_editions.id", ondelete="CASCADE"),
+        index=True,
+    )
+    source_role: Mapped[SourceRole | None] = mapped_column(
+        Enum(SourceRole, name="document_source_role", native_enum=True)
     )
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
