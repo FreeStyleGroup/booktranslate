@@ -5,14 +5,15 @@
 исправляется новой версией, авторская ошибка в тексте — замечанием, а не
 молчаливой правкой. Операции «изменить текст мастера» в сервисе нет вовсе.
 
-Версия хранит упорядоченный список своих блоков и контрольную сумму по
-нему. Этого достаточно, чтобы восстановить любую версию целиком и
-убедиться, что она не изменилась: текст блоков неизменяем, а список и
+Версия хранит упорядоченный список своих блоков и объектов и контрольную
+сумму по ним. Этого достаточно, чтобы восстановить любую версию целиком и
+убедиться, что она не изменилась: блоки и объекты неизменяемы, а списки и
 сумма пишутся один раз.
 """
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
@@ -59,7 +60,14 @@ class ChapterMaster(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # Блоки версии по порядку. Список, а не таблица связей: он пишется один
     # раз и не меняется, а читается всегда целиком и в этом порядке.
     block_ids: Mapped[list[str]] = mapped_column(postgresql.JSONB, nullable=False)
-    # SHA-256 по видам и текстам блоков в порядке версии.
+    # Объекты версии по порядку — где каждый стоит и из чего состоит:
+    # `{"id", "at", "blocks", "caption", "label"}`. `at` — сколько блоков
+    # версии стоит перед объектом, `blocks` — блоки-содержимое (ячейки
+    # таблицы, текст листинга), `caption` — блок подписи. Всё это у одного
+    # и того же объекта в разных версиях может отличаться, поэтому хранится
+    # здесь, а не у объекта.
+    objects: Mapped[list[dict[str, Any]]] = mapped_column(postgresql.JSONB, nullable=False)
+    # SHA-256 по блокам и объектам версии — см. `master_checksum`.
     checksum: Mapped[str] = mapped_column(String(64), nullable=False)
 
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -75,6 +83,10 @@ class ChapterMaster(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     @property
     def block_count(self) -> int:
         return len(self.block_ids)
+
+    @property
+    def object_count(self) -> int:
+        return len(self.objects)
 
     @property
     def label(self) -> str:

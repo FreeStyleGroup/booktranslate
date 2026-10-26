@@ -32,7 +32,13 @@ from app.services.base import TenantService
 from app.services.context import RequestContext
 from app.services.documents import DocumentService
 from app.services.errors import ConflictError, UnsupportedFormatError
-from app.services.parsers import DocumentParser, ParsedBlock, ParsingError, parser_for
+from app.services.parsers import (
+    DocumentParser,
+    ParsedBlock,
+    ParsingError,
+    blocks_of,
+    parser_for,
+)
 from app.services.segmentation import split_block
 from app.services.storage import ObjectStorage
 from app.services.translation import is_stale
@@ -234,7 +240,7 @@ class ParsingService(TenantService):
 
             # Разбор — блокирующая работа с диском и разметкой. В потоке
             # событий она остановила бы обслуживание остальных запросов.
-            return await asyncio.to_thread(lambda: list(parser.parse(path)))
+            return await asyncio.to_thread(lambda: list(blocks_of(parser.parse(path))))
         finally:
             path.unlink(missing_ok=True)
 

@@ -15,6 +15,9 @@
 меняет кодов неизменившихся блоков. Изменённые получают новые коды и
 ссылку на блок, из которого получились; исчезнувшие выводятся из
 действия. Прежний код не переиспользуется никогда.
+
+Объекты сопоставляются тем же способом — по виду и контрольной сумме
+содержимого.
 """
 
 import hashlib
@@ -26,6 +29,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from app.models.block import BlockKind
+from app.models.book_object import ObjectType
 from app.services.parsers import ParsedBlock
 
 # Предел длины названия раздела — от колонки названия главы. Заголовок
@@ -55,14 +59,41 @@ def block_hash(kind: BlockKind, text: str) -> str:
     return hashlib.sha256(f"{kind.value}\n{text}".encode()).hexdigest()
 
 
-def master_checksum(blocks: Sequence[tuple[BlockKind, str]]) -> str:
-    """Контрольная сумма версии мастера по видам и текстам блоков в порядке.
+def object_hash(type_: ObjectType, checksum: str) -> str:
+    """Хеш объекта для сопоставления — вид вместе с суммой содержимого."""
+    return hashlib.sha256(f"{type_.value}\n{checksum}".encode()).hexdigest()
 
-    Каноническая сериализация — JSON со списком пар без пробелов: одинаковое
-    содержимое обязано давать одинаковую сумму на любой машине.
+
+@dataclass(frozen=True, slots=True)
+class PlacedEntry:
+    """Объект версии в том виде, в каком он входит в её сумму."""
+
+    type: ObjectType
+    checksum: str
+    # Место и состав — номерами блоков версии, а не их идентификаторами:
+    # сумма считается по содержимому, и одинаковая глава обязана давать
+    # одинаковую сумму, кто бы и когда её ни извлёк.
+    at: int
+    content: tuple[int, ...]
+    caption: int | None
+
+
+def master_checksum(blocks: Sequence[tuple[BlockKind, str]], objects: Sequence[PlacedEntry]) -> str:
+    """Контрольная сумма версии мастера — по блокам и объектам в порядке.
+
+    Каноническая сериализация — JSON без пробелов: одинаковое содержимое
+    обязано давать одинаковую сумму на любой машине.
     """
     payload = json.dumps(
-        [[kind.value, text] for kind, text in blocks], ensure_ascii=False, separators=(",", ":")
+        {
+            "blocks": [[kind.value, text] for kind, text in blocks],
+            "objects": [
+                [entry.type.value, entry.checksum, entry.at, list(entry.content), entry.caption]
+                for entry in objects
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
 
     return hashlib.sha256(payload.encode()).hexdigest()
@@ -96,13 +127,21 @@ def locate(
 
 @dataclass(frozen=True, slots=True)
 class Existing:
-    """Блок прежней версии мастера — то, что нужно для сопоставления."""
+    """Блок или объект прежней версии мастера — то, что нужно для сопоставления."""
 
     id: uuid.UUID
     source_hash: str
     # Текст нужен, чтобы узнать разделение: прежний блок равен склейке
-    # нескольких новых.
-    source_text: str
+    # нескольких новых. У объекта текста нет — объекты не делятся.
+    source_text: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Fresh:
+    """Блок или объект нового разбора — то же для другой стороны."""
+
+    source_hash: str
+    source_text: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +171,14 @@ Step = Keep | Create | Retire
 
 
 def reconcile(existing: Sequence[Existing], parsed: Sequence[ParsedBlock]) -> list[Step]:
-    """Как прежние блоки главы соотносятся с новым разбором.
+    """Как прежние блоки главы соотносятся с новым разбором."""
+    return match(
+        existing, [Fresh(block_hash(block.kind, block.text), block.text) for block in parsed]
+    )
+
+
+def match(existing: Sequence[Existing], fresh: Sequence[Fresh]) -> list[Step]:
+    """Как прежние блоки или объекты главы соотносятся с новым разбором.
 
     Сопоставление с сохранением порядка по хешу: одинаковый абзац,
     переехавший в другое место, считается удалённым и добавленным, а не
@@ -144,7 +190,7 @@ def reconcile(existing: Sequence[Existing], parsed: Sequence[ParsedBlock]) -> li
     """
     matcher = SequenceMatcher(
         a=[item.source_hash for item in existing],
-        b=[block_hash(block.kind, block.text) for block in parsed],
+        b=[item.source_hash for item in fresh],
         autojunk=False,
     )
     steps: list[Step] = []
@@ -158,7 +204,7 @@ def reconcile(existing: Sequence[Existing], parsed: Sequence[ParsedBlock]) -> li
             continue
 
         parents = (
-            _lineage(existing[i1:i2], parsed[j1:j2]) if tag == "replace" else [None] * (j2 - j1)
+            _lineage(existing[i1:i2], fresh[j1:j2]) if tag == "replace" else [None] * (j2 - j1)
         )
         steps.extend(Retire(existing=i) for i in range(i1, i2))
         steps.extend(
@@ -169,24 +215,28 @@ def reconcile(existing: Sequence[Existing], parsed: Sequence[ParsedBlock]) -> li
     return steps
 
 
-def _lineage(old: Sequence[Existing], new: Sequence[ParsedBlock]) -> list[uuid.UUID | None]:
+def _lineage(old: Sequence[Existing], new: Sequence[Fresh]) -> list[uuid.UUID | None]:
     """Предок каждого нового блока участка замены — или ничего.
 
     По убыванию уверенности:
 
     1. разделение — прежний блок равен подряд идущим новым, склеенным без
-       учёта пробелов на стыках;
+       учёта пробелов на стыках (у объектов текста нет, и разделения
+       тоже);
     2. правка на месте — оставшихся прежних и новых поровну: пары по
        порядку;
     3. остался один прежний — он предок всех оставшихся новых;
     4. иначе родство не выдумывается: кто из кого получился, не видно.
     """
     parents: list[uuid.UUID | None] = [None] * len(new)
-    squeezed = ["".join(block.text.split()) for block in new]
+    squeezed = ["".join((item.source_text or "").split()) for item in new]
     used_old: set[int] = set()
     cursor = 0
 
     for index, item in enumerate(old):
+        if item.source_text is None:
+            continue
+
         target = "".join(item.source_text.split())
 
         for start in range(cursor, len(new)):

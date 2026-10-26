@@ -32,7 +32,7 @@ from app.models.document import Document, SourceFormat
 from app.services.base import TenantService
 from app.services.context import RequestContext
 from app.services.errors import NotFoundError
-from app.services.parsers import PARSER_VERSION, ParsingError, parser_for
+from app.services.parsers import PARSER_VERSION, ParsingError, blocks_of, parser_for
 from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 from app.services.parsers.markup import read_opf
 from app.services.source_files import local_copy
@@ -80,7 +80,7 @@ def read_facts(path: Path, source_format: SourceFormat) -> FileFacts:
     warnings: list[str] = []
 
     try:
-        blocks = list(islice(parser.parse(path), PROBE_BLOCKS))
+        blocks = list(islice(blocks_of(parser.parse(path)), PROBE_BLOCKS))
         has_text = any(block.text.strip() for block in blocks)
     except ParsingError as error:
         # Разборщик открыл файл и сказал, чего в нём нет: у PDF это

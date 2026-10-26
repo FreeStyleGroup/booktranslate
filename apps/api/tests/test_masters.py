@@ -8,10 +8,11 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block import BlockKind
+from app.models.book_object import ObjectType
 from app.models.organization import Membership, Role
 from app.services import masters as masters_module
-from app.services.block_reconcile import master_checksum
-from app.services.parsers import ParsedBlock
+from app.services.block_reconcile import PlacedEntry, master_checksum
+from app.services.parsers import ParsedBlock, ParsedItem
 from app.services.parsers.markup import HtmlParser
 from tests.conftest import requires_database
 from tests.factories import Account, create_project, register
@@ -170,9 +171,11 @@ class _FixedParser:
     настоящего разбора того же файла.
     """
 
-    def parse(self, path: Path) -> Iterator[ParsedBlock]:
+    def parse(self, path: Path) -> Iterator[ParsedItem]:
         for block in HtmlParser().parse(path):
-            if block.text == "First paragraph.":
+            if not isinstance(block, ParsedBlock):
+                yield block
+            elif block.text == "First paragraph.":
                 yield ParsedBlock(
                     text="First paragraph, corrected.", kind=block.kind, location=block.location
                 )
@@ -225,9 +228,21 @@ async def test_new_version_keeps_codes_of_unchanged_blocks(
     assert still == [{**block, "active": still[i]["active"]} for i, block in enumerate(before)]
     assert [block["active"] for block in still] == [True, False, False, True]
     # Неизменность проверяема, а не объявлена: сумма первой версии
-    # пересчитывается по её блокам и после появления второй.
+    # пересчитывается по её блокам и объектам и после появления второй.
+    objects = await db_client.get(f"/masters/{first['id']}/objects", headers=account.headers)
+    places = {block["full_code"]: index for index, block in enumerate(still)}
     recomputed = master_checksum(
-        [(BlockKind(block["kind"]), block["source_text"]) for block in still]
+        [(BlockKind(block["kind"]), block["source_text"]) for block in still],
+        [
+            PlacedEntry(
+                type=ObjectType(item["type"]),
+                checksum=item["checksum"],
+                at=item["at"],
+                content=tuple(places[code] for code in item["content_codes"]),
+                caption=places[item["caption_code"]] if item["caption_code"] else None,
+            )
+            for item in objects.json()
+        ],
     )
     assert recomputed == first["checksum"]
 

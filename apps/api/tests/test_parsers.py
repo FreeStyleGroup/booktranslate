@@ -10,7 +10,7 @@ import pytest
 
 from app.models.block import BlockKind
 from app.models.document import SourceFormat
-from app.services.parsers import ParsingError, is_supported, parser_for
+from app.services.parsers import ParsingError, blocks_of, is_supported, parser_for
 from app.services.parsers.docx import DocxParser
 from app.services.parsers.markup import EpubParser, HtmlParser
 from app.services.parsers.pdf import PdfParser
@@ -34,7 +34,7 @@ def test_xliff_is_not_parsed_yet() -> None:
 
 
 def _pdf_blocks(tmp_path: Path, pages: list[PdfPage]) -> list:
-    return list(PdfParser().parse(write(tmp_path, "manual.pdf", pdf_bytes(pages))))
+    return list(blocks_of(PdfParser().parse(write(tmp_path, "manual.pdf", pdf_bytes(pages)))))
 
 
 def test_pdf_restores_paragraphs_headings_and_lists(tmp_path: Path) -> None:
@@ -157,12 +157,12 @@ def test_pdf_garbage_is_reported_not_raised(tmp_path: Path) -> None:
     path = write(tmp_path, "broken.pdf", b"%PDF-1.4\nthis is not a pdf at all")
 
     with pytest.raises(ParsingError, match="не читается как PDF"):
-        list(PdfParser().parse(path))
+        list(blocks_of(PdfParser().parse(path)))
 
 
 def test_plain_text_splits_on_blank_lines(tmp_path: Path) -> None:
     path = write(tmp_path, "book.txt", "Первый абзац.\n\n\nВторой абзац.\n")
-    blocks = list(PlainTextParser().parse(path))
+    blocks = list(blocks_of(PlainTextParser().parse(path)))
 
     assert [block.text for block in blocks] == ["Первый абзац.", "Второй абзац."]
     assert all(block.kind is BlockKind.PARAGRAPH for block in blocks)
@@ -173,7 +173,7 @@ def test_windows_encoding_is_read(tmp_path: Path) -> None:
     path = tmp_path / "legacy.txt"
     path.write_bytes("Русский текст в кодировке Windows".encode("cp1251"))
 
-    blocks = list(PlainTextParser().parse(path))
+    blocks = list(blocks_of(PlainTextParser().parse(path)))
 
     assert blocks[0].text == "Русский текст в кодировке Windows"
 
@@ -192,7 +192,7 @@ def test_markdown_recognizes_structure(tmp_path: Path) -> None:
         "print('это не переводится')\n"
         "```\n"
     )
-    blocks = list(MarkdownParser().parse(write(tmp_path, "book.md", source)))
+    blocks = list(blocks_of(MarkdownParser().parse(write(tmp_path, "book.md", source))))
     kinds = [block.kind for block in blocks]
 
     assert kinds == [
@@ -209,7 +209,9 @@ def test_markdown_recognizes_structure(tmp_path: Path) -> None:
 
 
 def test_markdown_unclosed_code_fence_is_not_lost(tmp_path: Path) -> None:
-    blocks = list(MarkdownParser().parse(write(tmp_path, "draft.md", "```\nкод без конца\n")))
+    blocks = list(
+        blocks_of(MarkdownParser().parse(write(tmp_path, "draft.md", "```\nкод без конца\n")))
+    )
 
     assert [block.kind for block in blocks] == [BlockKind.CODE]
     assert blocks[0].text == "код без конца"
@@ -217,7 +219,7 @@ def test_markdown_unclosed_code_fence_is_not_lost(tmp_path: Path) -> None:
 
 def test_docx_keeps_order_of_paragraphs_and_tables(tmp_path: Path) -> None:
     path = write(tmp_path, "manual.docx", real_docx_bytes())
-    blocks = list(parser_for(SourceFormat.DOCX).parse(path))  # type: ignore[union-attr]
+    blocks = list(blocks_of(parser_for(SourceFormat.DOCX).parse(path)))  # type: ignore[union-attr]
 
     assert [block.text for block in blocks] == [
         "Глава первая",
@@ -236,7 +238,7 @@ def test_broken_docx_raises_parsing_error(tmp_path: Path) -> None:
     path = write(tmp_path, "broken.docx", b"PK\x03\x04 not a document")
 
     with pytest.raises(ParsingError):
-        list(parser_for(SourceFormat.DOCX).parse(path))  # type: ignore[union-attr]
+        list(blocks_of(parser_for(SourceFormat.DOCX).parse(path)))  # type: ignore[union-attr]
 
 
 def test_html_does_not_duplicate_nested_blocks(tmp_path: Path) -> None:
@@ -249,7 +251,7 @@ def test_html_does_not_duplicate_nested_blocks(tmp_path: Path) -> None:
         "<script>alert(1)</script>"
         "</body></html>"
     )
-    blocks = list(HtmlParser().parse(write(tmp_path, "page.html", source)))
+    blocks = list(blocks_of(HtmlParser().parse(write(tmp_path, "page.html", source))))
 
     assert [block.text for block in blocks] == [
         "Раздел",
@@ -268,7 +270,7 @@ def test_html_does_not_duplicate_nested_blocks(tmp_path: Path) -> None:
 def test_epub_follows_spine_not_filenames(tmp_path: Path) -> None:
     """Порядок глав берётся из описи: по алфавиту он был бы обратным."""
     path = write(tmp_path, "book.epub", epub_bytes())
-    blocks = list(EpubParser().parse(path))
+    blocks = list(blocks_of(EpubParser().parse(path)))
 
     assert [block.text for block in blocks] == [
         "Вторая глава",
@@ -289,13 +291,13 @@ def test_epub_without_container_is_rejected(tmp_path: Path) -> None:
         archive.writestr("mimetype", "application/epub+zip")
 
     with pytest.raises(ParsingError):
-        list(EpubParser().parse(write(tmp_path, "empty.epub", buffer.getvalue())))
+        list(blocks_of(EpubParser().parse(write(tmp_path, "empty.epub", buffer.getvalue()))))
 
 
 def test_html_heading_carries_its_level(tmp_path: Path) -> None:
     """Уровень заголовка — из тега: по нему предлагаются границы глав."""
     source = "<h1>Книга</h1><h2>Глава</h2><h3>Раздел</h3><p>Текст.</p>"
-    blocks = list(HtmlParser().parse(write(tmp_path, "page.html", source)))
+    blocks = list(blocks_of(HtmlParser().parse(write(tmp_path, "page.html", source))))
 
     assert [block.location.get("level") for block in blocks] == [1, 2, 3, None]
 
@@ -332,7 +334,7 @@ def test_docx_heading_level_comes_from_style(tmp_path: Path) -> None:
             ("Normal", "Абзац."),
         ],
     )
-    blocks = list(DocxParser().parse(path))
+    blocks = list(blocks_of(DocxParser().parse(path)))
 
     # Заголовок документа — над всеми уровнями: он один и главой не является.
     assert [block.location.get("level") for block in blocks] == [0, 1, 2, None]
@@ -341,7 +343,7 @@ def test_docx_heading_level_comes_from_style(tmp_path: Path) -> None:
 def test_russian_caption_style_is_not_a_heading(tmp_path: Path) -> None:
     """«Название объекта» — подпись, хотя и начинается как стиль заголовка."""
     path = _docx_with_styles(tmp_path, [("Название объекта", "Рисунок 1. Насос")])
-    blocks = list(DocxParser().parse(path))
+    blocks = list(blocks_of(DocxParser().parse(path)))
 
     assert blocks[0].kind is BlockKind.CAPTION
     assert "level" not in blocks[0].location
@@ -353,20 +355,36 @@ def test_html_code_listing_keeps_indentation(tmp_path: Path) -> None:
         "<pre>\ndef entropy(p):\n    return -sum(p * log(p))\n\n    # tail\n</pre>"
         "<p>Text  with   spaces.</p>"
     )
-    blocks = list(HtmlParser().parse(write(tmp_path, "page.html", source)))
+    blocks = list(blocks_of(HtmlParser().parse(write(tmp_path, "page.html", source))))
 
     assert blocks[0].kind is BlockKind.CODE
     # Перевод строки сразу после <pre> по правилам HTML содержимым не
     # является — он и срезан; всё остальное на месте.
     assert blocks[0].text == "def entropy(p):\n    return -sum(p * log(p))\n\n    # tail"
-    # Внутри текстового узла пробелы не трогаются: извлечение не правит
-    # исходник, даже когда браузер показал бы его иначе.
-    assert blocks[1].text == "Text  with   spaces."
+    # Вне листинга пробелы HTML — оформление файла: читатель книги видит
+    # один пробел, и в мастере он один.
+    assert blocks[1].text == "Text with spaces."
+
+
+def test_html_text_is_what_the_reader_sees(tmp_path: Path) -> None:
+    """Узлы соединяются без выдуманных пробелов; `<br>` — перевод строки; NBSP — собой."""
+    source = (
+        '<p>Listed in <a href="#t1">Table 1.1</a>.</p>'
+        "<p>Line one<br/>\n  line <b>two</b>,\n  done.</p>"
+        "<p>10 bar</p>"
+    )
+    blocks = list(blocks_of(HtmlParser().parse(write(tmp_path, "page.html", source))))
+
+    assert [block.text for block in blocks] == [
+        "Listed in Table 1.1.",
+        "Line one\nline two, done.",
+        "10 bar",
+    ]
 
 
 def test_markdown_code_keeps_first_line_indent(tmp_path: Path) -> None:
     source = "Text.\n\n```\n    indented()\n  less()\n```\n"
-    blocks = list(MarkdownParser().parse(write(tmp_path, "book.md", source)))
+    blocks = list(blocks_of(MarkdownParser().parse(write(tmp_path, "book.md", source))))
 
     assert blocks[1].kind is BlockKind.CODE
     assert blocks[1].text == "    indented()\n  less()"

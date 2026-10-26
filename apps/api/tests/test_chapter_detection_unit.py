@@ -10,7 +10,7 @@ from pathlib import Path
 from app.models.block import BlockKind
 from app.models.chapter import Chapter, ChapterOrigin
 from app.services.chapter_detection import chapter_level, propose, sections_of
-from app.services.parsers.base import ParsedBlock
+from app.services.parsers.base import ParsedBlock, blocks_of
 from app.services.parsers.markup import EpubParser, HtmlParser
 from app.services.parsers.plain import MarkdownParser, PlainTextParser
 from tests.factories import epub_bytes
@@ -20,7 +20,7 @@ def _parse_html(tmp_path: Path, markup: str) -> list[ParsedBlock]:
     path = tmp_path / "book.html"
     path.write_text(markup, encoding="utf-8")
 
-    return list(HtmlParser().parse(path))
+    return list(blocks_of(HtmlParser().parse(path)))
 
 
 BOOK = (
@@ -83,7 +83,7 @@ def test_epub_chapter_knows_its_file(tmp_path: Path) -> None:
     path = tmp_path / "book.epub"
     path.write_bytes(epub_bytes())
 
-    proposals = propose(sections_of(list(EpubParser().parse(path))))
+    proposals = propose(sections_of(list(blocks_of(EpubParser().parse(path)))))
 
     assert [proposal.title for proposal in proposals] == ["Вторая глава", "Первая глава"]
     assert proposals[0].locator["href"].endswith("part0010.xhtml")
@@ -101,7 +101,7 @@ def test_epub_without_headings_is_split_by_files(tmp_path: Path) -> None:
         )
     )
 
-    proposals = propose(sections_of(list(EpubParser().parse(path))))
+    proposals = propose(sections_of(list(blocks_of(EpubParser().parse(path)))))
 
     assert len(proposals) == 2
     assert all(proposal.origin is ChapterOrigin.PATH for proposal in proposals)
@@ -128,7 +128,7 @@ def test_plain_text_is_one_chapter(tmp_path: Path) -> None:
     path = tmp_path / "book.txt"
     path.write_text("Первый абзац.\n\nВторой абзац.", encoding="utf-8")
 
-    proposals = propose(sections_of(list(PlainTextParser().parse(path))))
+    proposals = propose(sections_of(list(blocks_of(PlainTextParser().parse(path)))))
 
     assert len(proposals) == 1
     assert proposals[0].origin is ChapterOrigin.WHOLE
@@ -138,7 +138,7 @@ def test_markdown_chapter_points_to_its_line(tmp_path: Path) -> None:
     path = tmp_path / "book.md"
     path.write_text("# Глава 1\n\nТекст.\n\n# Глава 2\n\nТекст.\n", encoding="utf-8")
 
-    proposals = propose(sections_of(list(MarkdownParser().parse(path))))
+    proposals = propose(sections_of(list(blocks_of(MarkdownParser().parse(path)))))
 
     assert [proposal.title for proposal in proposals] == ["Глава 1", "Глава 2"]
     assert proposals[1].locator == {"line": 5}
