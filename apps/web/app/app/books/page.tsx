@@ -47,7 +47,7 @@ const OFFSET_MAX = 100000;
 
 // Значения типизованы теми же наборами, что принимает API: опечатка в
 // любом из них тогда не доедет до запроса, а остановится на сборке.
-const SORTS: readonly BookSort[] = ["created", "title", "updated"];
+const SORTS: readonly BookSort[] = ["code", "title", "updated"];
 const ORDERS: readonly SortOrder[] = ["asc", "desc"];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,7 +63,7 @@ export default async function BooksPage({
 
   const project = params.get("project");
   const chosen = project !== null && UUID.test(project) ? project : undefined;
-  const sort = oneOf(params.get("sort"), SORTS, "created");
+  const sort = oneOf(params.get("sort"), SORTS, "code");
   const order = oneOf(params.get("order"), ORDERS, "desc");
   const offset = wholeNumber(params.get("offset"), 0, OFFSET_MAX);
 
@@ -183,10 +183,9 @@ function columns(withProject: boolean): Column<Row>[] {
   const all: (Column<Row> | null)[] = [
     {
       title: "Код",
-      // Упорядочивается по дате заведения, а не по самому коду: коды
-      // выдаются по порядку, но это строки, и после сотой книги «BK100»
-      // встало бы лексикографически раньше «BK99».
-      sort: "created",
+      // Сервер упорядочивает по номеру издания, а не по строке кода: иначе
+      // после сотой книги «BK100» встало бы раньше «BK99».
+      sort: "code",
       sortFirst: "desc",
       // Код копируется нажатием: по нему книгу называют в переписке и в
       // номерах замечаний, и набирать его руками — значит однажды

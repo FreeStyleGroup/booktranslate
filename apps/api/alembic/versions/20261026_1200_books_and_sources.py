@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("organization_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("code", sa.String(length=20), nullable=False),
+        sa.Column("number", sa.Integer(), nullable=False),
         sa.Column("title", sa.String(length=500), nullable=False),
         sa.Column("author", sa.String(length=300), nullable=True),
         sa.Column("edition_label", sa.String(length=200), nullable=True),
@@ -54,9 +54,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(["organization_id"], ["organizations.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="CASCADE"),
-        # Код входит в номера замечаний и потому не меняется; уникален у
-        # организации, а не глобально — BK01 вправе быть у каждого.
-        sa.UniqueConstraint("organization_id", "code", name="book_edition_code"),
+        # Номер, а не код: код — его запись (`BK01`), а порядок списка
+        # держится на числе. Уникален у организации, а не глобально —
+        # BK01 вправе быть у каждого.
+        sa.UniqueConstraint("organization_id", "number", name="book_edition_number"),
     )
     op.create_index("ix_book_editions_organization_id", "book_editions", ["organization_id"])
     op.create_index("ix_book_editions_project_id", "book_editions", ["project_id"])

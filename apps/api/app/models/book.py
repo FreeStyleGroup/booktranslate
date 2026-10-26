@@ -28,10 +28,21 @@ class BookStatus(str, enum.Enum):
     RELEASED = "released"  # выпущена, есть утверждённая версия
 
 
+# Приставка кода издания. Код уходит в номера замечаний
+# (`BK01-CH03-ERR-0001`), поэтому выдаётся один раз и не меняется.
+CODE_PREFIX = "BK"
+
+
 class BookEdition(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     """Книга в работе: комплект исходников, язык, состояние.
 
-    `code` входит в номера замечаний (`BK01-CH03-ERR-0001`), поэтому он
+    Хранится номер, а код (`BK01`) — его запись. Номер выдаёт счётчик по
+    порядку, и он же задаёт порядок списка: строка «BK100» встала бы
+    раньше «BK99», а время заведения у книг, заведённых одной транзакцией,
+    совпадает до микросекунды. Храни мы и номер, и код, они были бы двумя
+    записями одного значения — и однажды разошлись бы.
+
+    Код входит в номера замечаний (`BK01-CH03-ERR-0001`), поэтому номер
     выдаётся один раз и не меняется: переименование разорвало бы связь
     между выпущенной книгой и её реестром ошибок. Уникален в пределах
     организации — два разных заказчика вправе иметь каждый свою `BK01`.
@@ -44,7 +55,7 @@ class BookEdition(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "book_editions"
-    __table_args__ = (UniqueConstraint("organization_id", "code", name="book_edition_code"),)
+    __table_args__ = (UniqueConstraint("organization_id", "number", name="book_edition_number"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
@@ -53,7 +64,7 @@ class BookEdition(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         index=True,
     )
 
-    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     author: Mapped[str | None] = mapped_column(String(300))
     # «2-е издание, 2021» — человеческая пометка, по которой отличают
@@ -70,6 +81,12 @@ class BookEdition(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         default=BookStatus.DRAFT,
         index=True,
     )
+
+    @property
+    def code(self) -> str:
+        """`BK01`: две цифры минимум — так коды первой сотни выравниваются в
+        списке, а дальше число просто растёт, без потолка в два разряда."""
+        return f"{CODE_PREFIX}{self.number:02d}"
 
 
 class SourceValidationResult(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
