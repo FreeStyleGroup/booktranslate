@@ -15,6 +15,7 @@ import { useActionState, useState, type ReactNode } from "react";
 
 import type { Project } from "../../lib/work";
 import { createBook, type Result } from "./actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: Result = {};
 
@@ -120,11 +121,7 @@ export function NewBook({
             </div>
           </form>
 
-          {state.error !== undefined && (
-            <p className="form__error" role="alert">
-              {state.error}
-            </p>
-          )}
+          <ReportError error={state.error} at={state} />
         </section>
       )}
     </>

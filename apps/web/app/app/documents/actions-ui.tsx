@@ -14,6 +14,7 @@
 import { useActionState } from "react";
 
 import { deleteDocument, parseDocument, type Result } from "../actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: Result = {};
 
@@ -49,11 +50,7 @@ export function ParseButton({
         </button>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
     </>
   );
 }
@@ -121,11 +118,7 @@ export function DeleteButton({
         )}
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
     </>
   );
 }

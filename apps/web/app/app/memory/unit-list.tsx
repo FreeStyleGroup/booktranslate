@@ -14,6 +14,7 @@ import { useState, useTransition } from "react";
 import type { TranslationUnit } from "../../lib/work";
 import { plural, thousands, when } from "../labels";
 import { deleteUnit, updateUnit } from "./actions";
+import { ReportError } from "../ui/toast";
 
 /** Откуда перевод — словами. */
 function originLabel(origin: string): string {
@@ -37,11 +38,7 @@ export function UnitList({ units, edits }: { units: TranslationUnit[]; edits: bo
 
   return (
     <>
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="mm-list">
         {units.map((unit) => (

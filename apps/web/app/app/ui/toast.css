@@ -1,0 +1,110 @@
+/* Уведомления — стопкой в правом нижнем углу, поверх страницы. */
+
+.ui-toasts {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  /* Пустая стопка не перехватывает нажатия: она висит поверх страницы
+     всегда. Нажимаются только сами карточки. */
+  pointer-events: none;
+}
+
+.ui-toasts__lane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ui-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--glass-strong);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink);
+  pointer-events: auto;
+  animation: ui-toast-in 0.22s var(--ease);
+}
+
+.ui-toast.is-error {
+  border-left-color: var(--danger);
+}
+
+.ui-toast__mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--ok-tint);
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ui-toast.is-error .ui-toast__mark {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.ui-toast__text {
+  flex: 1;
+  margin: 1px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ui-toast__close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: -4px -4px 0 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ui-toast__close:hover {
+  background: var(--paper-tint);
+  color: var(--ink);
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast {
+    animation: none;
+  }
+}
+
+@media (max-width: 520px) {
+  /* На телефоне — во всю ширину снизу: в углу узкого экрана карточка
+     сжалась бы до двух слов в строке. */
+  .ui-toasts {
+    right: 16px;
+    left: 16px;
+    bottom: 16px;
+    width: auto;
+  }
+}

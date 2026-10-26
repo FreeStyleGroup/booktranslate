@@ -16,6 +16,7 @@ import { useState, useTransition } from "react";
 import type { Suggestions } from "../../lib/work";
 import { GLOSSARY_KIND, thousands } from "../labels";
 import { acceptSuggestion } from "./actions";
+import { ReportError } from "../ui/toast";
 
 export function SuggestionsBlock({
   suggestions,
@@ -72,11 +73,7 @@ export function SuggestionsBlock({
         проверяться в переводе.
       </p>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="gl-chips">
         {suggestions.items.map((item) => (

@@ -337,3 +337,77 @@ export async function renameChapter(
 
   return { done: true };
 }
+
+// Пределы причины новой версии мастера — те же, что в API.
+const REASON_MIN = 10;
+const REASON_MAX = 1000;
+
+/** Извлечь версию мастера главы.
+ *
+ * Первая версия причины не требует. Каждая следующая — требует: версия
+ * без причины неотличима от тихой правки исходника, а мастер не правится.
+ */
+export async function extractMaster(
+  bookId: string,
+  chapterId: string,
+  reason: string | null,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const clean = reason === null ? null : reason.split(/\s+/).filter((word) => word !== "").join(" ");
+
+  if (clean !== null && clean.length < REASON_MIN) {
+    return { error: `Причина — хотя бы ${REASON_MIN} знаков: что именно не так с прежней версией` };
+  }
+
+  if (clean !== null && clean.length > REASON_MAX) {
+    return { error: `Причина — не длиннее ${REASON_MAX} знаков` };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/chapters/${chapterId}/masters`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+      body: { reason: clean },
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+  revalidatePath(`/app/books/${bookId}/structure`);
+
+  return { done: true };
+}
+
+/** Подтвердить, что текущая версия мастера извлечена верно. */
+export async function approveMaster(
+  bookId: string,
+  chapterId: string,
+  masterId: string,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId) || !UUID.test(masterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/masters/${masterId}/approval`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+
+  return { done: true };
+}

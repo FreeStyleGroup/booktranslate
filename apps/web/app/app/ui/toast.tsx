@@ -1,76 +1,162 @@
 "use client";
 
-/* Короткие сообщения о том, что действие прошло.
+/* Уведомления — стопкой в правом нижнем углу.
 
-   Нужны там, где результат не виден на экране. «Роль изменена» видно по
-   строке таблицы, и говорить об этом словами незачем; а вот «проверка
-   запущена» или «код скопирован» не меняют ничего видимого — без
-   сообщения человек нажимает второй раз.
+   Два вида. Успех — короткая фраза о сделанном, которое не видно на
+   экране («файл проверен»); она исчезает сама через несколько секунд.
+   Отказ — причина, по которой действие не сделано; он остаётся, пока его
+   не закроют: причину надо успеть прочитать, а сообщение, исчезающее
+   посреди чтения, хуже, чем никакого.
 
-   Об отказах тост не сообщает. Отказ остаётся у того действия, которое
-   его вызвало: сообщение, которое само исчезает через четыре секунды, —
-   плохое место для причины, по которой работа не сделана.
+   Хост живёт в корневой раскладке, а состояние — в контексте: иначе
+   каждая страница держала бы свою стопку, и уведомления соседних экранов
+   накладывались бы друг на друга.
 
-   Живёт в раскладке кабинета, а состояние — в контексте: иначе каждая
-   страница держала бы своё и сообщения со соседних экранов накладывались
-   бы друг на друга. */
+   Одно исключение — окно подтверждения: модальное окно браузер рисует
+   поверх всей страницы, и уведомление оказалось бы под его затемнением.
+   Там отказ остаётся внутри окна (`confirm-dialog.tsx`). */
 
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
-// Сколько держать сообщение. Четыре секунды — успеть прочитать короткую
-// фразу, не успеть забыть, к чему она относилась.
+import "./toast.css";
+
+// Сколько держать сообщение об успехе. Четыре секунды — успеть прочитать
+// короткую фразу, не успеть забыть, к чему она относилась.
 const SHOWN_MS = 4000;
 
-type Said = { id: number; text: string };
+// Больше трёх уведомлений разом не читают: старые уходят, уступая место.
+const MAX_SHOWN = 3;
 
-const Context = createContext<((text: string) => void) | null>(null);
+type Kind = "ok" | "error";
+
+type Notice = { id: number; kind: Kind; text: string };
+
+export type Toast = {
+  /** Короткая фраза о сделанном. Исчезает сама. */
+  ok: (text: string) => void;
+  /** Причина отказа. Остаётся, пока не закроют. */
+  error: (text: string) => void;
+};
+
+const Context = createContext<Toast | null>(null);
 
 export function ToastHost({ children }: { children: ReactNode }) {
-  const [said, setSaid] = useState<Said | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Ключ сообщения, а не его текст: два одинаковых сообщения подряд —
-  // это два события, и область чтения с экрана обязана произнести оба.
+  const [notices, setNotices] = useState<Notice[]>([]);
   const next = useRef(0);
 
-  const say = useCallback((text: string) => {
-    next.current += 1;
-    setSaid({ id: next.current, text });
-
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setSaid(null), SHOWN_MS);
+  const dismiss = useCallback((id: number) => {
+    setNotices((shown) => shown.filter((notice) => notice.id !== id));
   }, []);
 
+  const push = useCallback((kind: Kind, text: string) => {
+    next.current += 1;
+    const id = next.current;
+
+    setNotices((shown) => [...shown, { id, kind, text }].slice(-MAX_SHOWN));
+  }, []);
+
+  const toast = useMemo<Toast>(
+    () => ({ ok: (text) => push("ok", text), error: (text) => push("error", text) }),
+    [push],
+  );
+
   return (
-    <Context.Provider value={say}>
+    <Context.Provider value={toast}>
       {children}
 
-      {/* Область объявлений есть всегда, пустая в том числе: добавленная
-          вместе с текстом, она не прочитается — программа чтения следит
-          за изменениями внутри области, а не за её появлением. */}
-      <div className="ui-toasts" role="status" aria-live="polite">
-        {said !== null && (
-          <p className="ui-toast" key={said.id}>
-            {said.text}
-          </p>
-        )}
+      {/* Две области объявлений, и обе есть всегда, пустые в том числе:
+          появившуюся вместе с текстом программа чтения с экрана не
+          произнесёт. Отказ объявляется сразу, успех — в паузе. */}
+      <div className="ui-toasts">
+        <div role="alert" aria-live="assertive" className="ui-toasts__lane">
+          {notices
+            .filter((notice) => notice.kind === "error")
+            .map((notice) => (
+              <Card key={notice.id} notice={notice} onDismiss={dismiss} />
+            ))}
+        </div>
+        <div role="status" aria-live="polite" className="ui-toasts__lane">
+          {notices
+            .filter((notice) => notice.kind === "ok")
+            .map((notice) => (
+              <Card key={notice.id} notice={notice} onDismiss={dismiss} />
+            ))}
+        </div>
       </div>
     </Context.Provider>
   );
 }
 
-/** Сказать короткую фразу о сделанном.
- *
- * Вне раскладки кабинета возвращает пустое действие, а не падает: тост —
- * это сообщение об успехе, и ронять из-за него экран, который работает,
- * нельзя.
- */
-export function useToast(): (text: string) => void {
-  const say = useContext(Context);
+function Card({ notice, onDismiss }: { notice: Notice; onDismiss: (id: number) => void }) {
+  // Действие закрытия — стабильное: на каждую перерисовку стопки новая
+  // функция перезапускала бы отсчёт показа с нуля.
+  const onClose = useCallback(() => onDismiss(notice.id), [onDismiss, notice.id]);
 
-  return useCallback(
-    (text: string) => {
-      say?.(text);
-    },
-    [say],
+  // Время показа отсчитывается от появления карточки, а не от вызова:
+  // уведомление часто создаётся вместе с обновлением страницы, и если то
+  // идёт дольше нескольких секунд, отсчёт от вызова убрал бы карточку
+  // раньше, чем её успели увидеть. Отказ не исчезает сам вовсе.
+  useEffect(() => {
+    if (notice.kind !== "ok") {
+      return;
+    }
+
+    const timer = setTimeout(onClose, SHOWN_MS);
+
+    return () => clearTimeout(timer);
+  }, [notice.kind, onClose]);
+
+  return (
+    <div className={notice.kind === "error" ? "ui-toast is-error" : "ui-toast"}>
+      <span className="ui-toast__mark" aria-hidden="true">
+        {notice.kind === "error" ? "!" : "✓"}
+      </span>
+      <p className="ui-toast__text">{notice.text}</p>
+      <button className="ui-toast__close" type="button" aria-label="Закрыть" onClick={onClose}>
+        ×
+      </button>
+    </div>
   );
+}
+
+/** Уведомления — вне хоста пустое действие, а не падение: показать
+ *  сообщение — не повод ронять экран, который работает. */
+export function useToast(): Toast {
+  const toast = useContext(Context);
+
+  return useMemo(() => toast ?? { ok: () => undefined, error: () => undefined }, [toast]);
+}
+
+/** Показать отказ уведомлением, когда он появится.
+ *
+ * Форма объявляет, что ошибка есть, а как её показать — решает хост.
+ * `at` — признак нового ответа: два одинаковых отказа подряд на два
+ * нажатия — два события, и показать надо оба. У результата серверного
+ * действия это сам объект результата: на каждый ответ он новый.
+ */
+export function ReportError({
+  error,
+  at,
+}: {
+  error: string | null | undefined;
+  at?: unknown;
+}) {
+  const toast = useToast();
+
+  useEffect(() => {
+    if (error !== null && error !== undefined && error !== "") {
+      toast.error(error);
+    }
+  }, [error, at, toast]);
+
+  return null;
 }

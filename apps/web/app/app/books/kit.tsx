@@ -27,7 +27,7 @@ import {
   when,
 } from "../labels";
 import { CopyId } from "../ui/copy-id";
-import { useToast } from "../ui/toast";
+import { ReportError, useToast } from "../ui/toast";
 import { setSourceRole, validateSource } from "./actions";
 
 const ROLES: SourceRole[] = ["primary_text", "visual_reference", "auxiliary", "code_source"];
@@ -46,7 +46,7 @@ export function Kit({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
-  const say = useToast();
+  const toast = useToast();
 
   function changeRole(documentId: string, role: string): void {
     setError(null);
@@ -80,7 +80,7 @@ export function Kit({
       // Результат виден в строке после обновления, но сказать о запуске
       // надо: на книге в тысячу страниц проверка идёт несколько секунд, и
       // без ответа человек нажимает второй раз.
-      say("Файл проверен");
+      toast.ok("Файл проверен");
       router.refresh();
     });
   }
@@ -173,11 +173,7 @@ export function Kit({
         ))}
       </div>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
     </>
   );
 }

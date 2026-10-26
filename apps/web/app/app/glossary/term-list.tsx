@@ -22,6 +22,7 @@ import {
   glossarySource,
 } from "../labels";
 import { deleteTerm, updateTerm, type TermChange } from "./actions";
+import { ReportError } from "../ui/toast";
 
 const KINDS = Object.keys(GLOSSARY_KIND) as GlossaryKind[];
 const STATUSES = Object.keys(GLOSSARY_STATUS) as GlossaryStatus[];
@@ -55,11 +56,7 @@ export function TermList({ terms, edits }: { terms: GlossaryTerm[]; edits: boole
 
   return (
     <>
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="gl-list">
         {terms.map((term) => (

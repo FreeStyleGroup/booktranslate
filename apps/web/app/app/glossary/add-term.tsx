@@ -12,6 +12,7 @@ import { useActionState } from "react";
 import { GLOSSARY_KIND, GLOSSARY_KIND_HINT } from "../labels";
 import { addTerm, type AddResult } from "./actions";
 import type { Pair } from "./page";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: AddResult = {};
 const KINDS = Object.keys(GLOSSARY_KIND);
@@ -80,11 +81,7 @@ export function AddTerm({ pairs }: { pairs: Pair[] }) {
         </form>
       )}
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.added !== undefined && state.error === undefined && (
         <p className="wk-note" role="status">

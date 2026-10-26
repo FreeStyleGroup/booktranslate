@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { load, type SearchResult } from "../../lib/work";
@@ -31,6 +32,9 @@ export const metadata: Metadata = {
    нет, а в очереди он находится по номеру. */
 
 const MIN_QUERY = 2;
+
+// Полный код блока: `BK01-CH03-B0042`.
+const BLOCK_CODE = /^BK\d+-CH\d+-B\d+$/i;
 const SHOWN = 5;
 
 export default async function SearchPage({
@@ -40,6 +44,12 @@ export default async function SearchPage({
 }) {
   const { query = "" } = await searchParams;
   const trimmed = query.trim();
+
+  // Полный код блока — не слово для поиска, а адрес: такой блок в
+  // пространстве один, и показывать вместо него список совпадений незачем.
+  if (BLOCK_CODE.test(trimmed)) {
+    redirect(`/app/find?code=${encodeURIComponent(trimmed)}`);
+  }
   const here = trimmed === "" ? "/app/search" : `/app/search?query=${encodeURIComponent(trimmed)}`;
 
   const result =

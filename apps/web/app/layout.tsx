@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { SITE_NAME, SITE_URL } from "./contacts";
 import { alternates, dictionary } from "./i18n";
 import "./globals.css";
+import { ToastHost } from "./app/ui/toast";
 
 const ru = dictionary("ru");
 
@@ -61,7 +62,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }`}</style>
         </noscript>
       </head>
-      <body>{children}</body>
+      {/* Уведомления — для всего сайта, а не только кабинета: отказ при
+          входе или регистрации показывается так же, как отказ в работе.
+          Страницы при этом остаются серверными — в браузер уезжает
+          только сама стопка уведомлений. */}
+      <body>
+        <ToastHost>{children}</ToastHost>
+      </body>
     </html>
   );
 }

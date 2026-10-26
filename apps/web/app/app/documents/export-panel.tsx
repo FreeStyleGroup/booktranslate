@@ -18,6 +18,7 @@ import { useState, type ReactNode } from "react";
 
 import type { ExportFormat } from "../../lib/work";
 import { FORMAT_LABEL, plural, thousands } from "../labels";
+import { ReportError } from "../ui/toast";
 
 // Что за формат — словами, по которым выбирают. Формат оригинала
 // подписывается именем исходника: «DOCX — как оригинал», а не «source».
@@ -143,11 +144,7 @@ export function ExportPanel({
         </p>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       {saved !== null && (
         <p className="tile__note ex-saved" role="status">

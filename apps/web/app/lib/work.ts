@@ -159,6 +159,59 @@ export type BookStructure = {
   can_propose: boolean;
 };
 
+/** Версия мастера главы — неизменяемый снимок её исходного текста.
+ *
+ * Текст мастера не правится никогда: ошибка извлечения исправляется
+ * новой версией с причиной. Поэтому у версии нет «изменить», есть только
+ * «утвердить» — подтвердить, что извлечено верно.
+ */
+export type ChapterMaster = {
+  id: string;
+  chapter_id: string;
+  version: number;
+  label: string;
+  supersedes_id: string | null;
+  reason: string | null;
+  source_document_id: string;
+  parser_version: string;
+  boundary_version: number;
+  block_count: number;
+  checksum: string;
+  created_by_id: string | null;
+  approved_by_id: string | null;
+  approved_at: string | null;
+  created_at: string;
+};
+
+/** Блок главы с постоянным кодом. `ordinal` — место в показываемой
+ *  версии мастера; `parent_code` — блок, из которого этот получился. */
+export type Block = {
+  id: string;
+  chapter_id: string;
+  code: string;
+  full_code: string;
+  kind: string;
+  ordinal: number;
+  source_text: string;
+  source_location: Record<string, string | number>;
+  source_hash: string;
+  active: boolean;
+  parent_code: string | null;
+  chunks: number;
+};
+
+export type BlockPage = { total: number; limit: number; offset: number; items: Block[] };
+
+/** Блок, найденный по коду, и где его показать. `position` пуст, если
+ *  блок выведен из действия и живёт только в прежних версиях. */
+export type FoundBlock = {
+  book_id: string;
+  book_code: string;
+  chapter_id: string;
+  block: Block;
+  position: number | null;
+};
+
 export type DocumentStatus =
   | "uploaded"
   | "parsing"

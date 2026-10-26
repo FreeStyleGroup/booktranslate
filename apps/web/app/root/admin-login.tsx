@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { ReportError } from "../app/ui/toast";
 
 /* Вход в раздел управления доступом.
 
@@ -70,11 +71,7 @@ export function AdminLogin({ unreachable = false }: { unreachable?: boolean }) {
           <input name="password" type="password" required autoComplete="current-password" />
         </label>
 
-        {error !== null && (
-          <p className="form__error" role="alert">
-            {error}
-          </p>
-        )}
+        <ReportError error={error} />
 
         <button className="btn btn--primary" type="submit" disabled={busy}>
           {busy ? "Секунду…" : "Войти"}

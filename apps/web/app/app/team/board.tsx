@@ -16,6 +16,7 @@ import { useActionState, useState, useTransition } from "react";
 
 import type { Invitation, Member, Role, Team } from "../../lib/work";
 import { ROLE_HINT, ROLE_LABEL, plural, when } from "../labels";
+import { ReportError } from "../ui/toast";
 import {
   changeRole,
   inviteMember,
@@ -86,11 +87,7 @@ function Invite({ owner }: { owner: boolean }) {
         </button>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.invited !== undefined && <Issued invited={state.invited} />}
     </section>
@@ -207,11 +204,7 @@ function Members({
         </span>
       </div>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="tm-list">
         {members.map((member) => {
@@ -303,11 +296,7 @@ function Invitations({ invitations, manage }: { invitations: Invitation[]; manag
         <span className="tile__note">выписанные приглашения</span>
       </div>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="tm-list">
         {invitations.map((invitation) => (
