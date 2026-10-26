@@ -5,8 +5,11 @@
 Модель, забытая в этом списке, молча не попадёт в миграцию.
 """
 
+from app.models.audit import AuditEvent
+from app.models.book import BookEdition, BookStatus, SourceValidationResult
 from app.models.catalog import CatalogEntry
-from app.models.document import Document, DocumentStatus, SourceFormat
+from app.models.coding import CodeCounter, CodeKind
+from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
 from app.models.job import JobState, TranslationJob
 from app.models.memory import (
     GlossaryEntryKind,
@@ -26,7 +29,12 @@ from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.models.workspace import WorkspaceSettings
 
 __all__ = [
+    "AuditEvent",
+    "BookEdition",
+    "BookStatus",
     "CatalogEntry",
+    "CodeCounter",
+    "CodeKind",
     "Document",
     "DocumentStatus",
     "GlossaryEntryKind",
@@ -46,6 +54,8 @@ __all__ = [
     "SegmentStatus",
     "SharedTerm",
     "SourceFormat",
+    "SourceRole",
+    "SourceValidationResult",
     "TermCandidate",
     "TermCandidateStatus",
     "TranslationJob",
