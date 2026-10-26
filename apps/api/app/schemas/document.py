@@ -10,7 +10,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
-from app.models.document import DocumentStatus, SourceFormat
+from app.models.document import DocumentStatus, SourceFormat, SourceRole
 from app.services.export import ExportFormat, formats_for
 
 
@@ -22,6 +22,11 @@ class DocumentPublic(BaseModel):
     title: str
     original_filename: str | None
     source_format: SourceFormat
+    # Книга, в комплект которой входит файл, и его роль в нём. Пусто, пока
+    # файл просто загружен в проект: книга — рамка вокруг исходников, и
+    # загрузка сама по себе ещё не говорит, чем этот файл будет.
+    book_id: uuid.UUID | None
+    source_role: SourceRole | None
     status: DocumentStatus
     size_bytes: int | None
     # Контрольная сумма отдаётся клиенту сознательно: по ней он понимает,
