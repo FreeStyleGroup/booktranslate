@@ -201,6 +201,23 @@ class BookService(TenantService):
 
         return book
 
+    async def lock(self, book_id: uuid.UUID) -> BookEdition:
+        """Издание, взятое на изменение структуры до конца транзакции.
+
+        Предложение, разделение и объединение глав переписывают места
+        соседних глав. Два таких действия одновременно — с двух вкладок или
+        от двух редакторов — сдвинули бы одни и те же места дважды; строка
+        книги под блокировкой ставит их в очередь.
+        """
+        book = await self._session.scalar(
+            self.scoped(BookEdition).where(BookEdition.id == book_id).with_for_update()
+        )
+
+        if book is None:
+            raise NotFoundError("Книга не найдена")
+
+        return book
+
     async def kit(self, book_id: uuid.UUID) -> BookKit:
         """Комплект исходников книги и предупреждение о разных изданиях.
 
