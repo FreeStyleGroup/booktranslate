@@ -13,6 +13,8 @@ import "./cabinet.css";
 import { Bell } from "./bell";
 import { SideNav, type NavCounts } from "./side-nav";
 import { NavToggle } from "./nav-toggle";
+import { ToastHost } from "./ui/toast";
+import "./ui/ui.css";
 import { ThemeToggle } from "../theme-toggle";
 
 export const metadata: Metadata = {
@@ -124,7 +126,13 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
           </div>
         </header>
 
-        <div className="cab__body">{children}</div>
+        {/* Область коротких сообщений — здесь, а не на каждой странице:
+            она нужна на всех экранах, а своё состояние у каждой страницы
+            накладывало бы сообщения соседних друг на друга. Страницы при
+            этом остаются серверными — в браузер уезжает только область. */}
+        <div className="cab__body">
+          <ToastHost>{children}</ToastHost>
+        </div>
 
         {/* Подвал есть и здесь, а не только на главной: кабинет — тоже
             страница сайта, и человеку, который провёл в нём час, некуда

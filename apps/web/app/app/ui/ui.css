@@ -1,0 +1,220 @@
+/* Общие части экранов со списками: таблица, страницы, код, сообщения.
+
+   Отдельным файлом, а не в work.css: эти четыре вещи стоят на всех
+   дальнейших экранах конвейера — главы, блоки, замечания, выпуски, — и
+   искать их среди правил одного раздела пришлось бы каждый раз.
+
+   Подключается тот файл, который использует: раскладка кабинета — ради
+   области сообщений, страницы со списками — ради остального. */
+
+/* ---------- таблица ---------- */
+
+.ui-table__scroll {
+  /* Прокрутка у таблицы, а не у страницы: широкая таблица на телефоне
+     иначе растягивает весь кабинет, и уезжает вместе с ней и меню. */
+  overflow-x: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.ui-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ui-table__caption {
+  /* Подпись нужна чтению с экрана, глазу её заменяет заголовок блока. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-table th,
+.ui-table td {
+  text-align: left;
+  padding: 11px 14px 11px 0;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+
+.ui-table th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ui-table tbody tr:hover {
+  background: var(--paper-tint);
+}
+
+.ui-table .is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-table b {
+  font-weight: 600;
+}
+
+.ui-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  transition: color var(--ease);
+}
+
+.ui-sort:hover {
+  color: var(--ink);
+}
+
+.ui-sort.is-active {
+  color: var(--brand);
+}
+
+.ui-sort__mark {
+  font-size: 11px;
+  /* Неактивная стрелка приглушена, но на месте: столбец, по которому
+     можно упорядочить, должен быть виден до нажатия. */
+  opacity: 0.45;
+}
+
+.ui-sort.is-active .ui-sort__mark {
+  opacity: 1;
+}
+
+/* ---------- страницы ---------- */
+
+.ui-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.ui-pager__go {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.ui-pager .is-off {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------- код ---------- */
+
+.ui-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper-tint);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color var(--ease),
+    background var(--ease);
+}
+
+.ui-code:hover {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+/* Отказ буфера обмена: значение показано целиком и ждёт выделения, а не
+   исчезает через секунду. */
+.ui-code.is-failed {
+  border-color: var(--warn);
+  /* Выделять мышью в кнопке браузер по умолчанию не даёт. */
+  user-select: all;
+  cursor: text;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.ui-code__mark {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.ui-code__said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* ---------- сообщения ---------- */
+
+.ui-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  transform: translateX(-50%);
+  /* Пустая область не должна перехватывать нажатия: она висит поверх
+     страницы всегда, а само сообщение нажимать незачем. */
+  pointer-events: none;
+}
+
+.ui-toast {
+  margin: 0;
+  padding: 11px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--glass-strong);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-lift);
+  font-size: 14px;
+  color: var(--ink);
+  animation: ui-toast-in 0.18s var(--ease);
+}
+
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-toast {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Второстепенные столбцы на телефоне убираются: прокручивать таблицу
+     по горизонтали неудобнее, чем открыть карточку. */
+  .ui-table .is-second {
+    display: none;
+  }
+
+  .ui-table th,
+  .ui-table td {
+    padding-right: 10px;
+  }
+}
