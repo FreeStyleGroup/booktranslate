@@ -27,6 +27,43 @@ export const DOCUMENT_CHIP: Record<string, string> = {
   failed: "chip chip--danger",
 };
 
+/** Где книга в конвейере. */
+export const BOOK_STATUS_LABEL: Record<string, string> = {
+  draft: "Черновик",
+  in_progress: "В работе",
+  released: "Выпущена",
+};
+
+export const BOOK_STATUS_CHIP: Record<string, string> = {
+  draft: "chip chip--info",
+  in_progress: "chip chip--warn",
+  released: "chip chip--ok",
+};
+
+/** Зачем файл в комплекте книги. */
+export const SOURCE_ROLE_LABEL: Record<string, string> = {
+  primary_text: "Основной текст",
+  visual_reference: "Визуальный эталон",
+  auxiliary: "Вспомогательный",
+  code_source: "Исходники кода",
+};
+
+/** Чем роли отличаются. Показывается там, где роль выбирают: без
+ *  пояснения «визуальный эталон» и «вспомогательный» выглядят одинаково. */
+export const SOURCE_ROLE_HINT: Record<string, string> = {
+  primary_text: "из него берут текст — такой файл у книги один",
+  visual_reference: "по нему сверяют вёрстку, текст из него не берут",
+  auxiliary: "приложения, глоссарии заказчика, письма",
+  code_source: "листинги в исходном виде — переносятся побайтно",
+};
+
+export const SOURCE_ROLE_CHIP: Record<string, string> = {
+  primary_text: "chip chip--ok",
+  visual_reference: "chip chip--info",
+  auxiliary: "chip chip--info",
+  code_source: "chip chip--info",
+};
+
 export const SEGMENT_LABEL: Record<string, string> = {
   new: "Не переведено",
   machine: "Перевод модели",
@@ -225,4 +262,17 @@ export function when(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** Контрольная сумма для глаза: первые и последние знаки.
+ *
+ * Полные 64 знака в таблицу не встанут, а сверяют их не целиком: человек
+ * смотрит, тот ли это файл, что присылали, — для этого хватает краёв.
+ */
+export function shortHash(hash: string | null): string {
+  if (hash === null) {
+    return "—";
+  }
+
+  return hash.length <= 16 ? hash : `${hash.slice(0, 8)}…${hash.slice(-4)}`;
 }

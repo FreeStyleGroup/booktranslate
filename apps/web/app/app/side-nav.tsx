@@ -28,6 +28,9 @@ function groups(counts: NavCounts | null): { title: string; items: Item[] }[] {
       items: [
         { href: "/app", icon: "📊", label: "Обзор" },
         { href: "/app/projects", icon: "🗃", label: "Проекты", count: counts?.projects },
+        // Книги выше документов: книга — это то, что переводят, а документ —
+        // файл, который для этого принесли.
+        { href: "/app/books", icon: "📕", label: "Книги" },
         { href: "/app/documents", icon: "📚", label: "Документы", count: counts?.documents },
         {
           href: "/app/queue",

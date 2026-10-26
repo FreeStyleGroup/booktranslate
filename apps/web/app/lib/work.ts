@@ -25,6 +25,82 @@ export type Project = {
   updated_at: string;
 };
 
+/** Что книга переводится, что уже вышла. */
+export type BookStatus = "draft" | "in_progress" | "released";
+
+/** Издание книги.
+ *
+ * Код выдаёт сервер и больше не меняет: он входит в номера замечаний
+ * (`BK01-CH03-ERR-0001`), и переделать его потом — значит потерять
+ * прослеживаемость всего, что на него ссылается.
+ */
+export type Book = {
+  id: string;
+  project_id: string;
+  code: string;
+  title: string;
+  author: string | null;
+  edition_label: string | null;
+  source_language: string;
+  target_language: string;
+  status: BookStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Страница списка изданий: общее число и выданные строки. */
+export type BookPage = { total: number; limit: number; offset: number; items: Book[] };
+
+/** По какому столбцу упорядочен список книг. Значения — те же, что
+ *  принимает API: второй набор здесь разошёлся бы с ним молча. */
+export type BookSort = "created" | "title" | "updated";
+
+export type SortOrder = "asc" | "desc";
+
+/** Зачем файл в комплекте книги.
+ *
+ * Роль назначается человеком: по формату её не угадать — PDF бывает и
+ * единственным источником текста, и визуальным эталоном при EPUB.
+ */
+export type SourceRole = "primary_text" | "visual_reference" | "auxiliary" | "code_source";
+
+/** Что сервис смог прочитать в файле.
+ *
+ * Название и автор — так, как их объявляет сам файл: по ним сличают
+ * источники между собой.
+ */
+export type SourceValidation = {
+  format_ok: boolean;
+  has_text_layer: boolean;
+  page_count: number | null;
+  meta_title: string | null;
+  meta_author: string | null;
+  parser_version: string;
+  warnings: string[];
+  updated_at: string;
+};
+
+/** Файл в комплекте книги. Проверки может не быть: она запускается
+ *  отдельно, потому что на большом PDF занимает время. */
+export type BookSource = {
+  id: string;
+  title: string;
+  original_filename: string | null;
+  source_format: string;
+  source_role: SourceRole | null;
+  size_bytes: number | null;
+  content_hash: string | null;
+  validation: SourceValidation | null;
+};
+
+/** Комплект исходников книги и предупреждение о разных изданиях.
+ *
+ * Предупреждение — именно предупреждение: у правильного комплекта
+ * названия тоже расходятся (перевод, подзаголовок, серия), и решение
+ * принимает человек.
+ */
+export type BookKit = { sources: BookSource[]; mismatch: string | null };
+
 export type DocumentStatus =
   | "uploaded"
   | "parsing"
@@ -42,6 +118,10 @@ export type ExportFormat = "source" | "docx" | "markdown" | "text";
 export type Document = {
   id: string;
   project_id: string;
+  // Книга, в комплект которой входит файл, и его роль в нём. Пусто, пока
+  // файл просто загружен в проект.
+  book_id: string | null;
+  source_role: SourceRole | null;
   title: string;
   original_filename: string | null;
   source_format: string;
