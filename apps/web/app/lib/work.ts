@@ -101,6 +101,64 @@ export type BookSource = {
  */
 export type BookKit = { sources: BookSource[]; mismatch: string | null };
 
+/** Утверждены ли границы главы. */
+export type BoundaryStatus = "draft" | "approved";
+
+/** Откуда взялись границы: по заголовкам, по файлам EPUB, по страницам
+ *  PDF, весь документ целиком — или их выставил человек. */
+export type ChapterOrigin = "heading" | "path" | "page" | "whole" | "manual";
+
+/** Раздел главы: подзаголовок и состав до следующего подзаголовка.
+ *  По началу раздела (`start`) главу делят. */
+export type ChapterSection = {
+  start: number;
+  end: number;
+  level: number | null;
+  title: string | null;
+  locator: Record<string, string | number>;
+  kinds: Record<string, number>;
+};
+
+/** Глава книги.
+ *
+ * Код пуст, пока границы не утверждены ни разу: он выдаётся при
+ * утверждении и дальше не меняется. Место (`ordinal`) меняется при
+ * разделении и объединении глав выше — потому они и разные поля.
+ */
+export type Chapter = {
+  id: string;
+  book_id: string;
+  code: string | null;
+  ordinal: number;
+  title: string | null;
+  source_start: number;
+  source_end: number;
+  parser_version: string;
+  locator: Record<string, string | number>;
+  origin: ChapterOrigin;
+  boundary_status: BoundaryStatus;
+  boundary_version: number;
+  approved_by_id: string | null;
+  approved_at: string | null;
+  sections: ChapterSection[];
+  inventory: Record<string, number>;
+};
+
+/** Структура книги: главы и файл, по которому они размечены. */
+export type BookStructure = {
+  chapters: Chapter[];
+  source: {
+    id: string;
+    title: string;
+    original_filename: string | null;
+    source_format: string;
+  } | null;
+  // Ложно, если основной источник сменили после разметки.
+  source_is_primary: boolean;
+  // Заново предложить можно, пока ни одна глава не получила кода.
+  can_propose: boolean;
+};
+
 export type DocumentStatus =
   | "uploaded"
   | "parsing"

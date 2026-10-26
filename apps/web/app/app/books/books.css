@@ -105,3 +105,169 @@
     width: 100%;
   }
 }
+
+/* ---------- структура книги ---------- */
+
+.bk-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.bk-tools h3 {
+  margin: 0 0 4px;
+}
+
+.bk-tools .tile__note {
+  margin: 0;
+  max-width: 70ch;
+}
+
+.bk-chapters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.bk-chapter {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--paper);
+  padding: 16px 18px;
+}
+
+/* Черновик отмечен полосой слева: утверждённое и неутверждённое должно
+   различаться при прокрутке длинной книги, не вчитываясь в значки. */
+.bk-chapter.is-draft {
+  border-left: 3px solid var(--warn);
+}
+
+.bk-chapter__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.bk-chapter__no {
+  flex: none;
+  min-width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--paper-tint);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.bk-chapter__name {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.bk-chapter__name b {
+  font-weight: 600;
+}
+
+.bk-chapter__side {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bk-chapter__facts {
+  display: flex;
+  gap: 14px;
+  margin: 6px 0 0 44px;
+}
+
+.bk-chapter__facts:empty {
+  display: none;
+}
+
+.bk-chapter__actions {
+  margin: 12px 0 0 44px;
+  align-items: center;
+}
+
+.bk-sections {
+  margin: 12px 0 0 44px;
+}
+
+.bk-sections summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.bk-sections ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.bk-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line-soft);
+}
+
+.bk-section:last-child {
+  border-bottom: none;
+}
+
+.bk-section__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.bk-rename {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .bk-chapter__top {
+    flex-wrap: wrap;
+  }
+
+  /* Код и состояние уходят под название: в одну строку с ним на
+     телефоне они сжали бы название до слова. */
+  .bk-chapter__side {
+    width: 100%;
+    padding-left: 44px;
+  }
+
+  .bk-chapter__facts,
+  .bk-chapter__actions,
+  .bk-sections {
+    margin-left: 0;
+  }
+}
+
+.bk-next {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bk-next h3 {
+  margin: 0 0 4px;
+}

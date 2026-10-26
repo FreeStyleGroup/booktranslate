@@ -235,3 +235,105 @@ export async function validateSource(
     return failure(error);
   }
 }
+
+/** Что сделать со структурой книги. Перечислено здесь, а не строкой из
+ *  формы: действие уходит в адрес запроса, и подставить туда что попало
+ *  нельзя. */
+type StructureStep =
+  | { step: "propose" }
+  | { step: "approve-all" }
+  | { step: "approve"; chapterId: string }
+  | { step: "merge"; chapterId: string }
+  | { step: "split"; chapterId: string; at: number };
+
+/** Изменить структуру книги: предложить главы, утвердить, разделить, слить.
+ *
+ * Одним действием, а не пятью: у всех пяти один порядок — проверить
+ * идентификаторы, обратиться к API, обновить страницу, — и пять копий
+ * разошлись бы на первой правке. Ответ — только отказ: структуру страница
+ * перечитает сама.
+ */
+export async function changeStructure(bookId: string, change: StructureStep): Promise<Result> {
+  if (!UUID.test(bookId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if ("chapterId" in change && !UUID.test(change.chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if (change.step === "split" && (!Number.isInteger(change.at) || change.at < 1)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const request = ((): { path: string; body?: unknown } => {
+    switch (change.step) {
+      case "propose":
+        return { path: `/books/${bookId}/chapters/proposal` };
+      case "approve-all":
+        return { path: `/books/${bookId}/chapters/approval` };
+      case "approve":
+        return { path: `/chapters/${change.chapterId}/approval` };
+      case "merge":
+        return { path: `/chapters/${change.chapterId}/merge` };
+      case "split":
+        return { path: `/chapters/${change.chapterId}/split`, body: { at: change.at } };
+    }
+  })();
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(request.path, {
+      method: "POST",
+      token,
+      organizationId: organization,
+      body: request.body,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/structure`);
+  revalidatePath(`/app/books/${bookId}`);
+
+  return { done: true };
+}
+
+/** Назвать главу. Границ это не меняет — утверждение остаётся в силе. */
+export async function renameChapter(
+  bookId: string,
+  chapterId: string,
+  title: string,
+): Promise<Result> {
+  const clean = title.split(/\s+/).filter((word) => word !== "").join(" ");
+
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if (clean === "") {
+    return { error: "Название главы не может быть пустым" };
+  }
+
+  if (clean.length > TITLE_MAX) {
+    return { error: `Название главы — не длиннее ${TITLE_MAX} знаков` };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/chapters/${chapterId}`, {
+      method: "PATCH",
+      token,
+      organizationId: organization,
+      body: { title: clean },
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/structure`);
+
+  return { done: true };
+}
