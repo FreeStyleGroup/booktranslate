@@ -53,7 +53,7 @@ export type BookPage = { total: number; limit: number; offset: number; items: Bo
 
 /** По какому столбцу упорядочен список книг. Значения — те же, что
  *  принимает API: второй набор здесь разошёлся бы с ним молча. */
-export type BookSort = "created" | "title" | "updated";
+export type BookSort = "code" | "title" | "updated";
 
 export type SortOrder = "asc" | "desc";
 

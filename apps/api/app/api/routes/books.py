@@ -50,7 +50,7 @@ async def list_project_books(
     project_id: uuid.UUID,
     context: ContextDep,
     session: SessionDep,
-    sort: BookSort = BookSort.CREATED,
+    sort: BookSort = BookSort.CODE,
     order: SortOrder = SortOrder.DESC,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -70,7 +70,7 @@ async def list_project_books(
 async def list_books(
     context: ContextDep,
     session: SessionDep,
-    sort: BookSort = BookSort.CREATED,
+    sort: BookSort = BookSort.CODE,
     order: SortOrder = SortOrder.DESC,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

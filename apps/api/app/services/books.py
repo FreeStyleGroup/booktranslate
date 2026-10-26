@@ -36,10 +36,6 @@ from app.services.source_validation import describe_mismatch
 # работы тому, кому разрешена вторая половина.
 MANAGING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
 
-# Приставка кода издания. Код уходит в номера замечаний
-# (`BK01-CH03-ERR-0001`), поэтому выдаётся один раз и не меняется.
-CODE_PREFIX = "BK"
-
 
 class BookSort(str, enum.Enum):
     """По какому столбцу упорядочен список изданий.
@@ -48,18 +44,17 @@ class BookSort(str, enum.Enum):
     сверять со списком разрешённых, а забытая сверка — это подстановка в
     `ORDER BY` снаружи.
 
-    Сортировки по коду здесь нет намеренно. Код выдаётся по порядку, но
-    это строка, и после сотой книги «BK100» встанет лексикографически
-    раньше «BK99». Порядок заведения даёт `CREATED` и даёт верно.
+    «По коду» — это по номеру издания: код лишь его запись, и сравнивать
+    строки значило бы поставить «BK100» раньше «BK99».
     """
 
-    CREATED = "created"
+    CODE = "code"
     TITLE = "title"
     UPDATED = "updated"
 
 
 _SORT_COLUMNS = {
-    BookSort.CREATED: BookEdition.created_at,
+    BookSort.CODE: BookEdition.number,
     BookSort.TITLE: BookEdition.title,
     BookSort.UPDATED: BookEdition.updated_at,
 }
@@ -125,7 +120,7 @@ class BookService(TenantService):
         book = BookEdition(
             organization_id=self.organization_id,
             project_id=project.id,
-            code=f"{CODE_PREFIX}{number:02d}",
+            number=number,
             title=title,
             author=author,
             edition_label=edition_label,
@@ -151,7 +146,7 @@ class BookService(TenantService):
         self,
         *,
         project_id: uuid.UUID | None = None,
-        sort: BookSort = BookSort.CREATED,
+        sort: BookSort = BookSort.CODE,
         descending: bool = True,
         limit: int = 50,
         offset: int = 0,
