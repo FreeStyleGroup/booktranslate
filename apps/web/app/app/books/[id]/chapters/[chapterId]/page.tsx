@@ -10,32 +10,46 @@ import {
   type BlockPage,
   type Book,
   type BookKit,
+  type BookObject,
   type BookStructure,
   type ChapterMaster,
 } from "../../../../../lib/work";
-import { BOUNDARY_CHIP, BOUNDARY_LABEL, KIND_ONE, thousands, whereIs } from "../../../../labels";
+import {
+  BOUNDARY_CHIP,
+  BOUNDARY_LABEL,
+  KIND_ONE,
+  OBJECT_ONE,
+  OBJECT_TABS,
+  thousands,
+  whereIs,
+} from "../../../../labels";
 import "../../../../work.css";
 import "../../../../ui/ui.css";
 import "../../../books.css";
 import { CopyId } from "../../../../ui/copy-id";
 import { Pager } from "../../../../ui/pager";
-import { paramsOf, wholeNumber } from "../../../../ui/query";
+import { linkTo, oneOf, paramsOf, wholeNumber } from "../../../../ui/query";
 import { DataTable, type Column } from "../../../../ui/table";
 import { FindBlock } from "../../../find-block";
 import { MasterPanel } from "./master-panel";
+import { ObjectsTab } from "./objects-tab";
 
 export const metadata: Metadata = {
   title: "Глава — BookTranslate",
   description: "Мастер главы: неизменяемый исходный текст и блоки с постоянными кодами.",
 };
 
-/* Глава: мастер и блоки.
+/* Глава: мастер, блоки и объекты.
 
    Мастер — снимок исходного текста главы, который не правится никогда.
    Здесь его смотрят только для чтения: блок за блоком, с постоянным кодом
    отдельным столбцом, рядом — ссылка на визуальный эталон. Ошибка
    извлечения исправляется не правкой, а новой версией с причиной; прежние
-   версии остаются и открываются такими, какими были. */
+   версии остаются и открываются такими, какими были.
+
+   Рисунки, таблицы, формулы и код — на своих вкладках, у каждого объекта
+   свой постоянный код. Вкладка — в адресе: ссылка на «таблицы главы 3»
+   открывается таблицами. */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -46,6 +60,9 @@ const OFFSET_MAX = 1_000_000;
 
 // Кто извлекает и утверждает мастер. Тот же набор, что в API.
 const MANAGING = new Set(["owner", "admin", "manager", "translator"]);
+
+const TEXT_TAB = "text";
+const TABS = [TEXT_TAB, ...OBJECT_TABS.map((tab) => tab.type)];
 
 export default async function ChapterPage({
   params,
@@ -96,11 +113,22 @@ export default async function ChapterPage({
   const requested = query.get("version");
   const shown = versions.data.find((master) => master.id === requested) ?? current;
   const offset = wholeNumber(query.get("offset"), 0, OFFSET_MAX);
+  const tab = oneOf(query.get("tab"), TABS, TEXT_TAB);
 
-  const blocks =
+  // Объекты версии нужны на любой вкладке: по ним считаются вкладки, а у
+  // блоков виден объект, которому блок принадлежит.
+  const [blocks, objects] =
     shown === undefined
-      ? undefined
-      : await load<BlockPage>(`/masters/${shown.id}/blocks?limit=${PER_PAGE}&offset=${offset}`, here);
+      ? [undefined, undefined]
+      : await Promise.all([
+          tab === TEXT_TAB
+            ? load<BlockPage>(`/masters/${shown.id}/blocks?limit=${PER_PAGE}&offset=${offset}`, here)
+            : undefined,
+          load<BookObject[]>(`/masters/${shown.id}/objects`, here),
+        ]);
+
+  const owners = ownersOf(objects?.data ?? []);
+  const tabInfo = OBJECT_TABS.find((item) => item.type === tab);
 
   // Визуальный эталон — PDF рядом с основным источником. Открывается во
   // вкладке; другой формат эталоном для просмотра не годится.
@@ -162,6 +190,53 @@ export default async function ChapterPage({
         </p>
       )}
 
+      {shown !== undefined && (
+        <nav className="bk-tabs" aria-label="Содержимое главы">
+          {[{ type: TEXT_TAB, title: "Текст" }, ...OBJECT_TABS].map((item) => {
+            const count =
+              item.type === TEXT_TAB
+                ? shown.block_count
+                : (objects?.data ?? []).filter((object) => object.type === item.type).length;
+
+            return (
+              <Link
+                key={item.type}
+                className={item.type === tab ? "is-active" : undefined}
+                aria-current={item.type === tab ? "page" : undefined}
+                href={linkTo(here, query, {
+                  tab: item.type === TEXT_TAB ? null : item.type,
+                  offset: null,
+                })}
+              >
+                {item.title}
+                <span className="bk-tabs__count">{thousands(count)}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+
+      {shown !== undefined && tabInfo !== undefined && objects !== undefined && (
+        <section className="tile">
+          <div className="tile__head">
+            <h3>
+              {tabInfo.title} {shown.label}
+            </h3>
+          </div>
+          {objects.error !== undefined ? (
+            <p className="tile__empty">{objects.error}</p>
+          ) : (
+            <ObjectsTab
+              type={tabInfo.type}
+              title={`${tabInfo.title} главы, версия мастера ${shown.label}`}
+              objects={objects.data.filter((item) => item.type === tabInfo.type)}
+              cardPath={`${here}/objects`}
+              empty={tabInfo.empty}
+            />
+          )}
+        </section>
+      )}
+
       {shown !== undefined && blocks !== undefined && (
         <section className="tile">
           <div className="tile__head">
@@ -187,7 +262,7 @@ export default async function ChapterPage({
             <>
               <DataTable
                 caption={`Блоки главы, версия мастера ${shown.label}`}
-                columns={COLUMNS}
+                columns={columns(owners, `${here}/objects`)}
                 rows={blocks.data.items}
                 rowAnchor={(block) => block.code}
                 empty="В этой версии мастера нет блоков."
@@ -206,6 +281,52 @@ export default async function ChapterPage({
       )}
     </>
   );
+}
+
+type Owner = { object: BookObject; caption: boolean };
+
+/** Чей блок: ячейка таблицы, текст листинга или подпись объекта. */
+function ownersOf(objects: BookObject[]): Map<string, Owner> {
+  const owners = new Map<string, Owner>();
+
+  for (const object of objects) {
+    for (const code of object.content_codes) {
+      owners.set(code, { object, caption: false });
+    }
+    if (object.caption_code !== null) {
+      owners.set(object.caption_code, { object, caption: true });
+    }
+  }
+
+  return owners;
+}
+
+function columns(owners: Map<string, Owner>, cardPath: string): Column<Block>[] {
+  return [...COLUMNS.slice(0, 2), ownerColumn(owners, cardPath), ...COLUMNS.slice(2)];
+}
+
+function ownerColumn(owners: Map<string, Owner>, cardPath: string): Column<Block> {
+  return {
+    title: "Объект",
+    secondary: true,
+    // Ячейка таблицы переводится как текст, но стоит в сетке; листинг не
+    // переводится вовсе. Это видно здесь, у самого блока.
+    cell: (block) => {
+      const owner = owners.get(block.full_code);
+
+      if (owner === undefined) {
+        return <span className="tile__note">—</span>;
+      }
+
+      return (
+        <Link className="tile__note" href={`${cardPath}/${owner.object.id}`}>
+          {owner.caption ? "подпись " : ""}
+          {owner.object.code}
+          <span className="bk-owner-kind"> · {OBJECT_ONE[owner.object.type]}</span>
+        </Link>
+      );
+    },
+  };
 }
 
 const COLUMNS: Column<Block>[] = [

@@ -33,8 +33,8 @@ export const metadata: Metadata = {
 
 const MIN_QUERY = 2;
 
-// Полный код блока: `BK01-CH03-B0042`.
-const BLOCK_CODE = /^BK\d+-CH\d+-B\d+$/i;
+// Полный код блока или объекта: `BK01-CH03-B0042`, `BK01-CH03-FIG001`.
+const FULL_CODE = /^BK\d+-CH\d+-(?:B|FIG|TBL|EQ|CODE)\d+$/i;
 const SHOWN = 5;
 
 export default async function SearchPage({
@@ -45,9 +45,9 @@ export default async function SearchPage({
   const { query = "" } = await searchParams;
   const trimmed = query.trim();
 
-  // Полный код блока — не слово для поиска, а адрес: такой блок в
+  // Полный код — не слово для поиска, а адрес: такой блок или объект в
   // пространстве один, и показывать вместо него список совпадений незачем.
-  if (BLOCK_CODE.test(trimmed)) {
+  if (FULL_CODE.test(trimmed)) {
     redirect(`/app/find?code=${encodeURIComponent(trimmed)}`);
   }
   const here = trimmed === "" ? "/app/search" : `/app/search?query=${encodeURIComponent(trimmed)}`;

@@ -1,8 +1,8 @@
-/* Поиск блока по коду в пределах книги.
+/* Поиск блока или объекта по коду в пределах книги.
 
-   Обычная форма, а не клиентский компонент: результат — переход к блоку,
-   и Enter ведёт туда без единой строки скрипта. Код вида `CH03-B0042`
-   находит блок в любой главе и на любой странице. */
+   Обычная форма, а не клиентский компонент: результат — переход, и Enter
+   ведёт туда без единой строки скрипта. Код вида `CH03-B0042` находит
+   блок в любой главе и на любой странице, `CH03-FIG001` — объект. */
 
 export function FindBlock({ bookId }: { bookId: string }) {
   return (
@@ -14,12 +14,12 @@ export function FindBlock({ bookId }: { bookId: string }) {
           type="search"
           name="code"
           placeholder="CH03-B0042"
-          aria-label="Найти блок по коду"
+          aria-label="Найти блок или объект по коду"
           required
           minLength={6}
           maxLength={40}
-          pattern="([Bb][Kk]\d+-)?[Cc][Hh]\d+-[Bb]\d+"
-          title="Код блока: CH03-B0042 или BK01-CH03-B0042"
+          pattern="([Bb][Kk]\d+-)?[Cc][Hh]\d+-([Bb]|[Ff][Ii][Gg]|[Tt][Bb][Ll]|[Ee][Qq]|[Cc][Oo][Dd][Ee])\d+"
+          title="Код блока или объекта: CH03-B0042, CH03-FIG001"
           autoComplete="off"
           spellCheck={false}
         />

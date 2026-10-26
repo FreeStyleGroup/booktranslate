@@ -103,6 +103,10 @@ export function MasterPanel({
               <dd>{thousands(current.block_count)}</dd>
             </div>
             <div>
+              <dt>Объектов</dt>
+              <dd>{thousands(current.object_count)}</dd>
+            </div>
+            <div>
               <dt>Извлечён</dt>
               <dd>{when(current.created_at)}</dd>
             </div>

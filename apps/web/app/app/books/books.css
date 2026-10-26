@@ -371,3 +371,213 @@
 .ui-table tr:target td {
   background: var(--brand-tint);
 }
+
+/* ---------- глава: вкладки текста и объектов ---------- */
+
+.bk-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  /* Вкладки — одной лентой: на узком экране она прокручивается сама,
+     а не разваливается на ряды, где не понять, какая вкладка открыта. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.bk-tabs a {
+  flex: none;
+}
+
+.bk-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--ink-soft);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.bk-tabs a:hover {
+  color: var(--ink);
+}
+
+.bk-tabs a.is-active {
+  border-bottom-color: var(--brand);
+  color: var(--brand);
+}
+
+.bk-tabs__count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--paper-tint);
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bk-owner-kind {
+  color: var(--ink-faint);
+}
+
+/* Рисунки — карточками: оригинал сверяют глазами, а не по строке. */
+.bk-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-figures__item {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.bk-figures__item:target {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.bk-figures__picture {
+  display: block;
+}
+
+.bk-figures__meta {
+  display: grid;
+  gap: 6px;
+}
+
+.bk-figure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  /* Светлая подложка в любой теме: рисунки книг рассчитаны на белую
+     бумагу, и прозрачный PNG на тёмном фоне читается как пустота. */
+  background: #fff;
+}
+
+.bk-figure img {
+  max-width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+}
+
+.bk-figure--large img {
+  max-height: 70vh;
+}
+
+.bk-figure__missing {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Таблица — по сетке исходника: объединённые ячейки объединены и здесь. */
+.bk-grid-wrap {
+  overflow-x: auto;
+}
+
+.bk-grid {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bk-grid th,
+.bk-grid td {
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  vertical-align: top;
+  text-align: left;
+  white-space: pre-wrap;
+}
+
+.bk-grid th {
+  background: var(--paper-tint);
+}
+
+.bk-grid__part {
+  display: block;
+}
+
+.bk-formula {
+  font-size: 18px;
+  overflow-x: auto;
+}
+
+.bk-formula--text {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.bk-formula-card {
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--paper-tint);
+  overflow-x: auto;
+}
+
+.bk-formula-card .bk-formula {
+  font-size: 24px;
+}
+
+.bk-raw {
+  margin-top: 12px;
+}
+
+.bk-raw summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.bk-raw pre {
+  margin-top: 8px;
+}
+
+.bk-block-code--wide {
+  max-width: 100%;
+}
+
+.bk-caption {
+  display: grid;
+  gap: 4px;
+}
+
+.bk-mentions {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-mentions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.bk-mentions li a {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.bk-mentions li .bk-block-text {
+  flex-basis: 100%;
+  margin: 0;
+}
