@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { fill } from "./i18n/config";
 import type { Dictionary } from "./i18n/ru";
+import { ReportError } from "./app/ui/toast";
 
 /* Форма входа и регистрации.
 
@@ -140,11 +141,7 @@ export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: A
         </label>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <button className="btn btn--primary" type="submit" disabled={busy}>
         {busy ? t.busy : texts.submit}

@@ -55,16 +55,23 @@ export function DataTable<Row extends { id: string }>({
   rows,
   sort,
   empty,
+  rowAnchor,
 }: {
   /** Чем таблица является. Для глаз — заголовком блока, для чтения с
    *  экрана — подписью: таблица без подписи читается как «таблица». */
   caption: string;
   columns: Column<Row>[];
   rows: Row[];
-  sort: SortState;
+  /** Порядок, если его выбирает человек. Без него таблица показывает
+   *  строки в данном порядке — так у блоков главы, чей порядок задан
+   *  версией мастера, а не заголовком столбца. */
+  sort?: SortState;
   /** Что сказать, когда строк нет. Пустая таблица без слов выглядит
    *  поломкой, хотя чаще всего работа просто не начата. */
   empty: ReactNode;
+  /** Якорь строки в адресе — чтобы ссылка вела прямо к ней, как ссылка на
+   *  блок по его коду. */
+  rowAnchor?: (row: Row) => string;
 }) {
   if (rows.length === 0) {
     return <p className="tile__empty">{empty}</p>;
@@ -84,9 +91,9 @@ export function DataTable<Row extends { id: string }>({
                 className={cellClass(column)}
                 // Состояние сортировки — атрибутом, а не только стрелкой:
                 // стрелку не читает ни одна программа чтения с экрана.
-                aria-sort={ariaSort(column, sort)}
+                aria-sort={sort === undefined ? undefined : ariaSort(column, sort)}
               >
-                {column.sort === undefined ? (
+                {column.sort === undefined || sort === undefined ? (
                   column.title
                 ) : (
                   <SortLink column={column} sort={sort} />
@@ -98,7 +105,7 @@ export function DataTable<Row extends { id: string }>({
 
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.id} id={rowAnchor?.(row)}>
               {columns.map((column) => (
                 <td key={column.title} className={cellClass(column)}>
                   {column.cell(row)}

@@ -1640,7 +1640,8 @@ h3 {
 /* Поле ввода и список выбора выглядят одинаково: в одной форме они стоят
    рядом, и разная высота у соседних полей читается как небрежность. */
 .field input,
-.field select {
+.field select,
+.field textarea {
   height: 50px;
   padding: 0 16px;
   border-radius: 12px;
@@ -1670,10 +1671,21 @@ h3 {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--brand);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+/* Многострочное поле — та же рамка, но высота по содержимому и рост
+   вниз: причину в три строки удобнее видеть целиком, чем прокручивать. */
+.field textarea {
+  height: auto;
+  min-height: 96px;
+  padding: 12px 16px;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .field small {

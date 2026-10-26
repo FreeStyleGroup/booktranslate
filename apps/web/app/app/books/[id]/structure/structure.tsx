@@ -11,6 +11,7 @@
    Разделы главы свёрнуты: на экране главное — главы и их состояние, а
    подзаголовки нужны тогда, когда главу собираются делить. */
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -25,7 +26,7 @@ import {
   whereIs,
 } from "../../../labels";
 import { CopyId } from "../../../ui/copy-id";
-import { useToast } from "../../../ui/toast";
+import { ReportError, useToast } from "../../../ui/toast";
 import { changeStructure, renameChapter, type Result } from "../../actions";
 
 type Change = Parameters<typeof changeStructure>[1];
@@ -43,7 +44,7 @@ export function Structure({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
-  const say = useToast();
+  const toast = useToast();
 
   const { chapters } = structure;
   const drafts = chapters.filter((chapter) => chapter.boundary_status === "draft").length;
@@ -59,7 +60,7 @@ export function Structure({
         return;
       }
 
-      say(done);
+      toast.ok(done);
       router.refresh();
     });
   }
@@ -109,11 +110,7 @@ export function Structure({
         </section>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       {chapters.length === 0 ? (
         !canManage && (
@@ -126,6 +123,7 @@ export function Structure({
           {chapters.map((chapter, index) => (
             <ChapterCard
               key={chapter.id}
+              bookId={bookId}
               chapter={chapter}
               isLast={index === chapters.length - 1}
               // Утверждать по порядку: выше не должно быть черновиков.
@@ -147,6 +145,7 @@ export function Structure({
 }
 
 function ChapterCard({
+  bookId,
   chapter,
   isLast,
   canApprove,
@@ -155,6 +154,7 @@ function ChapterCard({
   onChange,
   onRename,
 }: {
+  bookId: string;
   chapter: Chapter;
   isLast: boolean;
   canApprove: boolean;
@@ -284,9 +284,20 @@ function ChapterCard({
         </details>
       )}
 
-      {canManage && (
+      {(canManage || chapter.code !== null) && (
         <div className="wk-actions bk-chapter__actions">
-          {draft && (
+          {chapter.code !== null && (
+            // Мастер и блоки — у главы с кодом: код выдаётся при утверждении,
+            // а мастер извлекается только из утверждённой главы.
+            <Link
+              className="btn btn--ghost btn--small"
+              href={`/app/books/${bookId}/chapters/${chapter.id}`}
+            >
+              Мастер и блоки
+            </Link>
+          )}
+
+          {canManage && draft && (
             <button
               className="btn btn--primary btn--small"
               type="button"
@@ -301,7 +312,7 @@ function ChapterCard({
             </button>
           )}
 
-          {!isLast && (
+          {canManage && !isLast && (
             <button
               className="btn btn--ghost btn--small"
               type="button"
@@ -314,7 +325,7 @@ function ChapterCard({
             </button>
           )}
 
-          {!renaming && (
+          {canManage && !renaming && (
             <button
               className="btn btn--ghost btn--small"
               type="button"
@@ -325,7 +336,7 @@ function ChapterCard({
             </button>
           )}
 
-          {draft && !canApprove && (
+          {canManage && draft && !canApprove && (
             <span className="tile__note">сначала утвердите главы выше</span>
           )}
         </div>

@@ -12,6 +12,7 @@ import { useActionState, useState } from "react";
 import type { GlossaryTerm } from "../../lib/work";
 import { GLOSSARY_KIND, GLOSSARY_STATUS, thousands } from "../../app/labels";
 import { publishTerms, type PublishState } from "../actions";
+import { ReportError } from "../../app/ui/toast";
 
 const EMPTY: PublishState = {};
 
@@ -86,11 +87,7 @@ export function PublishForm({
         </button>
       </div>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.published !== undefined && state.error === undefined && (
         <p className="adm-note" role="status">

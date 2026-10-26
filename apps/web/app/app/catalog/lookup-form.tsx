@@ -16,6 +16,7 @@ import { useActionState } from "react";
 import type { CatalogSource } from "../../lib/work";
 import { plural, thousands } from "../labels";
 import { lookupTerms, type LookupResult } from "./actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: LookupResult = {};
 
@@ -82,11 +83,7 @@ export function LookupForm({ pairs, source }: { pairs: Pair[]; source: CatalogSo
         </button>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.report !== undefined && state.error === undefined && (
         <p className="wk-note" role="status">

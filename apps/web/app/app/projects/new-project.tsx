@@ -14,6 +14,7 @@
 import { useActionState, useState, type ReactNode } from "react";
 
 import { createProject, type Result } from "../actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: Result = {};
 
@@ -149,11 +150,7 @@ function Form({
         </div>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
     </section>
   );
 }

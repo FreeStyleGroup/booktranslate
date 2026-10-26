@@ -18,6 +18,7 @@ import { useActionState, useRef, useState } from "react";
 import type { Document, SourceRole } from "../../lib/work";
 import { FORMAT_LABEL, SOURCE_ROLE_HINT, SOURCE_ROLE_LABEL, fileSize } from "../labels";
 import { attachSource, type Result } from "./actions";
+import { ReportError } from "../ui/toast";
 
 // Согласовано с потолком прокси и API (deploy/Caddyfile, MAX_UPLOAD_MB).
 // Здесь — чтобы сказать «файл слишком большой» до отправки, а не после
@@ -224,11 +225,7 @@ export function AddSource({
         </div>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       {free.length > 0 && (
         <form action={attach} className="bk-free">
@@ -268,11 +265,7 @@ export function AddSource({
             </button>
           </div>
 
-          {attached.error !== undefined && (
-            <p className="form__error" role="alert">
-              {attached.error}
-            </p>
-          )}
+          <ReportError error={attached.error} at={attached} />
         </form>
       )}
     </section>

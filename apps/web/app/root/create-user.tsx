@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { createUser, type CreateState } from "./actions";
+import { ReportError } from "../app/ui/toast";
 
 /* Заведение учётной записи администратором.
 
@@ -75,11 +76,7 @@ export function CreateUser() {
         </button>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.created !== undefined && (
         <div className="secret" role="status">

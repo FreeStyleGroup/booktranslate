@@ -1,11 +1,11 @@
-/* Общие части экранов со списками: таблица, страницы, код, сообщения.
+/* Общие части экранов со списками: таблица, страницы, код.
 
    Отдельным файлом, а не в work.css: эти четыре вещи стоят на всех
    дальнейших экранах конвейера — главы, блоки, замечания, выпуски, — и
    искать их среди правил одного раздела пришлось бы каждый раз.
 
-   Подключается тот файл, который использует: раскладка кабинета — ради
-   области сообщений, страницы со списками — ради остального. */
+   Подключают его страницы, которые этим пользуются. Уведомления — в
+   своём файле рядом с хостом (`toast.css`). */
 
 /* ---------- таблица ---------- */
 
@@ -165,45 +165,6 @@
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
-}
-
-/* ---------- сообщения ---------- */
-
-.ui-toasts {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  z-index: 60;
-  transform: translateX(-50%);
-  /* Пустая область не должна перехватывать нажатия: она висит поверх
-     страницы всегда, а само сообщение нажимать незачем. */
-  pointer-events: none;
-}
-
-.ui-toast {
-  margin: 0;
-  padding: 11px 18px;
-  border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: var(--glass-strong);
-  backdrop-filter: blur(12px);
-  box-shadow: var(--shadow-lift);
-  font-size: 14px;
-  color: var(--ink);
-  animation: ui-toast-in 0.18s var(--ease);
-}
-
-@keyframes ui-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-toast {
-    animation: none;
-  }
 }
 
 @media (max-width: 760px) {

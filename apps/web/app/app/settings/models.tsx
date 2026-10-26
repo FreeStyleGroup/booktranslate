@@ -13,6 +13,7 @@
 import { useActionState } from "react";
 
 import { saveModel, type ModelResult, type WorkspaceSettings } from "./actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: ModelResult = {};
 
@@ -93,11 +94,7 @@ export function Models({ settings }: { settings: WorkspaceSettings }) {
         </div>
       </form>
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.saved !== undefined && state.error === undefined && (
         <p className="wk-note" role="status">

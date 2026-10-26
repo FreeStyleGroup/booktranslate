@@ -19,6 +19,7 @@ import { useRef, useState } from "react";
 
 import type { Project } from "../../lib/work";
 import { fileSize } from "../labels";
+import { ReportError } from "../ui/toast";
 
 // Согласовано с потолком прокси и API (deploy/Caddyfile, MAX_UPLOAD_MB).
 // Здесь — чтобы сказать «файл слишком большой» до отправки, а не после
@@ -216,11 +217,7 @@ export function Upload({ projects, current }: { projects: Project[]; current?: s
         </div>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
     </section>
   );
 }

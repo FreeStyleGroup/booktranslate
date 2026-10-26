@@ -13,6 +13,7 @@ import { fill } from "../i18n/config";
 import type { Dictionary } from "../i18n/ru";
 import type { Preview } from "../join-page";
 import { SignOut } from "../sign-out";
+import { ReportError } from "../app/ui/toast";
 
 const MIN_PASSWORD = 12;
 
@@ -88,11 +89,7 @@ export function JoinForm({
   if (me !== null) {
     return (
       <div className="form">
-        {error !== null && (
-          <p className="form__error" role="alert">
-            {error}
-          </p>
-        )}
+        <ReportError error={error} />
         <button
           className="btn btn--primary"
           type="button"
@@ -163,11 +160,7 @@ export function JoinForm({
         />
       </label>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <button className="btn btn--primary" type="submit" disabled={busy}>
         {busy ? texts.form.busy : t.acceptAndEnter}

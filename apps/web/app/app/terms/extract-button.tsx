@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { extractTerms } from "./actions";
+import { ReportError } from "../ui/toast";
 
 export function ExtractButton({
   documentId,
@@ -67,11 +68,7 @@ export function ExtractButton({
         </button>
       </div>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
     </>
   );
 }

@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 
 import { GLOSSARY_KIND, GLOSSARY_KIND_HINT, plural, thousands } from "../labels";
 import { decideTerms, type Decision, type Report } from "./actions";
+import { ReportError } from "../ui/toast";
 
 export type Candidate = {
   id: string;
@@ -288,11 +289,7 @@ export function TermsBoard({
         </button>
       </div>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       {report !== null && <Summary report={report} />}
     </>

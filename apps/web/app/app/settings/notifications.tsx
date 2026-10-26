@@ -18,6 +18,7 @@
 import { useActionState, useState } from "react";
 
 import { saveNotifications, type NotificationSettings, type Result } from "./actions";
+import { ReportError } from "../ui/toast";
 
 const EMPTY: Result = {};
 
@@ -63,11 +64,7 @@ export function Notifications({
         busy={busy}
       />
 
-      {state.error !== undefined && (
-        <p className="form__error" role="alert">
-          {state.error}
-        </p>
-      )}
+      <ReportError error={state.error} at={state} />
 
       {state.saved !== undefined && state.error === undefined && (
         <p className="wk-note" role="status">

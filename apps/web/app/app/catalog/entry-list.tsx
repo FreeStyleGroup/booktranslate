@@ -12,6 +12,7 @@ import { useState, useTransition } from "react";
 import type { CatalogEntry } from "../../lib/work";
 import { GLOSSARY_KIND, when } from "../labels";
 import { adoptEntry } from "./actions";
+import { ReportError } from "../ui/toast";
 
 export function EntryList({ entries, edits }: { entries: CatalogEntry[]; edits: boolean }) {
   const [error, setError] = useState<string | null>(null);
@@ -47,11 +48,7 @@ export function EntryList({ entries, edits }: { entries: CatalogEntry[]; edits: 
 
   return (
     <>
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="ct-list">
         {entries.map((entry) => (

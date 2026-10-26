@@ -24,6 +24,7 @@ import { useRouter } from "next/navigation";
 
 import type { Finding, Segment } from "../../lib/work";
 import { CHECK_CHIP, CHECK_LABEL, KIND_ONE, plural, thousands } from "../labels";
+import { ReportError } from "../ui/toast";
 import {
   approveClean,
   approveSegment,
@@ -214,11 +215,7 @@ function Row({
         </p>
       )}
 
-      {local.error !== undefined && (
-        <p className="form__error" role="alert">
-          {local.error}
-        </p>
-      )}
+      <ReportError error={local.error} at={local} />
 
       <div className="qu-row__foot">
         <button
@@ -354,11 +351,7 @@ export function ApproveClean({ documentId, clean }: { documentId: string; clean:
         {busy ? "Принимаем…" : `Принять чистые (${thousands(clean)})`}
       </button>
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
     </>
   );
 }

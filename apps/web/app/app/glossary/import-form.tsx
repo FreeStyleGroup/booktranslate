@@ -17,6 +17,7 @@ import { useRef, useState } from "react";
 import type { GlossaryUpload } from "../../lib/work";
 import { thousands, when } from "../labels";
 import type { Pair } from "./page";
+import { ReportError } from "../ui/toast";
 
 const ACCEPT = ".csv,.tsv,.txt,.tbx,.xml,.docx";
 
@@ -191,11 +192,7 @@ export function ImportForm({
         </form>
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       {report !== null && <Summary report={report} />}
 

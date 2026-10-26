@@ -9,6 +9,7 @@ import { FORMAT_LABEL, plural, thousands } from "../../../labels";
 import "../../../work.css";
 import "../../../ui/ui.css";
 import "../../books.css";
+import { FindBlock } from "../../find-block";
 import { Structure } from "./structure";
 
 export const metadata: Metadata = {
@@ -88,6 +89,9 @@ export default async function StructurePage({ params }: { params: Promise<{ id: 
               })`}
           </p>
         </div>
+
+        {/* Блок по коду — из любой главы и с любой страницы: `CH03-B0042`. */}
+        {chapters.some((chapter) => chapter.code !== null) && <FindBlock bookId={id} />}
       </header>
 
       {/* Основной источник сменили после разметки: номера блоков в

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { TranslationJob } from "../../lib/work";
 import { plural, thousands, when } from "../labels";
 import { cancelJob, documentJob, queueDocument } from "../actions";
+import { ReportError } from "../ui/toast";
 
 // Как часто спрашивать о ходе работы. Четыре секунды: пачка в сотню
 // сегментов занимает у настоящей модели больше, и опрашивать чаще значит
@@ -186,11 +187,7 @@ export function TranslateRun({
         <Working job={job} />
       )}
 
-      {error !== null && (
-        <p className="form__error" role="alert">
-          {error}
-        </p>
-      )}
+      <ReportError error={error} />
 
       <div className="tile__foot">
         {working ? (
