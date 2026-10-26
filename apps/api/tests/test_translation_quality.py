@@ -121,7 +121,7 @@ async def test_first_use_expansion_is_required_once(db_client: AsyncClient) -> N
             "source_language": "en",
             "target_language": "ru",
             "kind": "abbreviation",
-            "expand_on_first_use": True,
+            "first_use_rule": "expand",
         },
     )
 

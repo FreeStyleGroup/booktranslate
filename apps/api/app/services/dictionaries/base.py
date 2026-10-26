@@ -9,7 +9,7 @@
 
 from dataclasses import dataclass, field
 
-from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
+from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
 from app.services.errors import InvalidInputError
 
 
@@ -35,7 +35,7 @@ class ImportedTerm:
     status: GlossaryTermStatus = GlossaryTermStatus.PROPOSED
     note: str | None = None
     reference: str | None = None
-    expand_on_first_use: bool = False
+    first_use_rule: FirstUseRule = FirstUseRule.NONE
 
 
 @dataclass(slots=True)

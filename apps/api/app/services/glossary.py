@@ -32,7 +32,9 @@ from sqlalchemy import Select, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.config import get_settings
+from app.models.glossary_version import GlossaryVersionTerm
 from app.models.memory import (
+    FirstUseRule,
     GlossaryEntryKind,
     GlossaryTerm,
     GlossaryTermStatus,
@@ -74,21 +76,68 @@ MAX_REASONS = 20
 UPDATABLE_FIELDS = frozenset(
     {
         "target_term",
+        "allowed_variants",
+        "domain",
         "note",
         "reference",
         "mandatory",
         "status",
         "kind",
         "case_sensitive",
-        "expand_on_first_use",
+        "first_use_rule",
     }
 )
+
+# Что из этого правка вправе стереть.
+CLEARABLE_FIELDS = frozenset({"domain", "note", "reference"})
+
+# Сколько допустимых вариантов у одного термина. Вариантов больше десятка —
+# это уже не согласованное написание, а отсутствие решения.
+MAX_VARIANTS = 20
 
 _WHITESPACE = re.compile(r"\s+")
 
 
 def normalize_term(term: str) -> str:
     return _WHITESPACE.sub(" ", term).strip().casefold()
+
+
+def source_pattern(source: str, *, case_sensitive: bool) -> re.Pattern[str]:
+    """Как термин ищется в тексте исходника: целым словом.
+
+    Без границ слова «ток» нашёлся бы внутри «поток», а «air» — внутри
+    «repair», и в работу поехали бы требования, которых в тексте нет.
+    """
+    return re.compile(rf"(?<!\w){re.escape(source)}(?!\w)", 0 if case_sensitive else re.IGNORECASE)
+
+
+def clean_variants(variants: Sequence[str], *, target: str, kind: GlossaryEntryKind) -> list[str]:
+    """Допустимые варианты перевода — без пустых, повторов и основного.
+
+    Основной перевод в списке вариантов — это вторая запись одного и того
+    же, а повтор варианта ничего не добавляет к проверке. У непереводимого
+    вариантов не бывает по определению: строка остаётся как есть.
+    """
+    seen = {normalize_term(target)}
+    cleaned = []
+
+    for variant in variants:
+        value = _WHITESPACE.sub(" ", variant).strip()
+        key = normalize_term(value)
+
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(value)
+
+    if cleaned and kind is GlossaryEntryKind.DO_NOT_TRANSLATE:
+        raise InvalidInputError("У непереводимой записи не бывает вариантов перевода")
+
+    if len(cleaned) > MAX_VARIANTS:
+        raise InvalidInputError(f"Допустимых вариантов не больше {MAX_VARIANTS}")
+
+    return cleaned
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,9 +154,27 @@ class Term:
     # подсказкой, но не имеет права помечать сегмент ошибкой: иначе редактор
     # получит сотню претензий к переводу там, где спор идёт о самом словаре.
     settled: bool = True
-    # Раскрывать ли при первом употреблении: «маркет-мейкер (market maker,
+    # Что сделать при первом употреблении: «маркет-мейкер (market maker,
     # MM)», дальше просто MM.
-    expand_on_first_use: bool = False
+    first_use_rule: FirstUseRule = FirstUseRule.NONE
+    # Согласованные варианты перевода помимо основного: проверка принимает
+    # любой из них, модели уходит основной.
+    allowed_variants: tuple[str, ...] = ()
+
+
+def term_of(record: GlossaryTerm | GlossaryVersionTerm) -> Term:
+    """Термин для работы — из записи словаря или из снимка версии."""
+    return Term(
+        source=record.source_term,
+        target=record.target_term,
+        mandatory=record.mandatory,
+        note=record.note,
+        kind=record.kind,
+        case_sensitive=record.case_sensitive,
+        settled=record.status is GlossaryTermStatus.CONFIRMED,
+        first_use_rule=record.first_use_rule,
+        allowed_variants=tuple(record.allowed_variants),
+    )
 
 
 @dataclass(slots=True)
@@ -148,13 +215,7 @@ class Glossary:
         # в подсказку должен попасть более точный.
         self._terms = sorted(terms, key=lambda term: len(term.source), reverse=True)
         self._patterns = [
-            (
-                term,
-                re.compile(
-                    rf"(?<!\w){re.escape(term.source)}(?!\w)",
-                    0 if term.case_sensitive else re.IGNORECASE,
-                ),
-            )
+            (term, source_pattern(term.source, case_sensitive=term.case_sensitive))
             for term in self._terms
         ]
 
@@ -185,13 +246,17 @@ class Glossary:
             if not term.mandatory or not term.settled:
                 continue
 
+            # Годится и основной перевод, и любой согласованный вариант.
+            accepted = (term.target, *term.allowed_variants)
+
             # Непереводимое и аббревиатуры сверяются дословно, с регистром:
             # «USB» превратившийся в «Usb» — это уже ошибка, а не падежная
             # форма. Обычный термин сверяется без регистра и без окончания.
             if term.case_sensitive or term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE:
-                found = term.target in target_text
+                found = any(form in target_text for form in accepted)
             else:
-                found = normalize_term(term.target) in normalize_term(target_text)
+                text = normalize_term(target_text)
+                found = any(normalize_term(form) in text for form in accepted)
 
             if not found:
                 missing.append(term)
@@ -204,6 +269,58 @@ class GlossaryService(TenantService):
         self, *, project_id: uuid.UUID | None, source_language: str, target_language: str
     ) -> Glossary:
         """Собрать глоссарий проекта: его термины плюс общие для организации."""
+        rows = await self.own_terms(
+            project_id=project_id,
+            source_language=source_language,
+            target_language=target_language,
+        )
+        chosen = {row.source_term_normalized: term_of(row) for row in rows}
+        limit = get_settings().glossary_max_active_terms
+
+        # Общий словарь площадки — подсказками и только там, где своего
+        # решения нет: своё слово заказчика всегда важнее чужого. Термин
+        # приходит необязательным и неустоявшимся, поэтому модель его
+        # видит, а проверка сегмент за него не помечает. В потолок он
+        # укладывается вместе со своими.
+        for shared in await self._shared(
+            source_language=source_language,
+            target_language=target_language,
+            known=chosen,
+            limit=limit - len(rows),
+        ):
+            chosen[shared.source_term_normalized] = Term(
+                source=shared.source_term,
+                target=shared.target_term,
+                mandatory=False,
+                note=shared.note,
+                kind=shared.kind,
+                case_sensitive=shared.kind
+                in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
+                settled=False,
+            )
+
+        return Glossary(list(chosen.values()))
+
+    async def load_version(self, version_id: uuid.UUID) -> Glossary:
+        """Глоссарий утверждённой версии — ровно то, что в неё вошло.
+
+        Подсказок общего словаря здесь нет: версия — решение пространства
+        о терминологии книги, и то, чего в неё не взяли, решением не стало.
+        """
+        rows = await self._session.scalars(
+            self.scoped(GlossaryVersionTerm).where(GlossaryVersionTerm.version_id == version_id)
+        )
+
+        return Glossary([term_of(row) for row in rows])
+
+    async def own_terms(
+        self, *, project_id: uuid.UUID | None, source_language: str, target_language: str
+    ) -> list[GlossaryTerm]:
+        """Действующие записи своего словаря для проекта: по одной на термин.
+
+        Термин проекта вытесняет общий термин организации с тем же
+        написанием; снятые не берутся вовсе.
+        """
         query = self.scoped(GlossaryTerm).where(
             GlossaryTerm.source_language == source_language,
             GlossaryTerm.target_language == target_language,
@@ -234,42 +351,11 @@ class GlossaryService(TenantService):
         # затирали их в словаре.
         rows.sort(key=lambda row: row.project_id is not None)
 
-        chosen: dict[str, Term] = {}
+        chosen: dict[str, GlossaryTerm] = {}
         for row in rows:
-            chosen[row.source_term_normalized] = Term(
-                source=row.source_term,
-                target=row.target_term,
-                mandatory=row.mandatory,
-                note=row.note,
-                kind=row.kind,
-                case_sensitive=row.case_sensitive,
-                settled=row.status is GlossaryTermStatus.CONFIRMED,
-                expand_on_first_use=row.expand_on_first_use,
-            )
+            chosen[row.source_term_normalized] = row
 
-        # Общий словарь площадки — подсказками и только там, где своего
-        # решения нет: своё слово заказчика всегда важнее чужого. Термин
-        # приходит необязательным и неустоявшимся, поэтому модель его
-        # видит, а проверка сегмент за него не помечает. В потолок он
-        # укладывается вместе со своими.
-        for shared in await self._shared(
-            source_language=source_language,
-            target_language=target_language,
-            known=chosen,
-            limit=limit - len(rows),
-        ):
-            chosen[shared.source_term_normalized] = Term(
-                source=shared.source_term,
-                target=shared.target_term,
-                mandatory=False,
-                note=shared.note,
-                kind=shared.kind,
-                case_sensitive=shared.kind
-                in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
-                settled=False,
-            )
-
-        return Glossary(list(chosen.values()))
+        return list(chosen.values())
 
     async def _shared(
         self,
@@ -382,7 +468,9 @@ class GlossaryService(TenantService):
         # чужой словарь верен не весь.
         status: GlossaryTermStatus = GlossaryTermStatus.CONFIRMED,
         reference: str | None = None,
-        expand_on_first_use: bool = False,
+        first_use_rule: FirstUseRule = FirstUseRule.NONE,
+        allowed_variants: Sequence[str] = (),
+        domain: str | None = None,
         commit: bool = True,
     ) -> GlossaryTerm:
         """Завести термин либо уточнить существующий.
@@ -405,6 +493,9 @@ class GlossaryService(TenantService):
                 "Непереводимая запись обязана совпадать с исходной: "
                 "смысл вида в том, что строка остаётся как есть"
             )
+
+        variants = clean_variants(allowed_variants, target=target_term, kind=kind)
+        domain = _domain(domain)
 
         # У аббревиатур регистр значим по умолчанию, у обычных терминов — нет.
         # Явно переданное значение важнее умолчания вида.
@@ -436,7 +527,9 @@ class GlossaryService(TenantService):
             existing.case_sensitive = case_sensitive
             existing.status = status
             existing.reference = reference
-            existing.expand_on_first_use = expand_on_first_use
+            existing.first_use_rule = first_use_rule
+            existing.allowed_variants = variants
+            existing.domain = domain
             await self._finish(existing, commit=commit)
 
             return existing
@@ -456,7 +549,9 @@ class GlossaryService(TenantService):
             case_sensitive=case_sensitive,
             status=status,
             reference=reference,
-            expand_on_first_use=expand_on_first_use,
+            first_use_rule=first_use_rule,
+            allowed_variants=variants,
+            domain=domain,
         )
 
         self._session.add(term)
@@ -666,7 +761,12 @@ class GlossaryService(TenantService):
             "status": term.status,
             "case_sensitive": term.kind
             in (GlossaryEntryKind.ABBREVIATION, GlossaryEntryKind.DO_NOT_TRANSLATE),
-            "expand_on_first_use": term.expand_on_first_use,
+            "first_use_rule": term.first_use_rule,
+            # Варианты и область в файлах словаря не приходят. Новой
+            # записи они пустые, а у существующей загрузка их не трогает:
+            # это решения человека поверх чужой базы.
+            "allowed_variants": [],
+            "domain": None,
             "upload_id": upload_id,
         }
 
@@ -740,7 +840,7 @@ class GlossaryService(TenantService):
                     "kind",
                     "status",
                     "case_sensitive",
-                    "expand_on_first_use",
+                    "first_use_rule",
                     "upload_id",
                 )
             }
@@ -770,6 +870,13 @@ class GlossaryService(TenantService):
         if unknown:
             raise InvalidInputError("Нельзя менять поля: " + ", ".join(sorted(unknown)))
 
+        # Пустое значение стирает только то, что бывает пустым: примечание,
+        # источник, область. Пустой перевод или разряд — не правка, а
+        # повреждённая запись, и до базы она доходить не должна.
+        cleared = {name for name, value in changes.items() if value is None} - CLEARABLE_FIELDS
+        if cleared:
+            raise InvalidInputError("Нельзя очистить поля: " + ", ".join(sorted(cleared)))
+
         term = await self._session.scalar(
             self.scoped(GlossaryTerm).where(GlossaryTerm.id == term_id)
         )
@@ -781,6 +888,13 @@ class GlossaryService(TenantService):
 
         if not term.target_term.strip():
             raise InvalidInputError("Перевод термина не может быть пустым")
+
+        # Варианты чистятся и тогда, когда прислан только новый перевод или
+        # разряд: прежний вариант мог совпасть с новым основным переводом.
+        term.allowed_variants = clean_variants(
+            term.allowed_variants, target=term.target_term, kind=term.kind
+        )
+        term.domain = _domain(term.domain)
 
         if term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE and normalize_term(
             term.target_term
@@ -806,3 +920,11 @@ class GlossaryService(TenantService):
 
         await self._session.delete(term)
         await self._session.commit()
+
+
+def _domain(domain: str | None) -> str | None:
+    """Область как её записали, без краевых пробелов; пустая — её нет."""
+    if domain is None:
+        return None
+
+    return _WHITESPACE.sub(" ", domain).strip() or None

@@ -13,9 +13,19 @@ from app.models.catalog import CatalogEntry
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
 from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
+from app.models.glossary_version import (
+    GlossaryScope,
+    GlossaryVersion,
+    GlossaryVersionChange,
+    GlossaryVersionImpact,
+    GlossaryVersionStatus,
+    GlossaryVersionTerm,
+    TermChangeKind,
+)
 from app.models.job import JobState, TranslationJob
 from app.models.master import ChapterMaster
 from app.models.memory import (
+    FirstUseRule,
     GlossaryEntryKind,
     GlossaryTerm,
     GlossaryTermStatus,
@@ -29,7 +39,7 @@ from app.models.segment import Segment, SegmentStatus
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
-from app.models.terminology import TermCandidate, TermCandidateStatus
+from app.models.terminology import TermCandidate, TermCandidateStatus, TerminologyPass
 from app.models.workspace import WorkspaceSettings
 
 __all__ = [
@@ -48,10 +58,17 @@ __all__ = [
     "CodeKind",
     "Document",
     "DocumentStatus",
+    "FirstUseRule",
     "GlossaryEntryKind",
+    "GlossaryScope",
     "GlossaryTerm",
     "GlossaryTermStatus",
     "GlossaryUpload",
+    "GlossaryVersion",
+    "GlossaryVersionChange",
+    "GlossaryVersionImpact",
+    "GlossaryVersionStatus",
+    "GlossaryVersionTerm",
     "Invitation",
     "JobState",
     "Membership",
@@ -72,6 +89,8 @@ __all__ = [
     "SourceValidationResult",
     "TermCandidate",
     "TermCandidateStatus",
+    "TermChangeKind",
+    "TerminologyPass",
     "TranslationJob",
     "TranslationUnit",
     "User",

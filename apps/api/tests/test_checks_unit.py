@@ -6,7 +6,7 @@
 """
 
 from app.models.block import BlockKind
-from app.models.memory import GlossaryEntryKind
+from app.models.memory import FirstUseRule, GlossaryEntryKind
 from app.services import checks
 from app.services.glossary import Glossary, Term
 
@@ -20,7 +20,7 @@ def term(source: str, target: str, **kwargs: object) -> Term:
         kind=kwargs.get("kind", GlossaryEntryKind.TERM),  # type: ignore[arg-type]
         case_sensitive=bool(kwargs.get("case_sensitive", False)),
         settled=bool(kwargs.get("settled", True)),
-        expand_on_first_use=bool(kwargs.get("expand_on_first_use", False)),
+        first_use_rule=kwargs.get("first_use_rule", FirstUseRule.NONE),  # type: ignore[arg-type]
     )
 
 
@@ -146,7 +146,7 @@ def test_verdict_carries_findings_and_score() -> None:
 
 
 def test_first_use_requires_the_abbreviation() -> None:
-    abbreviation = term("MM", "маркет-мейкер", expand_on_first_use=True)
+    abbreviation = term("MM", "маркет-мейкер", first_use_rule=FirstUseRule.EXPAND)
 
     assert checks.first_use_finding(abbreviation, "Маркет-мейкер котирует цены.") is not None
     assert (

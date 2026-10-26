@@ -45,6 +45,7 @@ class CodeKind(str, enum.Enum):
     EQUATION = "equation"
     CODE = "code"
     ISSUE = "issue"  # ERR-0001 — в пределах главы
+    GLOSSARY_VERSION = "glossary_version"  # v1 — в пределах книги
 
 
 class CodeCounter(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):

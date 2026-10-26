@@ -2,11 +2,15 @@
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.document import DocumentStatus
-from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
+from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
+
+# Допустимый вариант перевода — та же строка словаря, что и сам перевод.
+Variant = Annotated[str, Field(min_length=1, max_length=300)]
 
 
 class GlossaryTermCreate(BaseModel):
@@ -31,9 +35,14 @@ class GlossaryTermCreate(BaseModel):
     # Чем решение обосновано: справочник, стандарт, адрес страницы, где
     # термин посмотрели.
     reference: str | None = None
-    # Раскрывать при первом употреблении: «маркет-мейкер (market maker, MM)»,
-    # дальше просто MM.
-    expand_on_first_use: bool = False
+    # Что сделать при первом употреблении: раскрыть сокращение —
+    # «маркет-мейкер (market maker, MM)», дальше просто MM, — или дать
+    # оригинал в скобках.
+    first_use_rule: FirstUseRule = FirstUseRule.NONE
+    # Согласованные варианты перевода помимо основного.
+    allowed_variants: list[Variant] = Field(default_factory=list, max_length=20)
+    # Предметная область, где решение верно: «гидравлика», «электропривод».
+    domain: str | None = Field(default=None, max_length=120)
 
 
 class GlossaryTermUpdate(BaseModel):
@@ -51,7 +60,9 @@ class GlossaryTermUpdate(BaseModel):
     reference: str | None = None
     mandatory: bool | None = None
     case_sensitive: bool | None = None
-    expand_on_first_use: bool | None = None
+    first_use_rule: FirstUseRule | None = None
+    allowed_variants: list[Variant] | None = Field(default=None, max_length=20)
+    domain: str | None = Field(default=None, max_length=120)
 
 
 class GlossaryTermPublic(BaseModel):
@@ -63,13 +74,15 @@ class GlossaryTermPublic(BaseModel):
     target_language: str
     source_term: str
     target_term: str
+    allowed_variants: list[str]
+    domain: str | None
     kind: GlossaryEntryKind
     status: GlossaryTermStatus
     note: str | None
     reference: str | None
     mandatory: bool
     case_sensitive: bool
-    expand_on_first_use: bool
+    first_use_rule: FirstUseRule
     # Откуда запись: «manual», «extracted», «platform», «import:<источник>».
     # Нужна в интерфейсе, чтобы отличить загруженную пачку от ручной работы.
     source: str

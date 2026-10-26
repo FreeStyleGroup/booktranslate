@@ -195,7 +195,9 @@ async def add_glossary_term(
         case_sensitive=payload.case_sensitive,
         status=payload.status,
         reference=payload.reference,
-        expand_on_first_use=payload.expand_on_first_use,
+        first_use_rule=payload.first_use_rule,
+        allowed_variants=payload.allowed_variants,
+        domain=payload.domain,
     )
 
     return GlossaryTermPublic.model_validate(term)

@@ -18,6 +18,7 @@ from app.api.routes import (
     catalog,
     chapters,
     documents,
+    glossary_versions,
     health,
     jobs,
     masters,
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router)
     app.include_router(segments.router)
     app.include_router(terminology.router)
+    app.include_router(glossary_versions.router)
     app.include_router(catalog.router)
     app.include_router(translation.router)
     app.include_router(jobs.router)
