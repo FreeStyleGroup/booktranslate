@@ -11,9 +11,7 @@
 """
 
 import asyncio
-import os
 import re
-import tempfile
 import uuid
 import zipfile
 from dataclasses import dataclass
@@ -34,15 +32,11 @@ from app.models.document import Document, SourceFormat
 from app.services.base import TenantService
 from app.services.context import RequestContext
 from app.services.errors import NotFoundError
-from app.services.parsers import ParsingError, parser_for
+from app.services.parsers import PARSER_VERSION, ParsingError, parser_for
 from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 from app.services.parsers.markup import read_opf
+from app.services.source_files import local_copy
 from app.services.storage import ObjectStorage
-
-# Версия разбора. Поднимается, когда меняется чтение форматов: тот же
-# файл на новой версии читается иначе, и без отметки нельзя объяснить,
-# почему результат разошёлся с прошлым.
-PARSER_VERSION = "2026.10"
 
 # Сколько блоков читать, чтобы ответить на вопрос «текст в файле есть».
 # Первый блок бывает пустым заголовком или колонтитулом, поэтому не один.
@@ -181,25 +175,11 @@ class SourceValidationService(TenantService):
         return result
 
     async def _read(self, document: Document) -> FileFacts:
-        """Забрать файл из хранилища во временный и прочитать сведения.
-
-        Разборщики работают с файлом на диске, а не с потоком: и
-        python-docx, и zipfile читают с произвольного места, чего у потока
-        нет. Временный файл удаляется в любом случае.
-        """
-        descriptor, name = tempfile.mkstemp(prefix="booktranslate-validate-")
-        path = Path(name)
-
-        try:
-            with os.fdopen(descriptor, "wb") as handle:
-                async for chunk in self._storage.stream(document.storage_key):
-                    await asyncio.to_thread(handle.write, chunk)
-
+        """Забрать файл из хранилища во временную копию и прочитать сведения."""
+        async with local_copy(self._storage, document.storage_key) as path:
             # Чтение файла — блокирующая работа с диском. В потоке событий
             # она остановила бы обслуживание остальных запросов.
             return await asyncio.to_thread(read_facts, path, document.source_format)
-        finally:
-            path.unlink(missing_ok=True)
 
     async def _document(self, document_id: uuid.UUID) -> Document:
         document = await self._session.scalar(

@@ -25,6 +25,7 @@ from app.services.parsers.base import ParsedBlock, ParsingError
 # Имена стилей заголовков в русской и английской сборках Word. Сравнение по
 # началу строки: у уровней имена «Heading 1», «Заголовок 2» и так далее.
 _HEADING_PREFIXES = ("heading", "заголовок", "title", "название")
+_TITLE_PREFIXES = ("title", "название")
 _CAPTION_PREFIXES = ("caption", "название объекта", "подпись")
 _LIST_PREFIXES = ("list paragraph", "абзац списка", "list bullet", "list number", "маркированный")
 
@@ -55,11 +56,13 @@ class DocxParser:
                 paragraph = Paragraph(child, document)
                 text = paragraph.text.strip()
                 if text:
-                    yield ParsedBlock(
-                        text=text,
-                        kind=_kind_of(paragraph),
-                        location={"block": index, "style": _style_name(paragraph)},
-                    )
+                    kind = _kind_of(paragraph)
+                    place: dict[str, object] = {"block": index, "style": _style_name(paragraph)}
+
+                    if kind is SegmentKind.HEADING:
+                        place["level"] = _heading_level(_style_name(paragraph))
+
+                    yield ParsedBlock(text=text, kind=kind, location=place)
                     index += 1
                 continue
 
@@ -94,16 +97,38 @@ def _style_name(paragraph: Paragraph) -> str:
 def _kind_of(paragraph: Paragraph) -> SegmentKind:
     name = _style_name(paragraph).strip().lower()
 
-    if name.startswith(_HEADING_PREFIXES):
-        return SegmentKind.HEADING
-
+    # Подпись проверяется раньше заголовка: в русской сборке Word стиль
+    # подписи называется «Название объекта», а «название» — это ещё и
+    # стиль заголовка книги. В обратном порядке каждая подпись к рисунку
+    # становилась заголовком — и отдельным разделом главы.
     if name.startswith(_CAPTION_PREFIXES):
         return SegmentKind.CAPTION
+
+    if name.startswith(_HEADING_PREFIXES):
+        return SegmentKind.HEADING
 
     if name.startswith(_LIST_PREFIXES) or _is_numbered(paragraph):
         return SegmentKind.LIST_ITEM
 
     return SegmentKind.PARAGRAPH
+
+
+def _heading_level(style: str) -> int:
+    """Уровень заголовка по имени стиля: «Heading 2» и «Заголовок 2» — второй.
+
+    Заголовок документа («Title», «Название») стоит над всеми уровнями и
+    получает нулевой: он встречается один раз и главой не является. Стиль
+    заголовка без номера — первый уровень: так его и показывает Word.
+    """
+    parts = style.strip().split()
+
+    if parts and parts[-1].isdigit():
+        return int(parts[-1])
+
+    if style.strip().lower().startswith(_TITLE_PREFIXES):
+        return 0
+
+    return 1
 
 
 def _is_numbered(paragraph: Paragraph) -> bool:

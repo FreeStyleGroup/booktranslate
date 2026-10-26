@@ -11,6 +11,7 @@ import pytest
 from app.models.document import SourceFormat
 from app.models.segment import SegmentKind
 from app.services.parsers import ParsingError, is_supported, parser_for
+from app.services.parsers.docx import DocxParser
 from app.services.parsers.markup import EpubParser, HtmlParser
 from app.services.parsers.pdf import PdfParser
 from app.services.parsers.plain import MarkdownParser, PlainTextParser
@@ -63,7 +64,31 @@ def test_pdf_restores_paragraphs_headings_and_lists(tmp_path: Path) -> None:
         ("Replace the filter", SegmentKind.LIST_ITEM),
         ("Close the valve", SegmentKind.LIST_ITEM),
     ]
-    assert blocks[0].location == {"page": 1, "block": 0}
+    # Единственный заголовок — самый крупный, значит первого уровня.
+    assert blocks[0].location == {"page": 1, "block": 0, "level": 1}
+    # У абзаца уровня нет: уровень — свойство заголовка, а не места.
+    assert "level" not in blocks[1].location
+
+
+def test_pdf_heading_level_is_rank_of_its_size(tmp_path: Path) -> None:
+    """Уровень в PDF — ранг кегля среди заголовков книги, а не порог в пунктах."""
+    page = PdfPage(
+        lines=(
+            PdfLine("Chapter 1. Pumps", size=20),
+            PdfLine(""),
+            PdfLine("Pumps move liquids through the system."),
+            PdfLine(""),
+            PdfLine("1.1 Centrifugal pumps", size=15),
+            PdfLine(""),
+            PdfLine("They use a rotating impeller."),
+        )
+    )
+
+    blocks = _pdf_blocks(tmp_path, [page])
+    levels = {block.text: block.location.get("level") for block in blocks}
+
+    assert levels["Chapter 1. Pumps"] == 1
+    assert levels["1.1 Centrifugal pumps"] == 2
 
 
 def test_pdf_drops_running_headers_and_page_numbers(tmp_path: Path) -> None:
@@ -265,3 +290,58 @@ def test_epub_without_container_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ParsingError):
         list(EpubParser().parse(write(tmp_path, "empty.epub", buffer.getvalue())))
+
+
+def test_html_heading_carries_its_level(tmp_path: Path) -> None:
+    """Уровень заголовка — из тега: по нему предлагаются границы глав."""
+    source = "<h1>Книга</h1><h2>Глава</h2><h3>Раздел</h3><p>Текст.</p>"
+    blocks = list(HtmlParser().parse(write(tmp_path, "page.html", source)))
+
+    assert [block.location.get("level") for block in blocks] == [1, 2, 3, None]
+
+
+def _docx_with_styles(tmp_path: Path, paragraphs: list[tuple[str, str]]) -> Path:
+    """DOCX с абзацами заданных стилей; недостающий стиль заводится.
+
+    Собирается самой python-docx: проверяется разбор, а не умение теста
+    воспроизвести формат Word.
+    """
+    import docx
+    from docx.enum.style import WD_STYLE_TYPE
+
+    document = docx.Document()
+
+    for style, text in paragraphs:
+        if style not in [item.name for item in document.styles]:
+            document.styles.add_style(style, WD_STYLE_TYPE.PARAGRAPH)
+        document.add_paragraph(text, style=style)
+
+    path = tmp_path / "styles.docx"
+    document.save(str(path))
+
+    return path
+
+
+def test_docx_heading_level_comes_from_style(tmp_path: Path) -> None:
+    path = _docx_with_styles(
+        tmp_path,
+        [
+            ("Title", "Руководство"),
+            ("Heading 1", "Глава первая"),
+            ("Heading 2", "Раздел"),
+            ("Normal", "Абзац."),
+        ],
+    )
+    blocks = list(DocxParser().parse(path))
+
+    # Заголовок документа — над всеми уровнями: он один и главой не является.
+    assert [block.location.get("level") for block in blocks] == [0, 1, 2, None]
+
+
+def test_russian_caption_style_is_not_a_heading(tmp_path: Path) -> None:
+    """«Название объекта» — подпись, хотя и начинается как стиль заголовка."""
+    path = _docx_with_styles(tmp_path, [("Название объекта", "Рисунок 1. Насос")])
+    blocks = list(DocxParser().parse(path))
+
+    assert blocks[0].kind is SegmentKind.CAPTION
+    assert "level" not in blocks[0].location

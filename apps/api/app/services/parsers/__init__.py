@@ -12,6 +12,16 @@ from app.services.parsers.markup import EpubParser, HtmlParser
 from app.services.parsers.pdf import PdfParser
 from app.services.parsers.plain import MarkdownParser, PlainTextParser
 
+# Версия разбора. Поднимается, когда меняется то, что разборщики отдают:
+# тот же файл на новой версии нарезается иначе, а границы глав заданы
+# номерами блоков — без отметки версии нельзя ни объяснить расхождение с
+# прошлым результатом, ни понять, что номера устарели.
+#
+# 2026.10.1 — у заголовков появился уровень (HTML/EPUB по тегу, DOCX по
+# стилю, PDF по рангу кегля), русская подпись DOCX перестала быть
+# заголовком.
+PARSER_VERSION = "2026.10.1"
+
 _PARSERS: dict[SourceFormat, type[DocumentParser]] = {
     SourceFormat.TXT: PlainTextParser,
     SourceFormat.MARKDOWN: MarkdownParser,
@@ -38,6 +48,7 @@ def is_supported(source_format: SourceFormat) -> bool:
 
 
 __all__ = [
+    "PARSER_VERSION",
     "DocumentParser",
     "ParsedBlock",
     "ParsingError",
