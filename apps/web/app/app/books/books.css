@@ -1,0 +1,107 @@
+/* Карточка книги: комплект исходников.
+
+   Отдельным файлом раздела, по правилу проекта: общие части интерфейса
+   лежат в ui/ui.css, а то, что нужно только книге, — здесь. */
+
+.bk-head__side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Предупреждение о разных изданиях — плашкой, а не строкой: оно про
+   комплект целиком и должно читаться раньше состава, но это именно
+   предупреждение, а не ошибка, — отсюда жёлтый, а не красный. */
+.bk-mismatch {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 14px 18px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--warn-tint);
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+.bk-mismatch > span:first-child {
+  color: var(--warn);
+}
+
+.bk-kit {
+  display: grid;
+  gap: 14px;
+}
+
+.bk-src {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  background: var(--paper-tint);
+}
+
+.bk-src__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.bk-src__name {
+  display: grid;
+  gap: 3px;
+  /* Длинное имя файла не должно растягивать карточку: оно переносится, а
+     управление ролью остаётся на своём месте. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bk-src__name b {
+  font-weight: 600;
+}
+
+.bk-src__role {
+  /* Выбор роли — главное действие в строке, поэтому ему отдана
+     фиксированная ширина: подпись под ним меняется вместе с выбором, и
+     прыгающая ширина читалась бы как перерисовка всей карточки. */
+  width: 260px;
+  flex: none;
+}
+
+.bk-src__facts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.bk-src__warn {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--warn);
+}
+
+/* Отделено линией: включить уже загруженный файл — другой путь, а не
+   продолжение загрузки с диска. */
+.bk-free {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 760px) {
+  .bk-src__role {
+    width: 100%;
+  }
+}
