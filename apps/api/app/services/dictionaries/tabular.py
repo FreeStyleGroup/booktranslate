@@ -11,7 +11,7 @@
 import csv
 import io
 
-from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
+from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
 from app.services.dictionaries.base import DictionaryContents, DictionaryError, ImportedTerm
 from app.services.parsers.plain import decode_text
 
@@ -168,6 +168,8 @@ def _add_row(contents: DictionaryContents, row: list[str], columns: dict[str, in
             status=_STATUSES.get(cell("status", 4).casefold(), GlossaryTermStatus.PROPOSED),
             note=cell("note", 2) or None,
             reference=cell("reference", 5) or None,
-            expand_on_first_use=kind is GlossaryEntryKind.ABBREVIATION,
+            first_use_rule=FirstUseRule.EXPAND
+            if kind is GlossaryEntryKind.ABBREVIATION
+            else FirstUseRule.NONE,
         )
     )

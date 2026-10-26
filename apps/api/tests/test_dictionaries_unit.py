@@ -10,7 +10,7 @@ import zipfile
 
 import pytest
 
-from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
+from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
 from app.services.dictionaries import DictionaryError, read_dictionary
 from app.services.dictionaries.tabular import read_table
 from app.services.dictionaries.tbx import read_tbx
@@ -65,7 +65,7 @@ def test_kind_column_is_understood() -> None:
 
     assert contents.terms[0].kind is GlossaryEntryKind.ABBREVIATION
     # Аббревиатуру при первом употреблении положено раскрывать.
-    assert contents.terms[0].expand_on_first_use is True
+    assert contents.terms[0].first_use_rule is FirstUseRule.EXPAND
 
 
 def test_empty_file_is_refused() -> None:
@@ -171,7 +171,7 @@ def test_registry_reads_abbreviation_with_expansion() -> None:
     assert term.target_term == "маркет-мейкер"
     assert term.kind is GlossaryEntryKind.ABBREVIATION
     assert term.status is GlossaryTermStatus.NEEDS_UNIFICATION
-    assert term.expand_on_first_use is True
+    assert term.first_use_rule is FirstUseRule.EXPAND
     # По ссылке запись находят в исходном реестре: спор о термине решается
     # возвратом к этому месту.
     assert term.reference is not None

@@ -178,7 +178,7 @@ async def test_abbreviation_keeps_expansion_in_note(db_client: AsyncClient) -> N
     assert term["note"] == "Programmable Logic Controller"
     # Аббревиатуру при первом употреблении принято раскрывать — это правило
     # технического текста, и по умолчанию оно включено.
-    assert term["expand_on_first_use"] is True
+    assert term["first_use_rule"] == "expand"
 
 
 @requires_database

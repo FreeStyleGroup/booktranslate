@@ -24,7 +24,7 @@ import re
 import zipfile
 from typing import Any
 
-from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
+from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
 from app.services.dictionaries.base import DictionaryContents, DictionaryError, ImportedTerm
 from app.services.parsers.archives import ArchiveTooLargeError, check_archive
 
@@ -181,7 +181,9 @@ def _flush(
             reference=_reference(identifier, meta),
             # Расшифровка есть — значит при первом употреблении её положено
             # раскрыть; так это и записано в самом реестре.
-            expand_on_first_use=bool(expansion) and kind is GlossaryEntryKind.ABBREVIATION,
+            first_use_rule=FirstUseRule.EXPAND
+            if expansion and kind is GlossaryEntryKind.ABBREVIATION
+            else FirstUseRule.NONE,
         )
     )
 

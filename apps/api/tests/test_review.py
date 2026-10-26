@@ -315,7 +315,7 @@ async def with_two_kinds_of_findings(client: AsyncClient, account: Account) -> s
             "source_term": "MM",
             "target_term": "маркет-мейкер",
             "kind": "abbreviation",
-            "expand_on_first_use": True,
+            "first_use_rule": "expand",
         },
     ):
         response = await client.post(

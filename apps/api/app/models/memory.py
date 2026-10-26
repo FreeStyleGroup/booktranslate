@@ -121,6 +121,23 @@ class GlossaryTermStatus(str, enum.Enum):
     RETIRED = "retired"  # снят: дубликат или ошибка, в работу не идёт
 
 
+class FirstUseRule(str, enum.Enum):
+    """Что положено сделать с термином при первом употреблении в книге.
+
+    Правил два, и они разные по смыслу, хотя проверяются одинаково — по
+    тому, что рядом с переводом стоит исходная форма. Сокращение
+    раскрывают: «программируемый логический контроллер (ПЛК)», дальше
+    просто ПЛК. Термину, у которого в языке перевода нет устоявшегося
+    названия, при первом употреблении дают оригинал: «предохранительный
+    клапан (relief valve)». Модели нужно знать, какое из двух от неё ждут,
+    — поэтому перечисление, а не флажок «раскрывать».
+    """
+
+    NONE = "none"  # ничего особого
+    EXPAND = "expand"  # раскрыть сокращение
+    ORIGINAL = "original"  # дать оригинал в скобках
+
+
 class GlossaryTerm(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     """Запись словаря: термин, аббревиатура или непереводимое."""
 
@@ -171,6 +188,21 @@ class GlossaryTerm(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     source_term_normalized: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
     target_term: Mapped[str] = mapped_column(String(300), nullable=False)
 
+    # Допустимые варианты перевода помимо основного: «ПЛК» рядом с
+    # «программируемым контроллером», «насос-дозатор» рядом с «дозирующим
+    # насосом». Принятое написание одно — оно и уходит модели, — но
+    # проверка не должна помечать перевод, где стоит согласованный
+    # заказчиком вариант. Список, а не строка через запятую: в самом
+    # варианте запятая бывает.
+    allowed_variants: Mapped[list[str]] = mapped_column(
+        postgresql.ARRAY(String(300)), nullable=False, default=list
+    )
+
+    # Предметная область, в которой решение верно: «гидравлика»,
+    # «электропривод». У `valve` в гидравлике и в электронике разные
+    # переводы, и без пометки второй человек примет чужое решение за ошибку.
+    domain: Mapped[str | None] = mapped_column(String(120))
+
     # Пояснение переводчику: чем этот «клапан» отличается от соседнего.
     note: Mapped[str | None] = mapped_column(Text)
 
@@ -188,10 +220,14 @@ class GlossaryTerm(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         index=True,
     )
 
-    # Раскрывать ли при первом употреблении: «маркет-мейкер (market maker,
-    # MM)», дальше просто MM. Это правило технического текста, и его можно
-    # проверить машинно — но только если оно записано, а не подразумевается.
-    expand_on_first_use: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Что сделать при первом употреблении: раскрыть сокращение или дать
+    # оригинал. Это правило технического текста, и его можно проверить
+    # машинно — но только если оно записано, а не подразумевается.
+    first_use_rule: Mapped[FirstUseRule] = mapped_column(
+        Enum(FirstUseRule, name="first_use_rule", native_enum=True),
+        nullable=False,
+        default=FirstUseRule.NONE,
+    )
 
     # Откуда термин взялся: «manual» — завёл человек, «extracted» — вытащен
     # из самого документа, «import:<источник>» — загружен из внешней базы

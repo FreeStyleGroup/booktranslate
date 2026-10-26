@@ -54,6 +54,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.block import BlockKind
 from app.models.document import Document, DocumentStatus
+from app.models.memory import FirstUseRule
 from app.models.organization import Role
 from app.models.project import Project
 from app.models.segment import Segment, SegmentStatus
@@ -740,7 +741,9 @@ class TranslationService(TenantService):
         требовать раскрытия от сорокового по счёту сегмента было бы ровно
         наоборот.
         """
-        expandable = {term.source for term in glossary.terms if term.expand_on_first_use}
+        expandable = {
+            term.source for term in glossary.terms if term.first_use_rule is not FirstUseRule.NONE
+        }
         if not expandable:
             return
 
