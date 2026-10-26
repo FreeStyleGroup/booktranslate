@@ -148,6 +148,28 @@ export const KIND_ONE: Record<string, string> = {
   code: "Код",
 };
 
+/** Специальный объект главы — одним словом, как его называют в книге. */
+export const OBJECT_ONE: Record<string, string> = {
+  figure: "Рисунок",
+  table: "Таблица",
+  equation: "Формула",
+  code: "Листинг",
+};
+
+/** Вкладки объектов главы. Порядок — порядок вкладок. */
+export const OBJECT_TABS: { type: string; title: string; empty: string }[] = [
+  { type: "figure", title: "Рисунки", empty: "Рисунков в этой версии мастера нет." },
+  { type: "table", title: "Таблицы", empty: "Таблиц в этой версии мастера нет." },
+  { type: "equation", title: "Формулы", empty: "Выносных формул в этой версии мастера нет." },
+  { type: "code", title: "Код", empty: "Листингов в этой версии мастера нет." },
+];
+
+/** Как блок упоминает объект: ссылкой автора или номером в тексте. */
+export const MENTION_LABEL: Record<string, string> = {
+  link: "ссылка",
+  label: "по номеру",
+};
+
 /** Разряд записи словаря: что это за слово, а не «договорились ли мы». */
 export const GLOSSARY_KIND: Record<string, string> = {
   term: "Термин",

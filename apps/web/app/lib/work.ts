@@ -176,11 +176,108 @@ export type ChapterMaster = {
   parser_version: string;
   boundary_version: number;
   block_count: number;
+  object_count: number;
   checksum: string;
   created_by_id: string | null;
   approved_by_id: string | null;
   approved_at: string | null;
   created_at: string;
+};
+
+export type ObjectType = "figure" | "table" | "equation" | "code";
+
+/** Дерево формулы MathML для показа: `[тег, {атрибуты}, ...дети]`.
+ *  Теги и атрибуты в нём — только разрешённые: перечень закрыт в API. */
+export type MathTree = [string, Record<string, string>, ...(MathTree | string)[]];
+
+/** Изображение рисунка. Суммы нет — изображение в исходнике не нашлось. */
+export type ObjectImage = {
+  sha256: string | null;
+  media_type: string | null;
+  size: number | null;
+  src: string | null;
+  alt: string | null;
+};
+
+export type TableCell = {
+  row: number;
+  col: number;
+  rowspan: number;
+  colspan: number;
+  header: boolean;
+};
+
+/** Содержимое объекта по виду: изображения рисунка, сетка таблицы,
+ *  запись и дерево формулы, язык листинга. */
+export type ObjectPayload = {
+  images?: ObjectImage[];
+  rows?: number;
+  cols?: number;
+  cells?: TableCell[];
+  notation?: "mathml" | "omml";
+  text?: string;
+  preview?: MathTree | null;
+  normalized?: string;
+  // Запись формулы как есть — только в карточке объекта.
+  raw?: string;
+  language?: string | null;
+};
+
+/** Рисунок, таблица, формула или листинг в составе версии мастера.
+ *  `at` — сколько блоков версии стоит перед объектом. */
+export type BookObject = {
+  id: string;
+  chapter_id: string;
+  code: string;
+  full_code: string;
+  type: ObjectType;
+  label: string | null;
+  checksum: string;
+  active: boolean;
+  at: number;
+  before_code: string | null;
+  caption: string | null;
+  caption_code: string | null;
+  content_codes: string[];
+  references: number;
+  payload: ObjectPayload;
+};
+
+/** Блок, относящийся к объекту: ячейка, листинг, подпись, упоминание. */
+export type BlockRef = {
+  id: string;
+  code: string;
+  full_code: string;
+  kind: string;
+  text: string;
+  active: boolean;
+  row: number | null;
+  column: number | null;
+};
+
+export type ObjectMention = {
+  block: BlockRef;
+  chapter_id: string;
+  kind: "link" | "label";
+  phrase: string;
+};
+
+export type ObjectDetail = BookObject & {
+  book_id: string;
+  master_id: string;
+  master_label: string;
+  content: BlockRef[];
+  caption_block: BlockRef | null;
+  mentions: ObjectMention[];
+  parent_code: string | null;
+};
+
+export type FoundObject = {
+  book_id: string;
+  book_code: string;
+  chapter_id: string;
+  object_id: string;
+  full_code: string;
 };
 
 /** Блок главы с постоянным кодом. `ordinal` — место в показываемой
