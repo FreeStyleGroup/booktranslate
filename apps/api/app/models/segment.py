@@ -15,6 +15,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.models.block import BlockKind
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
 
 
@@ -25,24 +26,6 @@ class SegmentStatus(str, enum.Enum):
     EDITED = "edited"  # правил человек
     APPROVED = "approved"  # принят редактором
     FLAGGED = "flagged"  # проверка нашла проблему
-
-
-class SegmentKind(str, enum.Enum):
-    """Роль сегмента в документе.
-
-    Заголовок, подпись к рисунку и предупреждение переводятся по-разному:
-    у заголовка свои правила краткости, у предупреждения цена ошибки выше
-    всего. Тип известен после разбора исходника и влияет и на промпт, и на
-    строгость проверок.
-    """
-
-    PARAGRAPH = "paragraph"
-    HEADING = "heading"
-    LIST_ITEM = "list_item"
-    TABLE_CELL = "table_cell"
-    CAPTION = "caption"
-    WARNING = "warning"
-    CODE = "code"
 
 
 class Segment(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
@@ -61,10 +44,10 @@ class Segment(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     )
 
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[SegmentKind] = mapped_column(
-        Enum(SegmentKind, name="segment_kind", native_enum=True),
+    kind: Mapped[BlockKind] = mapped_column(
+        Enum(BlockKind, name="segment_kind", native_enum=True),
         nullable=False,
-        default=SegmentKind.PARAGRAPH,
+        default=BlockKind.PARAGRAPH,
     )
     status: Mapped[SegmentStatus] = mapped_column(
         Enum(SegmentStatus, name="segment_status", native_enum=True),

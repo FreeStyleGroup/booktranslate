@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 
 
 class ExportError(Exception):
@@ -34,7 +34,7 @@ class TranslatedBlock:
     """
 
     text: str
-    kind: SegmentKind = SegmentKind.PARAGRAPH
+    kind: BlockKind = BlockKind.PARAGRAPH
     location: dict[str, Any] = field(default_factory=dict)
     # Переведён ли блок на самом деле. Ложь означает, что в тексте лежит
     # исходник: документ собирают до конца перевода и об этом предупреждают.

@@ -11,7 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.segment import SegmentKind, SegmentStatus
+from app.models.block import BlockKind
+from app.models.segment import SegmentStatus
 
 
 class SegmentPublic(BaseModel):
@@ -20,7 +21,7 @@ class SegmentPublic(BaseModel):
     id: uuid.UUID
     document_id: uuid.UUID
     position: int
-    kind: SegmentKind
+    kind: BlockKind
     status: SegmentStatus
     source_text: str
     target_text: str | None

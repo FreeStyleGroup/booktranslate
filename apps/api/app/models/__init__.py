@@ -6,12 +6,14 @@
 """
 
 from app.models.audit import AuditEvent
+from app.models.block import Block, BlockKind, SegmentChunk
 from app.models.book import BookEdition, BookStatus, SourceValidationResult
 from app.models.catalog import CatalogEntry
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
 from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
 from app.models.job import JobState, TranslationJob
+from app.models.master import ChapterMaster
 from app.models.memory import (
     GlossaryEntryKind,
     GlossaryTerm,
@@ -22,7 +24,7 @@ from app.models.memory import (
 from app.models.notification import NotificationSettings
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.project import Project
-from app.models.segment import Segment, SegmentKind, SegmentStatus
+from app.models.segment import Segment, SegmentStatus
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
@@ -31,11 +33,14 @@ from app.models.workspace import WorkspaceSettings
 
 __all__ = [
     "AuditEvent",
+    "Block",
+    "BlockKind",
     "BookEdition",
     "BookStatus",
     "BoundaryStatus",
     "CatalogEntry",
     "Chapter",
+    "ChapterMaster",
     "ChapterOrigin",
     "CodeCounter",
     "CodeKind",
@@ -54,7 +59,7 @@ __all__ = [
     "RefreshSession",
     "Role",
     "Segment",
-    "SegmentKind",
+    "SegmentChunk",
     "SegmentStatus",
     "SharedTerm",
     "SourceFormat",

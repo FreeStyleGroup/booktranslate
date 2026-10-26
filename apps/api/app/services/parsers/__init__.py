@@ -20,7 +20,9 @@ from app.services.parsers.plain import MarkdownParser, PlainTextParser
 # 2026.10.1 — у заголовков появился уровень (HTML/EPUB по тегу, DOCX по
 # стилю, PDF по рангу кегля), русская подпись DOCX перестала быть
 # заголовком.
-PARSER_VERSION = "2026.10.1"
+# 2026.10.2 — листинги кода знак в знак: `<pre>` больше не схлопывается в
+# строку, у блока кода Markdown не срезается отступ первой строки.
+PARSER_VERSION = "2026.10.2"
 
 _PARSERS: dict[SourceFormat, type[DocumentParser]] = {
     SourceFormat.TXT: PlainTextParser,

@@ -38,7 +38,7 @@ from pdfminer.pdftypes import PDFException
 from pdfminer.psparser import PSException
 
 from app.core.config import get_settings
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.parsers.base import ParsedBlock, ParsingError
 
 # Насколько крупнее основного текста должен быть блок, чтобы считаться
@@ -84,7 +84,7 @@ class _Piece(NamedTuple):
     """Блок книги, собранный из блока pdfminer, — с кеглем для уровня."""
 
     text: str
-    kind: SegmentKind
+    kind: BlockKind
     page: int
     size: float
 
@@ -130,7 +130,7 @@ class PdfParser:
         for index, piece in enumerate(merged):
             place: dict[str, object] = {"page": piece.page, "block": index}
 
-            if piece.kind is SegmentKind.HEADING:
+            if piece.kind is BlockKind.HEADING:
                 place["level"] = levels[piece.size]
 
             yield ParsedBlock(text=piece.text, kind=piece.kind, location=place)
@@ -274,7 +274,7 @@ def _is_furniture(box: _Box, repeated: set[str]) -> bool:
     return len(box.lines) == 1 and _PAGE_NUMBER.match(text) is not None
 
 
-def _blocks_of(box: _Box, body_size: float) -> Iterator[tuple[str, SegmentKind]]:
+def _blocks_of(box: _Box, body_size: float) -> Iterator[tuple[str, BlockKind]]:
     """Блок pdfminer — в один или несколько блоков книги.
 
     Список pdfminer собирает в один блок: пункты стоят строка под строкой
@@ -283,7 +283,7 @@ def _blocks_of(box: _Box, body_size: float) -> Iterator[tuple[str, SegmentKind]]
     """
     if _looks_like_list(box.lines):
         for item in _split_items(box.lines):
-            yield item, SegmentKind.LIST_ITEM
+            yield item, BlockKind.LIST_ITEM
         return
 
     text = _join(box.lines)
@@ -326,8 +326,8 @@ def _merged(pieces: Iterator[_Piece]) -> Iterator[_Piece]:
     for piece in pieces:
         if (
             pending is not None
-            and piece.kind is SegmentKind.PARAGRAPH
-            and pending.kind is SegmentKind.PARAGRAPH
+            and piece.kind is BlockKind.PARAGRAPH
+            and pending.kind is BlockKind.PARAGRAPH
             and pending.page == piece.page
             and _continues(pending.text, piece.text)
         ):
@@ -353,7 +353,7 @@ def _heading_levels(pieces: list[_Piece]) -> dict[float, int]:
     шестого ранга — шестой: глубже уровней не бывает ни в HTML, ни в DOCX.
     """
     sizes = sorted(
-        {piece.size for piece in pieces if piece.kind is SegmentKind.HEADING}, reverse=True
+        {piece.size for piece in pieces if piece.kind is BlockKind.HEADING}, reverse=True
     )
 
     return {size: min(rank, MAX_HEADING_LEVEL) for rank, size in enumerate(sizes, start=1)}
@@ -393,12 +393,12 @@ def _join(lines: list[str]) -> str:
     return text
 
 
-def _kind_of(box: _Box, text: str, body_size: float) -> SegmentKind:
+def _kind_of(box: _Box, text: str, body_size: float) -> BlockKind:
     if _WARNING.match(text):
-        return SegmentKind.WARNING
+        return BlockKind.WARNING
 
     if _CAPTION.match(text):
-        return SegmentKind.CAPTION
+        return BlockKind.CAPTION
 
     letters = [char for char in text if char.isalpha()]
     digits = sum(1 for char in text if char.isdigit())
@@ -409,7 +409,7 @@ def _kind_of(box: _Box, text: str, body_size: float) -> SegmentKind:
     short = len(text) <= HEADING_MAX_CHARS and len(box.lines) <= HEADING_MAX_LINES
 
     if wordy and short and box.size >= body_size * HEADING_SIZE_RATIO:
-        return SegmentKind.HEADING
+        return BlockKind.HEADING
 
     # Строка прописными — заголовок и в основном кегле: «ТЕХНИЧЕСКИЕ
     # ХАРАКТЕРИСТИКИ». Аббревиатура из трёх букв в счёт не идёт.
@@ -420,9 +420,9 @@ def _kind_of(box: _Box, text: str, body_size: float) -> SegmentKind:
         and len(letters) >= 4
         and all(c.isupper() for c in letters)
     ):
-        return SegmentKind.HEADING
+        return BlockKind.HEADING
 
-    return SegmentKind.PARAGRAPH
+    return BlockKind.PARAGRAPH
 
 
 def _pages_word(count: int) -> str:

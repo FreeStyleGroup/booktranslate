@@ -10,7 +10,7 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 from app.services.parsers.base import ParsedBlock, ParsingError
 
 # Кодировки в порядке убывания вероятности. UTF-8 сегодня почти всегда; CP1251
@@ -76,20 +76,29 @@ class MarkdownParser:
         code: list[str] = []
         code_start = 0
 
-        def flush(kind: SegmentKind, body: list[str], line_no: int) -> ParsedBlock | None:
+        def flush(kind: BlockKind, body: list[str], line_no: int) -> ParsedBlock | None:
+            # Листинг — знак в знак: отступ первой строки такой же текст, как
+            # остальное, и `strip()` срезал бы его. Отбрасываются только
+            # пустые строки по краям — они не в листинге, а вокруг него.
+            if kind is BlockKind.CODE:
+                code_text = "\n".join(body).strip("\n")
+                if not code_text.strip():
+                    return None
+                return ParsedBlock(text=code_text, kind=kind, location={"line": line_no})
+
             text = "\n".join(body).strip()
             return ParsedBlock(text=text, kind=kind, location={"line": line_no}) if text else None
 
         for number, line in enumerate(lines, start=1):
             if _FENCE.match(line):
                 if in_code:
-                    block = flush(SegmentKind.CODE, code, code_start)
+                    block = flush(BlockKind.CODE, code, code_start)
                     if block is not None:
                         yield block
                     code = []
                     in_code = False
                 else:
-                    block = flush(SegmentKind.PARAGRAPH, buffer, buffer_start)
+                    block = flush(BlockKind.PARAGRAPH, buffer, buffer_start)
                     if block is not None:
                         yield block
                     buffer = []
@@ -107,7 +116,7 @@ class MarkdownParser:
             # Заголовок и пункт списка — сами по себе блок: они не
             # продолжают предыдущий абзац и не сливаются со следующим.
             if heading or item or not line.strip():
-                block = flush(SegmentKind.PARAGRAPH, buffer, buffer_start)
+                block = flush(BlockKind.PARAGRAPH, buffer, buffer_start)
                 if block is not None:
                     yield block
                 buffer = []
@@ -115,13 +124,13 @@ class MarkdownParser:
                 if heading:
                     yield ParsedBlock(
                         text=heading.group(2).strip(),
-                        kind=SegmentKind.HEADING,
+                        kind=BlockKind.HEADING,
                         location={"line": number, "level": len(heading.group(1))},
                     )
                 elif item:
                     yield ParsedBlock(
                         text=item.group(1).strip(),
-                        kind=SegmentKind.LIST_ITEM,
+                        kind=BlockKind.LIST_ITEM,
                         location={"line": number},
                     )
 
@@ -135,7 +144,7 @@ class MarkdownParser:
         # Незакрытая тройная кавычка в конце файла — обычное дело в черновике;
         # накопленное отдаём как код, а не теряем.
         block = flush(
-            SegmentKind.CODE if in_code else SegmentKind.PARAGRAPH,
+            BlockKind.CODE if in_code else BlockKind.PARAGRAPH,
             code if in_code else buffer,
             code_start if in_code else buffer_start,
         )

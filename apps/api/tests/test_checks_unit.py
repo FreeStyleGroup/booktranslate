@@ -5,8 +5,8 @@
 читать через день, и вместе с мусором перестаёт видеть настоящие ошибки.
 """
 
+from app.models.block import BlockKind
 from app.models.memory import GlossaryEntryKind
-from app.models.segment import SegmentKind
 from app.services import checks
 from app.services.glossary import Glossary, Term
 
@@ -26,7 +26,7 @@ def term(source: str, target: str, **kwargs: object) -> Term:
 
 def run(source: str, target: str, *, terms: list[Term] | None = None) -> list[str]:
     findings = checks.run_checks(
-        source, target, glossary=Glossary(terms or []), kind=SegmentKind.PARAGRAPH
+        source, target, glossary=Glossary(terms or []), kind=BlockKind.PARAGRAPH
     )
 
     return [finding.check for finding in findings]
@@ -81,7 +81,7 @@ def test_short_identical_string_is_not_untranslated() -> None:
 def test_code_is_allowed_to_stay_the_same() -> None:
     text = "systemctl restart application.service --now"
 
-    findings = checks.run_checks(text, text, glossary=Glossary([]), kind=SegmentKind.CODE)
+    findings = checks.run_checks(text, text, glossary=Glossary([]), kind=BlockKind.CODE)
 
     assert [item.check for item in findings] == []
 
@@ -89,7 +89,7 @@ def test_code_is_allowed_to_stay_the_same() -> None:
 def test_empty_translation_is_reported_alone() -> None:
     """Пустой перевод — это отсутствие перевода; остальные придирки к нему бессмысленны."""
     findings = checks.run_checks(
-        "Tighten to 45 Nm.", "   ", glossary=Glossary([]), kind=SegmentKind.PARAGRAPH
+        "Tighten to 45 Nm.", "   ", glossary=Glossary([]), kind=BlockKind.PARAGRAPH
     )
 
     assert [item.check for item in findings] == ["empty"]
@@ -114,13 +114,13 @@ def test_unsettled_term_is_quiet() -> None:
 
 def test_score_puts_worse_segment_first() -> None:
     bad = checks.run_checks(
-        "Tighten to 45 Nm.", "   ", glossary=Glossary([]), kind=SegmentKind.PARAGRAPH
+        "Tighten to 45 Nm.", "   ", glossary=Glossary([]), kind=BlockKind.PARAGRAPH
     )
     mild = checks.run_checks(
         "Open the valve.",
         "Откройте вентиль.",
         glossary=Glossary([term("valve", "клапан")]),
-        kind=SegmentKind.PARAGRAPH,
+        kind=BlockKind.PARAGRAPH,
     )
 
     assert checks.score(bad) < checks.score(mild) < 1.0
@@ -135,7 +135,7 @@ def test_verdict_carries_findings_and_score() -> None:
         "Tighten to 45 Nm.",
         "Затянуть моментом 40 Н·м.",
         glossary=Glossary([]),
-        kind=SegmentKind.PARAGRAPH,
+        kind=BlockKind.PARAGRAPH,
     )
 
     verdict = checks.as_json(findings)

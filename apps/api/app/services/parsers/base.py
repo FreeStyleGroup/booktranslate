@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.models.segment import SegmentKind
+from app.models.block import BlockKind
 
 
 @dataclass(slots=True)
@@ -22,7 +22,7 @@ class ParsedBlock:
     """Смысловая единица исходника до нарезки на сегменты."""
 
     text: str
-    kind: SegmentKind = SegmentKind.PARAGRAPH
+    kind: BlockKind = BlockKind.PARAGRAPH
 
     # Где блок стоял в исходнике: номер главы у EPUB, строка у Markdown,
     # координаты ячейки у таблицы. Структура свободная — у каждого формата
