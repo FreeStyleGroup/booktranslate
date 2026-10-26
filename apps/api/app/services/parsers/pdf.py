@@ -23,7 +23,7 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import (
@@ -47,6 +47,8 @@ from app.services.parsers.base import ParsedBlock, ParsingError
 HEADING_SIZE_RATIO = 1.2
 HEADING_MAX_CHARS = 160
 HEADING_MAX_LINES = 3
+# Глубже шести уровней заголовков не бывает ни в HTML, ни в DOCX.
+MAX_HEADING_LEVEL = 6
 
 # Колонтитул — то, что повторяется страница за страницей. Три страницы —
 # нижний порог: две совпавшие строки бывают и в тексте.
@@ -78,6 +80,15 @@ class _Box:
         return "\n".join(self.lines)
 
 
+class _Piece(NamedTuple):
+    """Блок книги, собранный из блока pdfminer, — с кеглем для уровня."""
+
+    text: str
+    kind: SegmentKind
+    page: int
+    size: float
+
+
 @dataclass(slots=True)
 class _Pages:
     boxes: list[_Box] = field(default_factory=list)
@@ -104,14 +115,25 @@ class PdfParser:
         repeated = _repeated_lines(pages.boxes, pages.total)
 
         pieces = (
-            (text, kind, box.page)
+            _Piece(text=text, kind=kind, page=box.page, size=round(box.size, 1))
             for box in pages.boxes
             if not _is_furniture(box, repeated)
             for text, kind in _blocks_of(box, body_size)
         )
 
-        for index, (text, kind, page) in enumerate(_merged(pieces)):
-            yield ParsedBlock(text=text, kind=kind, location={"page": page, "block": index})
+        # Список, а не поток: уровень заголовка — это ранг его кегля среди
+        # всех заголовков книги, и узнать его можно, только увидев все.
+        # Блоки страниц к этому моменту и так собраны целиком.
+        merged = list(_merged(pieces))
+        levels = _heading_levels(merged)
+
+        for index, piece in enumerate(merged):
+            place: dict[str, object] = {"page": piece.page, "block": index}
+
+            if piece.kind is SegmentKind.HEADING:
+                place["level"] = levels[piece.size]
+
+            yield ParsedBlock(text=piece.text, kind=piece.kind, location=place)
 
 
 def _read(path: Path) -> _Pages:
@@ -289,9 +311,7 @@ def _split_items(lines: list[str]) -> list[str]:
     return [_join(item) for item in items if _join(item)]
 
 
-def _merged(
-    pieces: Iterator[tuple[str, SegmentKind, int]],
-) -> Iterator[tuple[str, SegmentKind, int]]:
+def _merged(pieces: Iterator[_Piece]) -> Iterator[_Piece]:
     """Склеить абзац, который pdfminer отдал построчно.
 
     В плотно свёрстанных каталогах межстрочный просвет больше половины
@@ -301,26 +321,42 @@ def _merged(
     Склейка только внутри страницы: абзац, перетёкший на следующую, —
     редкость, а склеивание через колонтитул — ошибка.
     """
-    pending: tuple[str, SegmentKind, int] | None = None
+    pending: _Piece | None = None
 
-    for text, kind, page in pieces:
+    for piece in pieces:
         if (
             pending is not None
-            and kind is SegmentKind.PARAGRAPH
-            and pending[1] is SegmentKind.PARAGRAPH
-            and pending[2] == page
-            and _continues(pending[0], text)
+            and piece.kind is SegmentKind.PARAGRAPH
+            and pending.kind is SegmentKind.PARAGRAPH
+            and pending.page == piece.page
+            and _continues(pending.text, piece.text)
         ):
-            pending = (_join([pending[0], text]), kind, page)
+            pending = pending._replace(text=_join([pending.text, piece.text]))
             continue
 
         if pending is not None:
             yield pending
 
-        pending = (text, kind, page)
+        pending = piece
 
     if pending is not None:
         yield pending
+
+
+def _heading_levels(pieces: list[_Piece]) -> dict[float, int]:
+    """Уровень заголовка по кеглю: самый крупный — первый, и так до шестого.
+
+    Другого признака уровня в PDF нет — это картинка страницы с текстом
+    поверх, а не размеченный документ. Ранг считается по различным кеглям
+    заголовков этой книги: в одной книге глава набрана 24 пунктами, в
+    другой — 16, и порог в пунктах подошёл бы одной из них. Всё мельче
+    шестого ранга — шестой: глубже уровней не бывает ни в HTML, ни в DOCX.
+    """
+    sizes = sorted(
+        {piece.size for piece in pieces if piece.kind is SegmentKind.HEADING}, reverse=True
+    )
+
+    return {size: min(rank, MAX_HEADING_LEVEL) for rank, size in enumerate(sizes, start=1)}
 
 
 _SENTENCE_END = (".", "!", "?", ":", ";", "»", "”", '"', ")")

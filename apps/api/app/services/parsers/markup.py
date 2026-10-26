@@ -59,6 +59,8 @@ BLOCK_KINDS = {
     "pre": SegmentKind.CODE,
 }
 
+HEADING_LEVELS = {f"h{level}": level for level in range(1, 7)}
+
 # Служебное содержимое: разметка, стили, скрипты. Переводить его нечего, а
 # попав в сегменты, оно ломает и оценку объёма, и счёт денег.
 IGNORED_TAGS = {"script", "style", "head", "title", "meta", "link", "noscript"}
@@ -161,6 +163,13 @@ def blocks_from_html(
     for index, element in enumerate(find_blocks(soup)):
         place = dict(location or {})
         place["block"] = index
+
+        # Уровень заголовка — из самого тега. По нему предлагаются границы
+        # глав (глава — заголовок верхнего уровня, а не каждый подзаголовок)
+        # и по нему же сборка выгрузки ставит заголовку его уровень.
+        level = HEADING_LEVELS.get(element.name)
+        if level is not None:
+            place["level"] = level
 
         yield ParsedBlock(text=block_text(element), kind=BLOCK_KINDS[element.name], location=place)
 
