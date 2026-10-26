@@ -6,7 +6,18 @@
 """
 
 from app.models.document import SourceFormat
-from app.services.parsers.base import DocumentParser, ParsedBlock, ParsingError
+from app.services.parsers.base import (
+    DocumentParser,
+    ImageSource,
+    ParsedBlock,
+    ParsedItem,
+    ParsedObject,
+    ParsedSource,
+    ParsingError,
+    PlacedObject,
+    blocks_of,
+    collect,
+)
 from app.services.parsers.docx import DocxParser
 from app.services.parsers.markup import EpubParser, HtmlParser
 from app.services.parsers.pdf import PdfParser
@@ -22,7 +33,14 @@ from app.services.parsers.plain import MarkdownParser, PlainTextParser
 # заголовком.
 # 2026.10.2 — листинги кода знак в знак: `<pre>` больше не схлопывается в
 # строку, у блока кода Markdown не срезается отступ первой строки.
-PARSER_VERSION = "2026.10.2"
+# 2026.10.3 — специальные объекты: рисунки, таблицы, формулы и листинги
+# отдаются отдельно от блоков. Надписи SVG и выносные формулы больше не
+# попадают в текст абзацев; объединённая ячейка DOCX — один блок, а не
+# повтор на каждом месте сетки; абзацы стиля кода DOCX — один листинг.
+# Текст HTML — каким его видит читатель: узлы соединяются без выдуманного
+# пробела («Table 1.1.», а не «Table 1.1 .»), пробелы схлопываются по
+# правилам HTML, `<br>` — перевод строки.
+PARSER_VERSION = "2026.10.3"
 
 _PARSERS: dict[SourceFormat, type[DocumentParser]] = {
     SourceFormat.TXT: PlainTextParser,
@@ -52,8 +70,15 @@ def is_supported(source_format: SourceFormat) -> bool:
 __all__ = [
     "PARSER_VERSION",
     "DocumentParser",
+    "ImageSource",
     "ParsedBlock",
+    "ParsedItem",
+    "ParsedObject",
+    "ParsedSource",
     "ParsingError",
+    "PlacedObject",
+    "blocks_of",
+    "collect",
     "is_supported",
     "parser_for",
 ]

@@ -17,6 +17,7 @@ from docx.oxml.ns import qn
 
 from app.services.export.base import TranslatedBlock
 from app.services.export.docx_writer import DocxRenderer
+from app.services.parsers import blocks_of
 from app.services.parsers.docx import DocxParser
 
 
@@ -31,7 +32,7 @@ def roundtrip(document: Any, tmp_path: Path, translate: dict[str, str]) -> Any:
 
     blocks = [
         TranslatedBlock(text=translate[block.text], kind=block.kind, location=block.location)
-        for block in DocxParser().parse(source)
+        for block in blocks_of(DocxParser().parse(source))
     ]
     rendered = DocxRenderer().render(blocks, source=source)
 

@@ -8,6 +8,7 @@
 from app.models.audit import AuditEvent
 from app.models.block import Block, BlockKind, SegmentChunk
 from app.models.book import BookEdition, BookStatus, SourceValidationResult
+from app.models.book_object import BookObject, ObjectReference, ObjectType, ReferenceKind
 from app.models.catalog import CatalogEntry
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
@@ -36,6 +37,7 @@ __all__ = [
     "Block",
     "BlockKind",
     "BookEdition",
+    "BookObject",
     "BookStatus",
     "BoundaryStatus",
     "CatalogEntry",
@@ -54,8 +56,11 @@ __all__ = [
     "JobState",
     "Membership",
     "NotificationSettings",
+    "ObjectReference",
+    "ObjectType",
     "Organization",
     "Project",
+    "ReferenceKind",
     "RefreshSession",
     "Role",
     "Segment",

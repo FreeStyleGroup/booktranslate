@@ -29,6 +29,7 @@ class MasterPublic(BaseModel):
     parser_version: str
     boundary_version: int
     block_count: int
+    object_count: int
     checksum: str
     created_by_id: uuid.UUID | None
     approved_by_id: uuid.UUID | None

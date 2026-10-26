@@ -36,7 +36,7 @@ from app.services.block_reconcile import heading_title
 from app.services.books import MANAGING_ROLES, BookService
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, InvalidInputError
-from app.services.parsers import PARSER_VERSION, ParsedBlock, ParsingError, parser_for
+from app.services.parsers import PARSER_VERSION, ParsedBlock, ParsingError, blocks_of, parser_for
 from app.services.source_files import local_copy
 from app.services.storage import ObjectStorage
 
@@ -310,6 +310,6 @@ class ChapterDetectionService(TenantService):
                 # Разбор целиком и в отдельном потоке: это блокирующая
                 # работа с диском, а предложению нужен весь поток блоков —
                 # уровень глав виден только по всей книге.
-                return await asyncio.to_thread(lambda: list(parser.parse(path)))
+                return await asyncio.to_thread(lambda: list(blocks_of(parser.parse(path))))
             except ParsingError as error:
                 raise InvalidInputError(str(error)) from error

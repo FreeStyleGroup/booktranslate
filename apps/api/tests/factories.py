@@ -5,8 +5,10 @@
 """
 
 import io
+import struct
 import uuid
 import zipfile
+import zlib
 from dataclasses import dataclass
 
 from httpx import AsyncClient
@@ -148,11 +150,33 @@ def real_docx_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def epub_bytes(chapters: list[tuple[str, str]] | None = None) -> bytes:
-    """Минимальный EPUB: контейнер, опись и главы.
+def png_bytes(red: int = 255) -> bytes:
+    """Настоящий PNG в один пиксель — его открывают и python-docx, и браузер.
+
+    Цвет меняет байты файла: так тест получает «то же изображение в
+    другом качестве», не храня картинок в репозитории.
+    """
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    pixels = zlib.compress(bytes([0, red, 0, 0]))
+
+    return (
+        b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", pixels) + chunk(b"IEND", b"")
+    )
+
+
+def epub_bytes(
+    chapters: list[tuple[str, str]] | None = None, assets: dict[str, bytes] | None = None
+) -> bytes:
+    """Минимальный EPUB: контейнер, опись, главы и, если нужно, изображения.
 
     Имена файлов глав намеренно не совпадают с порядком чтения по алфавиту —
     так тест ловит разбор, который сортирует главы по имени вместо описи.
+    Изображения кладутся рядом с главами, в `OEBPS/`.
     """
     chapters = chapters or [
         ("part0010.xhtml", "<h1>Вторая глава</h1><p>Текст второй главы.</p>"),
@@ -187,6 +211,9 @@ def epub_bytes(chapters: list[tuple[str, str]] | None = None) -> bytes:
                 f'<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
                 f"<body>{body}</body></html>",
             )
+
+        for name, data in (assets or {}).items():
+            archive.writestr(f"OEBPS/{name}", data)
 
     return buffer.getvalue()
 

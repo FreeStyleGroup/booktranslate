@@ -11,7 +11,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from app.models.block import BlockKind
-from app.services.parsers.base import ParsedBlock, ParsingError
+from app.models.book_object import ObjectType
+from app.services.parsers.base import Owner, ParsedBlock, ParsedItem, ParsedObject, ParsingError
 
 # Кодировки в порядке убывания вероятности. UTF-8 сегодня почти всегда; CP1251
 # встречается в старых выгрузках, а latin-1 принимает любой байт и потому
@@ -20,7 +21,7 @@ _ENCODINGS = ("utf-8-sig", "cp1251", "latin-1")
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 _LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.*)$")
-_FENCE = re.compile(r"^\s*(```|~~~)")
+_FENCE = re.compile(r"^\s*(```|~~~)(.*)$")
 
 
 def read_text(path: Path) -> str:
@@ -50,7 +51,7 @@ def decode_text(data: bytes) -> str:
 class PlainTextParser:
     """Абзацы, разделённые пустой строкой."""
 
-    def parse(self, path: Path) -> Iterator[ParsedBlock]:
+    def parse(self, path: Path) -> Iterator[ParsedItem]:
         text = read_text(path)
 
         for index, chunk in enumerate(re.split(r"\n\s*\n", text)):
@@ -62,12 +63,13 @@ class PlainTextParser:
 class MarkdownParser:
     """Заголовки, списки, код и абзацы.
 
-    Блоки кода отдаются с типом CODE и дальше переводятся по своим правилам
-    (а чаще не переводятся вовсе): перевод содержимого листинга ломает пример,
+    Блок кода — листинг: объект с языком из строки открывающих кавычек
+    (```python) и блок с его текстом. Дальше он переводится по своим правилам
+    (а чаще не переводится вовсе): перевод содержимого листинга ломает пример,
     ради которого он в книге и стоит.
     """
 
-    def parse(self, path: Path) -> Iterator[ParsedBlock]:
+    def parse(self, path: Path) -> Iterator[ParsedItem]:
         lines = read_text(path).splitlines()
 
         buffer: list[str] = []
@@ -75,26 +77,17 @@ class MarkdownParser:
         in_code = False
         code: list[str] = []
         code_start = 0
+        language: str | None = None
 
         def flush(kind: BlockKind, body: list[str], line_no: int) -> ParsedBlock | None:
-            # Листинг — знак в знак: отступ первой строки такой же текст, как
-            # остальное, и `strip()` срезал бы его. Отбрасываются только
-            # пустые строки по краям — они не в листинге, а вокруг него.
-            if kind is BlockKind.CODE:
-                code_text = "\n".join(body).strip("\n")
-                if not code_text.strip():
-                    return None
-                return ParsedBlock(text=code_text, kind=kind, location={"line": line_no})
-
             text = "\n".join(body).strip()
             return ParsedBlock(text=text, kind=kind, location={"line": line_no}) if text else None
 
         for number, line in enumerate(lines, start=1):
-            if _FENCE.match(line):
+            fence = _FENCE.match(line)
+            if fence:
                 if in_code:
-                    block = flush(BlockKind.CODE, code, code_start)
-                    if block is not None:
-                        yield block
+                    yield from _listing(code, code_start, language)
                     code = []
                     in_code = False
                 else:
@@ -104,6 +97,10 @@ class MarkdownParser:
                     buffer = []
                     in_code = True
                     code_start = number
+                    # Строка открытия — ```python: первое слово после
+                    # кавычек — язык листинга.
+                    words = fence.group(2).split()
+                    language = words[0].lower() if words else None
                 continue
 
             if in_code:
@@ -143,10 +140,32 @@ class MarkdownParser:
 
         # Незакрытая тройная кавычка в конце файла — обычное дело в черновике;
         # накопленное отдаём как код, а не теряем.
-        block = flush(
-            BlockKind.CODE if in_code else BlockKind.PARAGRAPH,
-            code if in_code else buffer,
-            code_start if in_code else buffer_start,
-        )
+        if in_code:
+            yield from _listing(code, code_start, language)
+            return
+
+        block = flush(BlockKind.PARAGRAPH, buffer, buffer_start)
         if block is not None:
             yield block
+
+
+def _listing(lines: list[str], line_no: int, language: str | None) -> Iterator[ParsedItem]:
+    """Листинг — знак в знак.
+
+    Отступ первой строки такой же текст, как остальное, и `strip()` срезал
+    бы его. Отбрасываются только пустые строки по краям — они не в
+    листинге, а вокруг него.
+    """
+    text = "\n".join(lines).strip("\n")
+
+    if not text.strip():
+        return
+
+    listing = ParsedObject(
+        type=ObjectType.CODE, location={"line": line_no}, payload={"language": language}
+    )
+
+    yield listing
+    yield ParsedBlock(
+        text=text, kind=BlockKind.CODE, location={"line": line_no}, owner=Owner(object=listing)
+    )

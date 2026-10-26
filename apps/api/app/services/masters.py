@@ -7,10 +7,14 @@
 """
 
 import asyncio
+import os
 import re
+import tempfile
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.block import Block, SegmentChunk
 from app.models.book import BookEdition
+from app.models.book_object import BookObject, ObjectType
 from app.models.chapter import Chapter
 from app.models.coding import CodeKind
 from app.models.document import Document
@@ -28,11 +33,16 @@ from app.services.block_reconcile import (
     AnchorNotFoundError,
     Create,
     Existing,
+    Fresh,
     Keep,
+    PlacedEntry,
     Retire,
+    Step,
     block_hash,
     locate,
     master_checksum,
+    match,
+    object_hash,
     reconcile,
 )
 from app.services.books import MANAGING_ROLES, BookService
@@ -42,7 +52,26 @@ from app.services.chunking import chunk, estimate_tokens
 from app.services.coding import CodeAllocator
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
-from app.services.parsers import PARSER_VERSION, ParsedBlock, ParsingError, parser_for
+from app.services.object_extraction import (
+    Described,
+    Picture,
+    describe,
+    in_chapter,
+    picture_key,
+    read_pictures,
+)
+from app.services.object_references import ObjectReferenceService
+from app.services.parsers import (
+    PARSER_VERSION,
+    DocumentParser,
+    ImageSource,
+    ParsedBlock,
+    ParsedSource,
+    ParsingError,
+    PlacedObject,
+    collect,
+    parser_for,
+)
 from app.services.pricing import SOURCE_CHARS_PER_TOKEN
 from app.services.source_files import local_copy
 from app.services.storage import ObjectStorage
@@ -116,10 +145,10 @@ class MasterService(TenantService):
         Первая версия причины не требует. Каждая следующая — требует: версия
         без причины неотличима от тихой правки исходника.
 
-        Блоки сопоставляются с прежней версией: неизменившиеся сохраняют
-        коды, изменённые получают новые с родством, исчезнувшие выводятся из
-        действия. Если ничего не изменилось, версия не создаётся — она была
-        бы копией прежней под новым номером.
+        Блоки и объекты сопоставляются с прежней версией: неизменившиеся
+        сохраняют коды, изменённые получают новые с родством, исчезнувшие
+        выводятся из действия. Если ничего не изменилось, версия не
+        создаётся — она была бы копией прежней под новым номером.
         """
         self._context.require(*MANAGING_ROLES)
 
@@ -132,9 +161,26 @@ class MasterService(TenantService):
         why = _reason(reason, required=previous is not None)
 
         document = await self._source(chapter)
-        blocks = await self._parse(document)
-        start, end = await self._locate(chapter, blocks)
-        parsed = blocks[start:end]
+        parser = _parser(document)
+
+        # Изображения читаются из того же файла, пока он под рукой, и только
+        # для объектов этой главы: остальным главам они сейчас не нужны.
+        async with local_copy(self._storage, document.storage_key) as path:
+            source = await _parse(parser, path)
+            start, end = await self._locate(chapter, source.blocks)
+            placed = in_chapter(source, start, end)
+            wanted = [image for item in placed for image in item.object.images]
+            pictures = await asyncio.to_thread(read_pictures, path, wanted) if wanted else {}
+
+        parsed = source.blocks[start:end]
+        described = [describe(item, source.blocks, pictures) for item in placed]
+        entries = [
+            _entry(item, info, start, end) for item, info in zip(placed, described, strict=True)
+        ]
+
+        checksum = master_checksum([(block.kind, block.text) for block in parsed], entries)
+        if previous is not None and checksum == previous.checksum:
+            raise ConflictError("Текст главы не изменился — новая версия мастера не нужна")
 
         known = await self._active_blocks(chapter.id) if previous is not None else []
         steps = reconcile(
@@ -145,17 +191,25 @@ class MasterService(TenantService):
             parsed,
         )
 
-        if previous is not None and all(isinstance(step, Keep) for step in steps):
-            raise ConflictError("Текст главы не изменился — новая версия мастера не нужна")
+        known_objects = await self._objects_of(previous) if previous is not None else []
+        object_steps = match(
+            [
+                Existing(
+                    id=item.id, source_hash=object_hash(item.type, item.checksum), source_text=None
+                )
+                for item in known_objects
+            ],
+            [
+                Fresh(source_hash=object_hash(info.type, info.checksum), source_text=None)
+                for info in described
+            ],
+        )
 
         master_id = uuid.uuid4()
+        allocator = CodeAllocator(self._session, self._context)
         creates = [step for step in steps if isinstance(step, Create)]
         # Номера для всех новых блоков главы — одним запросом, подряд.
-        numbers = iter(
-            await CodeAllocator(self._session, self._context).reserve(
-                CodeKind.BLOCK, chapter.id, len(creates)
-            )
-        )
+        numbers = iter(await allocator.reserve(CodeKind.BLOCK, chapter.id, len(creates)))
 
         ordered: list[Block | None] = [None] * len(parsed)
         fresh: list[Block] = []
@@ -178,9 +232,20 @@ class MasterService(TenantService):
             block.ordinal = ordinal
             block.active = True
 
+        objects, fresh_objects, retired_objects = await self._place_objects(
+            chapter, master_id, described, known_objects, object_steps, allocator
+        )
+
+        # Состояние объекта в текущей версии — как место у блока: подпись и
+        # номер берутся из этой версии.
+        for item, entry, info in zip(objects, entries, described, strict=True):
+            item.active = True
+            item.caption_block_id = final[entry.caption].id if entry.caption is not None else None
+            item.label = info.label
+
         # Версия пишется один раз и сразу окончательной: идентификаторы
-        # блоков заданы явно, и список версии с её суммой известны до
-        # первой записи.
+        # блоков и объектов заданы явно, и списки версии с её суммой
+        # известны до первой записи.
         master = ChapterMaster(
             id=master_id,
             organization_id=self.organization_id,
@@ -194,21 +259,38 @@ class MasterService(TenantService):
             source_start=start,
             source_end=end,
             block_ids=[str(block.id) for block in final],
-            checksum=master_checksum([(block.kind, block.source_text) for block in final]),
+            objects=[
+                {
+                    "id": str(item.id),
+                    "at": entry.at,
+                    "blocks": [str(final[index].id) for index in entry.content],
+                    "caption": str(final[entry.caption].id) if entry.caption is not None else None,
+                    "label": info.label,
+                }
+                for item, entry, info in zip(objects, entries, described, strict=True)
+            ],
+            checksum=checksum,
             created_by_id=self._context.user.id,
         )
 
+        await self._store_pictures(fresh_objects, pictures)
+
         # Запись по шагам и именно в этом порядке: версия, её блоки, их
-        # части. Связей между моделями нет — только внешние ключи, — и при
-        # общей фиксации порядок вставки в разные таблицы не определён:
-        # блоки ушли бы в базу раньше версии, на которую ссылаются. Так и
-        # случилось на живых данных, хотя тесты проходили, — по везению.
+        # части, объекты. Связей между моделями нет — только внешние
+        # ключи, — и при общей фиксации порядок вставки в разные таблицы не
+        # определён: блоки ушли бы в базу раньше версии, на которую
+        # ссылаются. Так и случилось на живых данных, хотя тесты
+        # проходили, — по везению.
         self._session.add(master)
         await self._session.flush()
         self._session.add_all(fresh)
         await self._session.flush()
         self._session.add_all(part for block in fresh for part in self._chunks(block))
+        self._session.add_all(fresh_objects)
+        await self._session.flush()
         created = len(fresh)
+
+        references = await ObjectReferenceService(self._session, self._context).refresh(book.id)
 
         # Границы главы в новом разборе могли сдвинуться — исправленный
         # разборщик добавил блок раньше неё. Это те же границы в других
@@ -216,7 +298,9 @@ class MasterService(TenantService):
         if (start, end) != (chapter.source_start, chapter.source_end):
             chapter.source_start, chapter.source_end = start, end
             chapter.sections = [
-                section.as_json() for section in sections_of(blocks) if start <= section.start < end
+                section.as_json()
+                for section in sections_of(source.blocks)
+                if start <= section.start < end
             ]
         chapter.parser_version = PARSER_VERSION
 
@@ -233,6 +317,10 @@ class MasterService(TenantService):
                 "blocks": len(final),
                 "created": created,
                 "retired": retired,
+                "objects": len(objects),
+                "objects_created": len(fresh_objects),
+                "objects_retired": retired_objects,
+                "references": references,
                 "checksum": master.checksum,
                 "parser_version": PARSER_VERSION,
             },
@@ -449,17 +537,101 @@ class MasterService(TenantService):
                 "границы главы нужно проверить заново"
             ) from error
 
-    async def _parse(self, document: Document) -> list[ParsedBlock]:
-        parser = parser_for(document.source_format)
+    async def _place_objects(
+        self,
+        chapter: Chapter,
+        master_id: uuid.UUID,
+        described: list[Described],
+        known: list[BookObject],
+        steps: list[Step],
+        allocator: CodeAllocator,
+    ) -> tuple[list[BookObject], list[BookObject], int]:
+        """Объекты новой версии по порядку, из них новые, и сколько выведено.
 
-        if parser is None:
-            raise InvalidInputError(f"Формат {document.source_format.value} пока не разбирается")
+        Номера — у каждого вида свои, и каждый вид получает отрезок одним
+        запросом: рисунки нумеруются отдельно от таблиц, как и в книге.
+        """
+        needed = Counter(described[step.parsed].type for step in steps if isinstance(step, Create))
+        numbers = {
+            kind: iter(await allocator.reserve(CodeKind[kind.name], chapter.id, count))
+            for kind, count in needed.items()
+        }
 
-        async with local_copy(self._storage, document.storage_key) as path:
+        ordered: list[BookObject | None] = [None] * len(described)
+        fresh: list[BookObject] = []
+        retired = 0
+
+        for step in steps:
+            if isinstance(step, Keep):
+                ordered[step.parsed] = known[step.existing]
+            elif isinstance(step, Retire):
+                known[step.existing].active = False
+                retired += 1
+            else:
+                info = described[step.parsed]
+                item = BookObject(
+                    id=uuid.uuid4(),
+                    organization_id=self.organization_id,
+                    chapter_id=chapter.id,
+                    master_id=master_id,
+                    parent_object_id=step.parent,
+                    type=info.type,
+                    number=next(numbers[info.type]),
+                    source_location=info.location,
+                    payload=info.payload,
+                    checksum=info.checksum,
+                    active=True,
+                )
+                ordered[step.parsed] = item
+                fresh.append(item)
+
+        return [item for item in ordered if item is not None], fresh, retired
+
+    async def _store_pictures(
+        self, objects: list[BookObject], pictures: dict[ImageSource, Picture]
+    ) -> None:
+        """Положить изображения новых рисунков в хранилище — до записи в базу.
+
+        Ключ — по содержимому, поэтому повтор безвреден: та же картинка
+        ляжет тем же файлом. Откатится транзакция — файл останется
+        неиспользованным, но ни на что неверное ссылаться не будет.
+        """
+        wanted = {
+            entry["sha256"]
+            for item in objects
+            if item.type is ObjectType.FIGURE
+            for entry in item.payload.get("images", [])
+            if entry.get("sha256")
+        }
+
+        for picture in {picture.sha256: picture for picture in pictures.values()}.values():
+            if picture.sha256 not in wanted:
+                continue
+
+            descriptor, name = tempfile.mkstemp(prefix="booktranslate-figure-")
+            path = Path(name)
             try:
-                return await asyncio.to_thread(lambda: list(parser.parse(path)))
-            except ParsingError as error:
-                raise InvalidInputError(str(error)) from error
+                with os.fdopen(descriptor, "wb") as handle:
+                    await asyncio.to_thread(handle.write, picture.data)
+                await self._storage.put(picture_key(self.organization_id, picture.sha256), path)
+            finally:
+                path.unlink(missing_ok=True)
+
+    async def _objects_of(self, master: ChapterMaster) -> list[BookObject]:
+        """Объекты версии мастера в её порядке."""
+        ids = [uuid.UUID(entry["id"]) for entry in master.objects]
+
+        if not ids:
+            return []
+
+        found = {
+            item.id: item
+            for item in await self._session.scalars(
+                self.scoped(BookObject).where(BookObject.id.in_(ids))
+            )
+        }
+
+        return [found[item] for item in ids]
 
     async def _source(self, chapter: Chapter) -> Document:
         document = await self._session.scalar(
@@ -497,6 +669,41 @@ class MasterService(TenantService):
             raise NotFoundError("Глава не найдена")
 
         return chapter
+
+
+def _parser(document: Document) -> DocumentParser:
+    parser = parser_for(document.source_format)
+
+    if parser is None:
+        raise InvalidInputError(f"Формат {document.source_format.value} пока не разбирается")
+
+    return parser
+
+
+async def _parse(parser: DocumentParser, path: Path) -> ParsedSource:
+    try:
+        return await asyncio.to_thread(lambda: collect(parser.parse(path)))
+    except ParsingError as error:
+        raise InvalidInputError(str(error)) from error
+
+
+def _entry(placed: PlacedObject, info: Described, start: int, end: int) -> PlacedEntry:
+    """Объект в координатах главы: номера блоков от её начала.
+
+    Место — сколько блоков главы стоит перед объектом. Рисунок, отнесённый
+    к главе по соседнему блоку, может стоять на её краю, но не за ним.
+    """
+    return PlacedEntry(
+        type=info.type,
+        checksum=info.checksum,
+        at=min(max(placed.at - start, 0), end - start),
+        content=tuple(index - start for index in placed.content if start <= index < end),
+        caption=(
+            placed.caption - start
+            if placed.caption is not None and start <= placed.caption < end
+            else None
+        ),
+    )
 
 
 def _reason(value: str | None, *, required: bool) -> str | None:

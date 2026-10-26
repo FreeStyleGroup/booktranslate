@@ -10,6 +10,7 @@
 from bs4 import BeautifulSoup, Tag
 
 from app.services.export.markup_writer import rewrite_html
+from app.services.parsers import blocks_of
 from app.services.parsers.markup import block_text, blocks_from_html, find_blocks
 
 
@@ -20,7 +21,8 @@ def translated(markup: str, translate: dict[str, str]) -> str:
     прочитал не то, что ожидалось, и это надо увидеть, а не спрятать.
     """
     translations = {
-        block.location["block"]: translate[block.text] for block in blocks_from_html(markup)
+        block.location["block"]: translate[block.text]
+        for block in blocks_of(blocks_from_html(markup))
     }
 
     return rewrite_html(markup, translations)
@@ -37,7 +39,7 @@ def test_inline_markup_survives_translation() -> None:
     """Картинка, перенос и сноска внутри абзаца — не текст, и терять их нельзя."""
     source = '<p>Look <img src="a.png"/> at<br/>this<sup><a href="#n1">1</a></sup> now</p>'
 
-    result = translated(source, {"Look at this 1 now": "Смотрите сюда"})
+    result = translated(source, {"Look at\nthis1 now": "Смотрите сюда"})
     paragraph = only_paragraph(result)
 
     assert paragraph.get_text(" ", strip=True) == "Смотрите сюда"
@@ -113,7 +115,7 @@ def test_parser_and_writer_walk_the_same_blocks() -> None:
         "</body></html>"
     )
 
-    parsed = [block.text for block in blocks_from_html(source)]
+    parsed = [block.text for block in blocks_of(blocks_from_html(source))]
     walked = [block_text(element) for element in find_blocks(BeautifulSoup(source, "html.parser"))]
 
     assert parsed == walked == ["Section", "Intro", "First", "Cell"]

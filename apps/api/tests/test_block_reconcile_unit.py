@@ -5,16 +5,21 @@ import uuid
 import pytest
 
 from app.models.block import BlockKind
+from app.models.book_object import ObjectType
 from app.services.block_reconcile import (
     AnchorNotFoundError,
     Create,
     Existing,
+    Fresh,
     Keep,
+    PlacedEntry,
     Retire,
     block_hash,
     heading_title,
     locate,
     master_checksum,
+    match,
+    object_hash,
     reconcile,
 )
 from app.services.parsers import ParsedBlock
@@ -205,12 +210,48 @@ def test_missing_heading_is_reported_not_guessed() -> None:
 
 
 def test_checksum_depends_on_order_and_text() -> None:
-    one = master_checksum([(BlockKind.PARAGRAPH, "A."), (BlockKind.PARAGRAPH, "B.")])
+    one = master_checksum([(BlockKind.PARAGRAPH, "A."), (BlockKind.PARAGRAPH, "B.")], [])
 
-    assert one == master_checksum([(BlockKind.PARAGRAPH, "A."), (BlockKind.PARAGRAPH, "B.")])
-    assert one != master_checksum([(BlockKind.PARAGRAPH, "B."), (BlockKind.PARAGRAPH, "A.")])
+    assert one == master_checksum([(BlockKind.PARAGRAPH, "A."), (BlockKind.PARAGRAPH, "B.")], [])
+    assert one != master_checksum([(BlockKind.PARAGRAPH, "B."), (BlockKind.PARAGRAPH, "A.")], [])
     # Пробел — тоже текст мастера: суммы обязаны различаться.
-    assert one != master_checksum([(BlockKind.PARAGRAPH, "A. "), (BlockKind.PARAGRAPH, "B.")])
+    assert one != master_checksum([(BlockKind.PARAGRAPH, "A. "), (BlockKind.PARAGRAPH, "B.")], [])
+
+
+def test_checksum_covers_objects_and_their_places() -> None:
+    """Рисунок — часть версии: другое изображение или другое место — другая сумма."""
+    blocks = [(BlockKind.PARAGRAPH, "A."), (BlockKind.PARAGRAPH, "B.")]
+
+    def figure(checksum: str, at: int) -> PlacedEntry:
+        return PlacedEntry(
+            type=ObjectType.FIGURE, checksum=checksum, at=at, content=(), caption=None
+        )
+
+    with_figure = master_checksum(blocks, [figure("a" * 64, 1)])
+
+    assert with_figure == master_checksum(blocks, [figure("a" * 64, 1)])
+    assert with_figure != master_checksum(blocks, [])
+    assert with_figure != master_checksum(blocks, [figure("b" * 64, 1)])
+    assert with_figure != master_checksum(blocks, [figure("a" * 64, 2)])
+
+
+def test_objects_match_by_content_and_never_split() -> None:
+    """Объект без текста сопоставляется по сумме; разделения у объектов не бывает."""
+    old = [
+        Existing(id=uuid.uuid4(), source_hash=object_hash(ObjectType.TABLE, "t1"), source_text=None)
+    ]
+    fresh = [
+        Fresh(source_hash=object_hash(ObjectType.TABLE, "t1"), source_text=None),
+        Fresh(source_hash=object_hash(ObjectType.FIGURE, "f1"), source_text=None),
+    ]
+
+    steps = match(old, fresh)
+
+    assert Keep(existing=0, parsed=0) in steps
+    assert Create(parsed=1, parent=None) in steps
+
+    changed = match(old, [Fresh(source_hash=object_hash(ObjectType.TABLE, "t2"), source_text=None)])
+    assert changed == [Retire(existing=0), Create(parsed=0, parent=old[0].id)]
 
 
 def test_heading_title_is_one_bounded_line() -> None:
