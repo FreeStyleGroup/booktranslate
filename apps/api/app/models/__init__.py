@@ -8,6 +8,7 @@
 from app.models.audit import AuditEvent
 from app.models.book import BookEdition, BookStatus, SourceValidationResult
 from app.models.catalog import CatalogEntry
+from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
 from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
 from app.models.job import JobState, TranslationJob
@@ -32,7 +33,10 @@ __all__ = [
     "AuditEvent",
     "BookEdition",
     "BookStatus",
+    "BoundaryStatus",
     "CatalogEntry",
+    "Chapter",
+    "ChapterOrigin",
     "CodeCounter",
     "CodeKind",
     "Document",

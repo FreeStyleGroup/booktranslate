@@ -26,12 +26,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.chapter import Chapter
 from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
 from app.models.organization import Role
 from app.services.base import TenantService
 from app.services.books import BookService
 from app.services.context import RequestContext
 from app.services.errors import (
+    ConflictError,
     InvalidInputError,
     NotFoundError,
     PayloadTooLargeError,
@@ -243,6 +245,18 @@ class DocumentService(TenantService):
 
         document = await self.get(document_id)
         storage_key = document.storage_key
+
+        # По номерам блоков этого файла размечены главы. Удалить его — значит
+        # оставить границы без смысла; база этого и не даст, но отказ должен
+        # быть словами, а не ошибкой ограничения.
+        marked = await self._session.scalar(
+            self.scoped(Chapter).where(Chapter.source_document_id == document.id).limit(1)
+        )
+        if marked is not None:
+            raise ConflictError(
+                "По этому файлу размечены главы книги. Удалить его можно только вместе "
+                "с книгой либо после того, как главы предложены по другому файлу"
+            )
 
         await self._session.delete(document)
         await self._session.commit()
