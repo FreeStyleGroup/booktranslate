@@ -64,6 +64,46 @@ export const SOURCE_ROLE_CHIP: Record<string, string> = {
   code_source: "chip chip--info",
 };
 
+/** Состояние границ главы. */
+export const BOUNDARY_LABEL: Record<string, string> = {
+  draft: "Черновик",
+  approved: "Утверждена",
+};
+
+export const BOUNDARY_CHIP: Record<string, string> = {
+  draft: "chip chip--warn",
+  approved: "chip chip--ok",
+};
+
+/** Откуда взялись границы — чтобы предложенное и выставленное руками
+ *  проверяли по-разному. */
+export const ORIGIN_LABEL: Record<string, string> = {
+  heading: "по заголовкам",
+  path: "по файлам EPUB",
+  page: "по страницам PDF",
+  whole: "документ целиком",
+  manual: "вручную",
+};
+
+/** Где в исходнике начинается глава или раздел — так, как это найдёт
+ *  человек: файл EPUB, страница PDF, строка Markdown. */
+export function whereIs(locator: Record<string, string | number>): string | null {
+  if (typeof locator.page === "number") {
+    return `стр. ${locator.page}`;
+  }
+
+  if (typeof locator.href === "string") {
+    // Путь внутри архива человеку не нужен — нужно имя файла.
+    return locator.href.split("/").pop() ?? locator.href;
+  }
+
+  if (typeof locator.line === "number") {
+    return `строка ${locator.line}`;
+  }
+
+  return null;
+}
+
 export const SEGMENT_LABEL: Record<string, string> = {
   new: "Не переведено",
   machine: "Перевод модели",

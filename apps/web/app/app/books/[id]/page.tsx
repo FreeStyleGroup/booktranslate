@@ -4,7 +4,14 @@ import { notFound } from "next/navigation";
 
 import { currentUser } from "../../../lib/current-user";
 import { organizationId } from "../../../lib/session";
-import { load, type Book, type BookKit, type Document, type Project } from "../../../lib/work";
+import {
+  load,
+  type Book,
+  type BookKit,
+  type BookStructure,
+  type Document,
+  type Project,
+} from "../../../lib/work";
 import { BOOK_STATUS_CHIP, BOOK_STATUS_LABEL, plural, thousands, when } from "../../labels";
 import "../../work.css";
 import "../../ui/ui.css";
@@ -61,7 +68,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
   }
 
   const edition = book.data;
-  const [kit, project, documents, me, organization] = await Promise.all([
+  const [kit, project, documents, me, organization, structure] = await Promise.all([
     load<BookKit>(`/books/${id}/sources`, here),
     load<Project>(`/projects/${edition.project_id}`, here),
     // Файлы проекта, чтобы предложить уже загруженные. Потолок тот же, что
@@ -70,6 +77,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
     load<Document[]>(`/documents?project_id=${edition.project_id}&limit=200`, here),
     currentUser(here),
     organizationId(),
+    load<BookStructure>(`/books/${id}/chapters`, here),
   ]);
 
   const membership =
@@ -176,16 +184,38 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
         </>
       )}
 
-      {/* Дальше по конвейеру — главы, блоки, перевод и выпуск. Их ещё нет,
-          и сказано это прямо: пустая карточка без объяснения читается как
-          поломка. */}
-      <section className="tile wk-call">
-        <h3>Что дальше</h3>
-        <p className="tile__note">
-          Следующий шаг — границы глав: по комплекту предлагаются CH01…CHnn, человек их утверждает,
-          и только после этого извлекается неизменяемый мастер-текст. Этого экрана пока нет.
-        </p>
+      {/* Следующий шаг конвейера — границы глав. Плитка говорит, в каком
+          он состоянии, а не просто ведёт на экран: «глав нет» и «12 из 12
+          утверждены» — разные причины туда идти. */}
+      <section className="tile wk-call bk-next">
+        <div>
+          <h3>Структура книги</h3>
+          <p className="tile__note">{structureNote(structure.data)}</p>
+        </div>
+
+        <Link className="btn btn--ghost btn--small" href={`/app/books/${edition.id}/structure`}>
+          Открыть
+        </Link>
       </section>
     </>
   );
+}
+
+/** Состояние разметки глав одной фразой — для плитки на карточке книги. */
+function structureNote(structure: BookStructure | undefined): string {
+  if (structure === undefined) {
+    return "Состояние глав сейчас не узнать — откройте экран структуры.";
+  }
+
+  const total = structure.chapters.length;
+
+  if (total === 0) {
+    return "Глав пока нет. Сервис предложит их по основному источнику, вы проверите и утвердите границы — только после этого глава идёт в работу.";
+  }
+
+  const approved = structure.chapters.filter(
+    (chapter) => chapter.boundary_status === "approved",
+  ).length;
+
+  return `${thousands(total)} ${plural(total, "глава", "главы", "глав")}, утверждено ${thousands(approved)}.`;
 }
