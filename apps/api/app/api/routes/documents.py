@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.api.uploads import chunks
 from app.core.config import get_settings
+from app.models.document import SourceRole
 from app.schemas.document import DocumentProfilePublic, DocumentPublic
 from app.services.documents import DocumentService
 from app.services.export import ExportFormat
@@ -35,18 +36,26 @@ async def upload_document(
     response: Response,
     file: Annotated[UploadFile, File(description="Исходный файл документа")],
     title: Annotated[str | None, Form(max_length=500)] = None,
+    book_id: Annotated[uuid.UUID | None, Form(description="Включить в комплект этой книги")] = None,
+    source_role: Annotated[SourceRole | None, Form(description="Роль файла в комплекте")] = None,
 ) -> DocumentPublic:
     """Принять файл в проект.
 
     Повторная загрузка того же файла отдаёт уже заведённый документ с кодом
     200 вместо 201: клиент по коду отличает новую загрузку от повтора, а
     платить за второй разбор и перевод одинакового содержимого незачем.
+
+    `book_id` и `source_role` задаются вместе и включают принятый файл в
+    комплект книги тем же запросом. Порознь они не имеют смысла: роль
+    описывает место файла в комплекте, а комплект — у книги.
     """
     document, created = await DocumentService(session, context, storage).upload(
         project_id=project_id,
         filename=file.filename or "document",
         stream=chunks(file),
         title=title,
+        book_id=book_id,
+        source_role=source_role,
     )
 
     if not created:

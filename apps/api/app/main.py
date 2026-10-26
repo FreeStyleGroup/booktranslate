@@ -14,6 +14,7 @@ from app.api.routes import (
     admin,
     admin_glossary,
     auth,
+    books,
     catalog,
     documents,
     health,
@@ -123,6 +124,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_glossary.router)
     app.include_router(overview.router)
     app.include_router(projects.router)
+    app.include_router(books.router)
     app.include_router(documents.router)
     app.include_router(segments.router)
     app.include_router(terminology.router)

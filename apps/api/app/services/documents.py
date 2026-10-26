@@ -26,9 +26,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.document import Document, DocumentStatus, SourceFormat
+from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
 from app.models.organization import Role
 from app.services.base import TenantService
+from app.services.books import BookService
 from app.services.context import RequestContext
 from app.services.errors import (
     InvalidInputError,
@@ -108,17 +109,41 @@ class DocumentService(TenantService):
         filename: str,
         stream: AsyncIterator[bytes],
         title: str | None = None,
+        book_id: uuid.UUID | None = None,
+        source_role: SourceRole | None = None,
     ) -> tuple[Document, bool]:
-        """Принять файл в проект.
+        """Принять файл в проект, при желании — сразу в комплект книги.
 
         Возвращает документ и признак того, что он заведён именно сейчас:
         повторная загрузка того же файла отдаёт существующий документ, а не
         плодит копию и не запускает разбор во второй раз.
+
+        Книга и роль необязательны, но только вместе: роль описывает место
+        файла в комплекте, и вне книги у неё нет смысла. Заданы — файл
+        после приёма включается в комплект тем же запросом: «загрузить» и
+        «назначить роль» двумя действиями оставляли бы файл висеть в
+        проекте всякий раз, когда второе из них не доходило.
         """
         self._context.require(*UPLOADING_ROLES)
 
         project = await ProjectService(self._session, self._context).get(project_id)
         safe_name = Path(filename).name[:255] or "document"
+
+        if (book_id is None) != (source_role is None):
+            raise InvalidInputError("Книга и роль файла в комплекте задаются вместе")
+
+        if book_id is not None and source_role is not None:
+            # До работы с файлом: книга есть, она того же проекта, и роль
+            # свободна. Байты к этому моменту уже пришли — многочастную
+            # форму разбирает FastAPI до вызова обработчика, — но ни
+            # подсчёта суммы, ни записи в хранилище, ни строки в базе ещё
+            # не было, и делать их, чтобы потом отказать, незачем.
+            # Отказ после записи тоже возможен: между проверкой и вставкой
+            # успевает пройти чужой запрос. Там он редкий случай, здесь —
+            # обычный порядок дел.
+            await self._books().check_can_attach(
+                book_id=book_id, project_id=project.id, role=source_role
+            )
 
         upload = await spool(stream, limit_bytes=get_settings().max_upload_bytes)
 
@@ -134,22 +159,33 @@ class DocumentService(TenantService):
                 )
 
             existing = await self._find_by_hash(project_id, upload.content_hash)
-            if existing is not None:
-                return existing, False
+            created = existing is None
 
-            document = await self._store(
-                project_id=project.id,
-                title=title or Path(safe_name).stem or safe_name,
-                original_filename=safe_name,
-                source_format=source_format,
-                upload=upload,
-            )
+            if existing is not None:
+                document = existing
+            else:
+                document = await self._store(
+                    project_id=project.id,
+                    title=title or Path(safe_name).stem or safe_name,
+                    original_filename=safe_name,
+                    source_format=source_format,
+                    upload=upload,
+                )
         finally:
             # Временный файл переезжает в хранилище методом move, поэтому в
             # успешном случае удалять уже нечего. Во всех остальных — есть.
             upload.discard()
 
-        return document, True
+        if book_id is not None and source_role is not None:
+            # Повтор тоже включается в комплект: тот же файл, присланный
+            # раньше просто в проект, теперь приносят уже как источник
+            # книги, и отказывать ему незачем. Файл при этом один — в
+            # хранилище он не удваивается.
+            document = await self._books().attach(
+                book_id=book_id, document_id=document.id, role=source_role
+            )
+
+        return document, created
 
     async def list_all(
         self, *, project_id: uuid.UUID | None = None, limit: int = 50, offset: int = 0
@@ -215,6 +251,9 @@ class DocumentService(TenantService):
         # объект без документа — его подберёт уборка. Обратный порядок
         # оставил бы документ, который нельзя открыть.
         await self._storage.delete(storage_key)
+
+    def _books(self) -> BookService:
+        return BookService(self._session, self._context)
 
     async def _find_by_hash(self, project_id: uuid.UUID, content_hash: str) -> Document | None:
         document: Document | None = await self._session.scalar(

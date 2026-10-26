@@ -14,6 +14,11 @@ import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 
+# Только тип узла: разбор идёт через defusedxml ниже, а объекты он
+# возвращает штатные. Импортировать ради аннотации сам разбор было бы
+# приглашением случайно им воспользоваться.
+from xml.etree.ElementTree import Element
+
 from bs4 import BeautifulSoup, CData, Tag
 
 # NavigableString и PageElement пакет bs4 наружу не переэкспортирует —
@@ -190,11 +195,16 @@ class EpubParser:
             raise ParsingError(str(error)) from error
 
 
-def _spine(archive: zipfile.ZipFile) -> list[str]:
-    """Пути к главам в порядке чтения.
+def read_opf(archive: zipfile.ZipFile) -> tuple[Element, str]:
+    """Опись EPUB и каталог, от которого считаются пути внутри неё.
 
     Путь до описи берётся из `META-INF/container.xml` — он не обязан быть
     `OEBPS/content.opf`, и у части издателей он другой.
+
+    Вынесено из разбора глав, потому что по той же описи читаются название
+    и автор при проверке исходника. Два отдельных чтения одного файла
+    однажды разошлись бы в обработке ошибок, и половина EPUB читалась бы
+    строже другой.
     """
     try:
         container = ElementTree.fromstring(read_member(archive, "META-INF/container.xml"))
@@ -214,8 +224,13 @@ def _spine(archive: zipfile.ZipFile) -> list[str]:
     except (KeyError, ElementTree.ParseError, DefusedXmlException) as error:
         raise ParsingError("Опись EPUB не читается") from error
 
+    return opf, posixpath.dirname(opf_path)
+
+
+def _spine(archive: zipfile.ZipFile) -> list[str]:
+    """Пути к главам в порядке чтения."""
+    opf, base = read_opf(archive)
     ns = {"opf": "http://www.idpf.org/2007/opf"}
-    base = posixpath.dirname(opf_path)
 
     hrefs: dict[str, str] = {}
     for item in opf.findall("opf:manifest/opf:item", ns):
