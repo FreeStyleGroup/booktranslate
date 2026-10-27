@@ -212,6 +212,12 @@ async def test_gate_opens_only_with_an_approved_version(db_client: AsyncClient) 
     original = next(item for item in decided.json() if item["id"] == valve["id"])
     assert repeated["status"] == "accepted"
     assert repeated["glossary_term_id"] == original["glossary_term_id"] is not None
+    # «Не термин» в одной главе книги — не термин и в соседней.
+    dismissed = {
+        item["source_term"].casefold() for item in decided.json() if item["status"] == "rejected"
+    }
+    again = [item for item in later if item["source_term"].casefold() in dismissed]
+    assert all(item["status"] == "rejected" for item in again)
     await decide(db_client, account, second, later)
 
     version = await draft(db_client, account, book_id)

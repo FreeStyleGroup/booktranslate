@@ -17,7 +17,7 @@
 """
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 
 from sqlalchemy import ColumnElement, func, select
@@ -133,7 +133,8 @@ class TerminologyService(TenantService):
         Слово, которое уже есть в словаре проекта книги, приходит решённым:
         решение о термине принимается для книги один раз, и спрашивать о
         «relief valve» в каждой из двадцати глав — значит получить двадцать
-        шансов назвать его по-разному.
+        шансов назвать его по-разному. Так же и с отказом: «не термин» в
+        одной главе книги — не термин и в соседней.
         """
         self._context.require(*EDITING_ROLES)
 
@@ -170,6 +171,7 @@ class TerminologyService(TenantService):
             min_frequency=min_frequency,
             limit=limit,
             known=known,
+            dismissed=await self._dismissed(book.id, known),
         )
 
         self._session.add(
@@ -361,6 +363,7 @@ class TerminologyService(TenantService):
         min_frequency: int,
         limit: int,
         known: Mapping[str, uuid.UUID] | None = None,
+        dismissed: Set[str] | None = None,
     ) -> int:
         """Обновить кандидатов владельца по тексту; вернуть, сколько найдено.
 
@@ -371,9 +374,12 @@ class TerminologyService(TenantService):
         переживает новый текст.
 
         `known` — термины, уже решённые в словаре, и их записи: такой
-        кандидат приходит принятым, со ссылкой на решение.
+        кандидат приходит принятым, со ссылкой на решение. `dismissed` —
+        слова, которые уже признали «не термином»: такой кандидат приходит
+        отклонённым.
         """
         known = known or {}
+        dismissed = dismissed or frozenset()
         candidates = extraction.extract(texts, min_frequency=min_frequency, limit=limit)
 
         existing = {
@@ -400,6 +406,12 @@ class TerminologyService(TenantService):
             row = existing.get(key)
 
             decided = known.get(key)
+            if decided is not None:
+                settled = TermCandidateStatus.ACCEPTED
+            elif key in dismissed:
+                settled = TermCandidateStatus.REJECTED
+            else:
+                settled = TermCandidateStatus.NEW
 
             if row is None:
                 self._session.add(
@@ -409,9 +421,7 @@ class TerminologyService(TenantService):
                         source_term=candidate.source,
                         source_term_normalized=key,
                         kind=candidate.kind,
-                        status=TermCandidateStatus.NEW
-                        if decided is None
-                        else TermCandidateStatus.ACCEPTED,
+                        status=settled,
                         frequency=candidate.frequency,
                         sample=candidate.sample,
                         expansion=candidate.expansion,
@@ -434,10 +444,9 @@ class TerminologyService(TenantService):
                 row.kind = candidate.kind
                 row.source_term = candidate.source
 
-                # Пока кандидат ждал, термин решили в другой главе.
-                if decided is not None:
-                    row.status = TermCandidateStatus.ACCEPTED
-                    row.glossary_term_id = decided
+                # Пока кандидат ждал, слово решили в другой главе.
+                row.status = settled
+                row.glossary_term_id = decided
 
         for key, row in existing.items():
             if key not in seen and row.status is TermCandidateStatus.NEW:
@@ -613,6 +622,25 @@ class TerminologyService(TenantService):
             raise NotFoundError("Глава не найдена")
 
         return chapter
+
+    async def _dismissed(self, book_id: uuid.UUID, known: Mapping[str, uuid.UUID]) -> set[str]:
+        """Слова, отклонённые как «не термин» в главах этой книги.
+
+        Если слово с тех пор завели в словарь, оно уже не отклонено:
+        словарь — более позднее и более сильное решение.
+        """
+        rows = await self._session.scalars(
+            select(TermCandidate.source_term_normalized)
+            .join(Chapter, Chapter.id == TermCandidate.chapter_id)
+            .where(
+                TermCandidate.organization_id == self.organization_id,
+                TermCandidate.status == TermCandidateStatus.REJECTED,
+                Chapter.book_id == book_id,
+            )
+            .distinct()
+        )
+
+        return {key for key in rows if key not in known}
 
     async def _book(self, book_id: uuid.UUID) -> BookEdition:
         book = await self._session.scalar(self.scoped(BookEdition).where(BookEdition.id == book_id))
