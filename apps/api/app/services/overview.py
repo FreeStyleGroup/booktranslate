@@ -103,8 +103,12 @@ class OverviewService(TenantService):
         overview.segments = sum(overview.segments_by_status.values())
         overview.flagged = overview.segments_by_status.get(SegmentStatus.FLAGGED.value, 0)
 
+        # Только кандидаты документов: счётчик ведёт на их разбор, а
+        # кандидаты глав решаются на экране терминологии своей книги.
         overview.undecided_terms = await self._count(
-            TermCandidate, TermCandidate.status == TermCandidateStatus.NEW
+            TermCandidate,
+            TermCandidate.status == TermCandidateStatus.NEW,
+            TermCandidate.document_id.is_not(None),
         )
 
         overview.usage, overview.translated_by = await self._usage()

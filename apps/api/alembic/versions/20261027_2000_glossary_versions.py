@@ -17,7 +17,7 @@
 
 Revision ID: 0016_glossary_versions
 Revises: 0015_book_objects
-Create Date: 2026-10-29
+Create Date: 2026-10-27
 """
 
 from collections.abc import Sequence
