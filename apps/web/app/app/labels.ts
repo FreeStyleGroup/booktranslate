@@ -206,6 +206,45 @@ export const GLOSSARY_STATUS_HINT: Record<string, string> = {
   retired: "дубликат или ошибка — в работу не идёт",
 };
 
+/** Что сделать с термином при первом употреблении в книге. */
+export const FIRST_USE_RULE: Record<string, string> = {
+  none: "Ничего особого",
+  expand: "Раскрыть сокращение",
+  original: "Дать оригинал в скобках",
+};
+
+export const FIRST_USE_HINT: Record<string, string> = {
+  none: "термин просто употребляется",
+  expand: "программируемый логический контроллер (ПЛК), дальше — ПЛК",
+  original: "предохранительный клапан (relief valve), дальше — без скобок",
+};
+
+/** Состояние версии глоссария. */
+export const VERSION_STATUS_LABEL: Record<string, string> = {
+  draft: "Черновик",
+  approved: "Утверждена",
+  superseded: "Заменена",
+};
+
+export const VERSION_STATUS_CHIP: Record<string, string> = {
+  draft: "chip chip--warn",
+  approved: "chip chip--ok",
+  superseded: "chip chip--info",
+};
+
+/** Чем обязательный термин версии отличается от предыдущей. */
+export const TERM_CHANGE_LABEL: Record<string, string> = {
+  added: "Появился",
+  changed: "Изменён",
+  removed: "Снят",
+};
+
+export const TERM_CHANGE_CHIP: Record<string, string> = {
+  added: "chip chip--ok",
+  changed: "chip chip--warn",
+  removed: "chip chip--danger",
+};
+
 /** Откуда запись словаря. Загрузка называется по источнику из файла. */
 export function glossarySource(source: string): string {
   if (source === "manual") {

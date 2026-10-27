@@ -13,6 +13,7 @@ import {
   type BookObject,
   type BookStructure,
   type ChapterMaster,
+  type TerminologyGate,
 } from "../../../../../lib/work";
 import {
   BOUNDARY_CHIP,
@@ -31,6 +32,7 @@ import { Pager } from "../../../../ui/pager";
 import { linkTo, oneOf, paramsOf, wholeNumber } from "../../../../ui/query";
 import { DataTable, type Column } from "../../../../ui/table";
 import { FindBlock } from "../../../find-block";
+import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
 
@@ -80,11 +82,12 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
     load<BookKit>(`/books/${id}/sources`, here),
+    load<TerminologyGate>(`/chapters/${chapterId}/terminology/gate`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -177,6 +180,10 @@ export default async function ChapterPage({
         shownId={shown?.id ?? null}
         canManage={canManage}
       />
+
+      {/* Готова ли глава к переводу по терминам — до самого перевода, а не
+          отказом на кнопке «Перевести». */}
+      {gate.data !== undefined && <GatePanel gate={gate.data} bookId={id} termsLink />}
 
       {shown !== undefined && current !== undefined && shown.id !== current.id && (
         // Прежняя версия открыта нарочно — но это должно быть видно сразу,

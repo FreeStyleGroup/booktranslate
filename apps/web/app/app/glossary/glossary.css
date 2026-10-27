@@ -438,3 +438,55 @@
     flex-basis: 100%;
   }
 }
+
+/* ── Уточнения решения под строкой термина ── */
+
+/* На всю ширину строки: варианты и область — продолжение решения о
+   термине, а не ещё один столбец. */
+.gl-more,
+.gl-more__facts {
+  grid-column: 1 / -1;
+}
+
+.gl-more__facts {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.gl-more summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.gl-more[open] summary {
+  margin-bottom: 12px;
+}
+
+.gl-more__form {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--paper-tint);
+}
+
+.gl-more__form .gl-check,
+.gl-more__form .btn {
+  grid-column: 1 / -1;
+}
+
+.gl-more__form .btn {
+  justify-self: start;
+}
+
+@media (max-width: 680px) {
+  .gl-more__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

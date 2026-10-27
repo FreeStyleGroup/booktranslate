@@ -581,3 +581,70 @@
   flex-basis: 100%;
   margin: 0;
 }
+
+/* ---------- терминология: гейт главы и версии глоссария ---------- */
+
+/* Закрытый гейт отмечен полосой слева, как черновая глава: при беглом
+   взгляде по экрану главы видно, что переводить её ещё нельзя. */
+.bk-gate {
+  border-left: 3px solid var(--danger);
+}
+
+.bk-gate.is-open {
+  border-left-color: var(--ok);
+}
+
+.bk-gate__version {
+  margin: 0 0 10px;
+}
+
+.bk-gate__list {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.bk-gate__list--warn {
+  color: var(--warn);
+}
+
+.bk-version-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.bk-variants {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.bk-search {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.bk-search input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.bk-search input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}

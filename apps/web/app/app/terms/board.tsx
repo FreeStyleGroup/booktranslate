@@ -17,23 +17,13 @@
    до записи. Двести терминов не разбирают за один присест, а закрытая
    вкладка не должна стоить часа работы. */
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
+import type { TermCandidate } from "../../lib/work";
 import { GLOSSARY_KIND, GLOSSARY_KIND_HINT, plural, thousands } from "../labels";
-import { decideTerms, type Decision, type Report } from "./actions";
+import type { Decision, Report, Result } from "./actions";
 import { ReportError } from "../ui/toast";
-
-export type Candidate = {
-  id: string;
-  source_term: string;
-  kind: string;
-  status: string;
-  frequency: number;
-  sample: string;
-  first_position: number;
-  expansion: string | null;
-};
 
 /** Что человек решил по строке: пусто — ещё не решил. */
 type Draft = { target: string; kind: string; reject: boolean };
@@ -41,14 +31,20 @@ type Draft = { target: string; kind: string; reject: boolean };
 const KINDS = Object.keys(GLOSSARY_KIND);
 
 export function TermsBoard({
-  documentId,
+  storageKey,
   candidates,
+  decide,
+  done,
 }: {
-  documentId: string;
-  candidates: Candidate[];
+  /** Где хранить черновики решений: у каждого владельца кандидатов — свои. */
+  storageKey: string;
+  candidates: TermCandidate[];
+  /** Записать решения — серверное действие, привязанное к владельцу. */
+  decide: (decisions: Decision[]) => Promise<Result>;
+  /** Что сказать, когда решать больше нечего: куда идти дальше. */
+  done: ReactNode;
 }) {
   const router = useRouter();
-  const storageKey = `bt-terms-${documentId}`;
 
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +100,7 @@ export function TermsBoard({
     }
   }, [drafts, storageKey]);
 
-  function change(candidate: Candidate, patch: Partial<Draft>): void {
+  function change(candidate: TermCandidate, patch: Partial<Draft>): void {
     touched.current = true;
 
     setDrafts((was) => {
@@ -162,7 +158,7 @@ export function TermsBoard({
     setReport(null);
 
     start(async () => {
-      const answer = await decideTerms(documentId, decisions);
+      const answer = await decide(decisions);
 
       if (answer.error !== undefined) {
         setError(answer.error);
@@ -191,11 +187,7 @@ export function TermsBoard({
     return (
       <section className="tile wk-call">
         <h3>Все кандидаты решены</h3>
-        <p>
-          По этой книге решать больше нечего — перевод можно запускать. Новые
-          кандидаты появятся, если книгу разобрать заново из исправленного
-          файла.
-        </p>
+        <p>{done}</p>
         {report !== null && <Summary report={report} />}
       </section>
     );
@@ -222,8 +214,8 @@ export function TermsBoard({
                   <b>{candidate.source_term}</b>
                   <span className="tile__note">
                     {thousands(candidate.frequency)}{" "}
-                    {plural(candidate.frequency, "раз", "раза", "раз")} · сегмент{" "}
-                    {candidate.first_position + 1}
+                    {plural(candidate.frequency, "раз", "раза", "раз")} ·{" "}
+                    {candidate.first_block_code ?? `сегмент ${candidate.first_position + 1}`}
                   </span>
                   {candidate.expansion !== null && (
                     <span className="tm-row__exp">{candidate.expansion}</span>
@@ -302,8 +294,8 @@ function Summary({ report }: { report: Report }) {
       <span aria-hidden="true">✅</span> Принято {thousands(report.accepted)}, отклонено{" "}
       {thousands(report.rejected)}.{" "}
       {report.remaining === 0
-        ? "Нерешённых не осталось — перевод можно запускать."
-        : `Осталось без решения ${thousands(report.remaining)} — пока они есть, перевод не начнётся.`}
+        ? "Нерешённых не осталось."
+        : `Осталось без решения ${thousands(report.remaining)} — пока они есть, терминология не готова.`}
     </p>
   );
 }

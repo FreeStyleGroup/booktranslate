@@ -5,7 +5,11 @@
    Решения уходят пачкой, а не по одному, и это не оптимизация: двести
    кандидатов — одна работа человека, и разваливать её на двести запросов
    значит получить наполовину решённый словарь, если связь оборвётся
-   посередине. API применяет пачку одной транзакцией. */
+   посередине. API применяет пачку одной транзакцией.
+
+   Владельцев кандидатов два: глава — по тексту её мастера — и документ
+   прежнего контура. Правила у них общие, разные только адрес и то, какие
+   страницы обновить после записи. */
 
 import { revalidatePath } from "next/cache";
 
@@ -43,7 +47,10 @@ function failure(error: unknown): Result {
   return { error: "Сервис недоступен. Попробуйте ещё раз." };
 }
 
-async function credentials(): Promise<{ token: string; organizationId: string | undefined }> {
+async function credentials(): Promise<{
+  token: string;
+  organizationId: string | undefined;
+}> {
   const token = await accessToken();
 
   if (token === undefined) {
@@ -63,25 +70,30 @@ export async function extractTerms(documentId: string, minFrequency: number): Pr
     return { error: "Запрос повреждён — обновите страницу" };
   }
 
-  // Порог подбирают под книгу: на руководстве в тридцать страниц двойка
-  // нормальна, на книге в четыреста её поднимают, иначе список будет
-  // длиннее, чем человек разберёт.
-  const frequency = Math.min(50, Math.max(1, Math.round(minFrequency)));
-
-  try {
-    const { token, organizationId: organization } = await credentials();
-
-    await apiFetch(
-      `/documents/${documentId}/terminology/extract?min_frequency=${frequency}&limit=400`,
-      { method: "POST", token, organizationId: organization },
-    );
-  } catch (error) {
-    return failure(error);
-  }
-
+  const result = await extract(`/documents/${documentId}/terminology/extract`, minFrequency);
   revalidatePath("/app/terms");
 
-  return {};
+  return result;
+}
+
+/** Пройти по тексту текущего мастера главы.
+ *
+ * Проход записывается вместе с версией мастера: по этой записи гейт
+ * терминологии знает, что кандидаты собраны по нынешнему тексту главы.
+ */
+export async function extractChapterTerms(
+  bookId: string,
+  chapterId: string,
+  minFrequency: number,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const result = await extract(`/chapters/${chapterId}/terminology/extract`, minFrequency);
+  revalidateChapter(bookId, chapterId);
+
+  return result;
 }
 
 export async function decideTerms(documentId: string, decisions: Decision[]): Promise<Result> {
@@ -89,6 +101,61 @@ export async function decideTerms(documentId: string, decisions: Decision[]): Pr
     return { error: "Запрос повреждён — обновите страницу" };
   }
 
+  const result = await send(`/documents/${documentId}/terminology/decisions`, decisions);
+
+  revalidatePath("/app/terms");
+  revalidatePath(`/app/documents/${documentId}`);
+  revalidatePath("/app");
+
+  return result;
+}
+
+/** Решения по кандидатам главы: принятые уходят в словарь проекта книги. */
+export async function decideChapterTerms(
+  bookId: string,
+  chapterId: string,
+  decisions: Decision[],
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const result = await send(`/chapters/${chapterId}/terminology/decisions`, decisions);
+
+  revalidateChapter(bookId, chapterId);
+  revalidatePath("/app/glossary");
+
+  return result;
+}
+
+function revalidateChapter(bookId: string, chapterId: string): void {
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}/terms`);
+  revalidatePath(`/app/books/${bookId}/terminology`);
+}
+
+async function extract(path: string, minFrequency: number): Promise<Result> {
+  // Порог подбирают под текст: на руководстве в тридцать страниц двойка
+  // нормальна, на книге в четыреста по ней наберётся список длиннее, чем
+  // человек разберёт.
+  const frequency = Math.min(50, Math.max(1, Math.round(minFrequency)));
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`${path}?min_frequency=${frequency}&limit=400`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  return {};
+}
+
+async function send(path: string, decisions: Decision[]): Promise<Result> {
   const clean: Decision[] = [];
 
   for (const decision of decisions) {
@@ -120,7 +187,7 @@ export async function decideTerms(documentId: string, decisions: Decision[]): Pr
     const { token, organizationId: organization } = await credentials();
 
     for (let start = 0; start < clean.length; start += BATCH) {
-      const answer = await apiFetch<Report>(`/documents/${documentId}/terminology/decisions`, {
+      const answer = await apiFetch<Report>(path, {
         method: "POST",
         token,
         organizationId: organization,
@@ -128,7 +195,7 @@ export async function decideTerms(documentId: string, decisions: Decision[]): Pr
       });
 
       // Принятое и отклонённое складываем по пачкам, остаток берём из
-      // последнего ответа: он и есть текущее состояние документа.
+      // последнего ответа: он и есть текущее состояние.
       report = {
         accepted: report.accepted + answer.accepted,
         rejected: report.rejected + answer.rejected,
@@ -138,10 +205,6 @@ export async function decideTerms(documentId: string, decisions: Decision[]): Pr
   } catch (error) {
     return failure(error);
   }
-
-  revalidatePath("/app/terms");
-  revalidatePath(`/app/documents/${documentId}`);
-  revalidatePath("/app");
 
   return { report };
 }

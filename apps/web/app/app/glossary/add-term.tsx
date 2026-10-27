@@ -9,13 +9,14 @@
 
 import { useActionState } from "react";
 
-import { GLOSSARY_KIND, GLOSSARY_KIND_HINT } from "../labels";
+import { FIRST_USE_HINT, FIRST_USE_RULE, GLOSSARY_KIND, GLOSSARY_KIND_HINT } from "../labels";
 import { addTerm, type AddResult } from "./actions";
 import type { Pair } from "./page";
 import { ReportError } from "../ui/toast";
 
 const EMPTY: AddResult = {};
 const KINDS = Object.keys(GLOSSARY_KIND);
+const RULES = Object.keys(FIRST_USE_RULE);
 
 export function AddTerm({ pairs }: { pairs: Pair[] }) {
   const [state, action, busy] = useActionState(addTerm, EMPTY);
@@ -64,6 +65,27 @@ export function AddTerm({ pairs }: { pairs: Pair[] }) {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="field">
+            <span>Область</span>
+            <input name="domain" maxLength={120} placeholder="гидравлика" />
+          </label>
+
+          <label className="field">
+            <span>При первом употреблении</span>
+            <select name="first_use_rule" defaultValue="none">
+              {RULES.map((rule) => (
+                <option key={rule} value={rule} title={FIRST_USE_HINT[rule]}>
+                  {FIRST_USE_RULE[rule]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field gl-add__note">
+            <span>Допустимые варианты — по одному в строке</span>
+            <textarea name="variants" rows={2} placeholder="клапан сброса" />
           </label>
 
           <label className="field gl-add__note">
