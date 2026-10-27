@@ -13,7 +13,7 @@ import { revalidatePath } from "next/cache";
 
 import { ApiError, apiFetch } from "../../lib/api";
 import { accessToken, organizationId } from "../../lib/session";
-import type { GlossaryKind, GlossaryStatus, GlossaryTerm } from "../../lib/work";
+import type { FirstUseRule, GlossaryKind, GlossaryStatus, GlossaryTerm } from "../../lib/work";
 
 export type Result = { error?: string };
 
@@ -31,7 +31,13 @@ const STATUSES = new Set<string>([
   "needs_unification",
   "retired",
 ]);
+const FIRST_USE = new Set<string>(["none", "expand", "original"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Те же пределы, что в API.
+const VARIANTS_MAX = 20;
+const TERM_MAX = 300;
+const DOMAIN_MAX = 120;
 
 /** Запрос от имени вошедшего в текущем пространстве. */
 async function call<T>(path: string, method: string, body?: unknown): Promise<T> {
@@ -67,13 +73,21 @@ export async function addTerm(_previous: AddResult, formData: FormData): Promise
   const languages = pair(String(formData.get("pair") ?? ""));
   const kind = String(formData.get("kind") ?? "term");
   const note = String(formData.get("note") ?? "").trim();
+  const domain = String(formData.get("domain") ?? "").trim();
+  const firstUse = String(formData.get("first_use_rule") ?? "none");
+  const variants = variantsOf(String(formData.get("variants") ?? ""));
 
   if (languages === null) {
     return { error: "Выберите языковую пару" };
   }
 
-  if (!KINDS.has(kind)) {
+  if (!KINDS.has(kind) || !FIRST_USE.has(firstUse)) {
     return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const invalid = checkDetails({ allowed_variants: variants, domain });
+  if (invalid !== null) {
+    return { error: invalid };
   }
 
   try {
@@ -84,6 +98,9 @@ export async function addTerm(_previous: AddResult, formData: FormData): Promise
       target_language: languages.target,
       kind,
       note: note === "" ? null : note,
+      domain: domain === "" ? null : domain,
+      first_use_rule: firstUse,
+      allowed_variants: variants,
     });
 
     revalidatePath("/app/glossary");
@@ -98,7 +115,37 @@ export type TermChange = {
   target_term?: string;
   kind?: GlossaryKind;
   status?: GlossaryStatus;
+  allowed_variants?: string[];
+  domain?: string | null;
+  first_use_rule?: FirstUseRule;
+  mandatory?: boolean;
 };
+
+/** Варианты из поля «по одному в строке»: в самом варианте бывает запятая. */
+function variantsOf(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+}
+
+function checkDetails(change: { allowed_variants?: string[]; domain?: string | null }): string | null {
+  if (change.allowed_variants !== undefined) {
+    if (change.allowed_variants.length > VARIANTS_MAX) {
+      return `Допустимых вариантов — не больше ${VARIANTS_MAX}`;
+    }
+
+    if (change.allowed_variants.some((variant) => variant.length > TERM_MAX)) {
+      return `Вариант — не длиннее ${TERM_MAX} знаков`;
+    }
+  }
+
+  if (typeof change.domain === "string" && change.domain.length > DOMAIN_MAX) {
+    return `Область — не длиннее ${DOMAIN_MAX} знаков`;
+  }
+
+  return null;
+}
 
 export async function updateTerm(id: string, change: TermChange): Promise<Result> {
   if (!UUID.test(id)) {
@@ -111,6 +158,15 @@ export async function updateTerm(id: string, change: TermChange): Promise<Result
 
   if (change.status !== undefined && !STATUSES.has(change.status)) {
     return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  if (change.first_use_rule !== undefined && !FIRST_USE.has(change.first_use_rule)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  const invalid = checkDetails(change);
+  if (invalid !== null) {
+    return { error: invalid };
   }
 
   try {

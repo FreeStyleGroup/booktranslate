@@ -10,14 +10,15 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { extractTerms } from "./actions";
+import type { Result } from "./actions";
 import { ReportError } from "../ui/toast";
 
 export function ExtractButton({
-  documentId,
+  extract,
   again,
 }: {
-  documentId: string;
+  /** Пройти по тексту — серверное действие, привязанное к владельцу. */
+  extract: (minFrequency: number) => Promise<Result>;
   again?: boolean;
 }) {
   const router = useRouter();
@@ -29,7 +30,7 @@ export function ExtractButton({
     setError(null);
 
     start(async () => {
-      const answer = await extractTerms(documentId, frequency);
+      const answer = await extract(frequency);
 
       if (answer.error !== undefined) {
         setError(answer.error);
@@ -64,7 +65,7 @@ export function ExtractButton({
           onClick={run}
           disabled={busy}
         >
-          {busy ? "Идём по книге…" : again === true ? "Пройти заново" : "Собрать кандидатов"}
+          {busy ? "Идём по тексту…" : again === true ? "Пройти заново" : "Собрать кандидатов"}
         </button>
       </div>
 

@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { load, type Document, type Project } from "../../lib/work";
+import { load, type Document, type Project, type TermCandidate } from "../../lib/work";
 import {
   DOCUMENT_CHIP,
   DOCUMENT_LABEL,
-  GLOSSARY_KIND,
   fileSize,
   thousands,
   when,
 } from "../labels";
 import "../work.css";
 import "./terms.css";
-import { TermsBoard, type Candidate } from "./board";
+import { decideTerms, extractTerms } from "./actions";
+import { TermsBoard } from "./board";
+import { Decided } from "./decided";
 import { ExtractButton } from "./extract-button";
 
 export const metadata: Metadata = {
@@ -153,7 +154,7 @@ async function Book({ id, documents }: { id: string; documents: Document[] }) {
   }
 
   const project = await load<Project>(`/projects/${book.project_id}`, here);
-  const candidates = await load<Candidate[]>(
+  const candidates = await load<TermCandidate[]>(
     `/documents/${id}/terminology?limit=1000`,
     here,
   );
@@ -187,7 +188,7 @@ async function Book({ id, documents }: { id: string; documents: Document[] }) {
           )}
         </div>
 
-        <ExtractButton documentId={book.id} again={started} />
+        <ExtractButton extract={extractTerms.bind(null, book.id)} again={started} />
       </div>
 
       {!started ? (
@@ -201,47 +202,15 @@ async function Book({ id, documents }: { id: string; documents: Document[] }) {
           </p>
         </section>
       ) : (
-        <TermsBoard documentId={book.id} candidates={candidates.data} />
+        <TermsBoard
+          storageKey={`bt-terms-${book.id}`}
+          candidates={candidates.data}
+          decide={decideTerms.bind(null, book.id)}
+          done="По этой книге решать больше нечего — перевод можно запускать. Новые кандидаты появятся, если книгу разобрать заново из исправленного файла."
+        />
       )}
 
       {decided.length > 0 && <Decided candidates={decided} />}
     </>
-  );
-}
-
-/** Что уже решено. Показывается, чтобы видеть сделанное и не решать дважды. */
-function Decided({ candidates }: { candidates: Candidate[] }) {
-  const accepted = candidates.filter((item) => item.status === "accepted");
-  const rejected = candidates.filter((item) => item.status === "rejected");
-
-  return (
-    <section className="tile">
-      <div className="tile__head">
-        <h3>Уже решено</h3>
-        <span className="tile__note">
-          принято {thousands(accepted.length)} · отклонено {thousands(rejected.length)}
-        </span>
-      </div>
-
-      <div className="tm-done">
-        {accepted.map((item) => (
-          <span className="tm-chip" key={item.id}>
-            <b>{item.source_term}</b>
-            <i>{GLOSSARY_KIND[item.kind] ?? item.kind}</i>
-          </span>
-        ))}
-        {rejected.map((item) => (
-          <span className="tm-chip tm-chip--off" key={item.id}>
-            <b>{item.source_term}</b>
-            <i>не термин</i>
-          </span>
-        ))}
-      </div>
-
-      <p className="tile__note wk-seg__foot">
-        Принятые термины лежат в словаре проекта и применяются ко всем его
-        книгам. Поправить решение можно в разделе «Словарь».
-      </p>
-    </section>
   );
 }

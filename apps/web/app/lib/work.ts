@@ -471,13 +471,17 @@ export type GlossaryTerm = {
   target_language: string;
   source_term: string;
   target_term: string;
+  // Согласованные варианты перевода помимо основного.
+  allowed_variants: string[];
+  // Предметная область, где решение верно.
+  domain: string | null;
   kind: GlossaryKind;
   status: GlossaryStatus;
   note: string | null;
   reference: string | null;
   mandatory: boolean;
   case_sensitive: boolean;
-  expand_on_first_use: boolean;
+  first_use_rule: FirstUseRule;
   // «manual», «extracted», «platform», «import:<источник>».
   source: string;
   upload_id: string | null;
@@ -486,6 +490,133 @@ export type GlossaryTerm = {
 };
 
 export type GlossaryPage = { total: number; items: GlossaryTerm[] };
+
+/** Что сделать с термином при первом употреблении. */
+export type FirstUseRule = "none" | "expand" | "original";
+
+/** Кандидат в словарь — вопрос «как это называть», а не термин. */
+export type TermCandidate = {
+  id: string;
+  document_id: string | null;
+  chapter_id: string | null;
+  source_term: string;
+  kind: GlossaryKind;
+  status: "new" | "accepted" | "rejected";
+  frequency: number;
+  sample: string;
+  first_position: number;
+  first_block_id: string | null;
+  // `CH03-B0042` — у кандидатов главы.
+  first_block_code: string | null;
+  expansion: string | null;
+  glossary_term_id: string | null;
+};
+
+export type GlossaryVersionStatus = "draft" | "approved" | "superseded";
+
+/** Версия глоссария — неизменяемый снимок словаря с решением по нему. */
+export type GlossaryVersion = {
+  id: string;
+  book_id: string;
+  // Пусто у книжной версии.
+  chapter_id: string | null;
+  scope: "book" | "chapter";
+  number: number;
+  label: string;
+  status: GlossaryVersionStatus;
+  base_id: string | null;
+  superseded_by_id: string | null;
+  checksum: string;
+  term_count: number;
+  empty_reason: string | null;
+  created_by_id: string | null;
+  created_at: string;
+  approved_by_id: string | null;
+  approved_at: string | null;
+};
+
+/** Причина гейта: код — для машины, фраза — для человека. */
+export type GateItem = {
+  code: string;
+  message: string;
+  chapter_id: string | null;
+  count: number | null;
+};
+
+export type GlossaryVersionDetail = GlossaryVersion & {
+  chapter_code: string | null;
+  blockers: GateItem[];
+  changes: number;
+  impacted_blocks: number;
+};
+
+export type TerminologyPass = {
+  id: string;
+  master_id: string;
+  actor_id: string | null;
+  min_frequency: number;
+  found: number;
+  created_at: string;
+};
+
+/** Готова ли глава к переводу с точки зрения терминов. */
+export type TerminologyGate = {
+  chapter_id: string;
+  chapter_code: string | null;
+  chapter_title: string | null;
+  ordinal: number;
+  open: boolean;
+  version: GlossaryVersion | null;
+  draft: GlossaryVersion | null;
+  blockers: GateItem[];
+  warnings: GateItem[];
+  master_id: string | null;
+  current_pass: TerminologyPass | null;
+  collected: boolean;
+  undecided: number;
+};
+
+export type BookTerminology = { chapters: TerminologyGate[]; versions: GlossaryVersion[] };
+
+/** Термин в снимке версии — таким, каким его утвердили. */
+export type VersionTerm = {
+  id: string;
+  term_id: string | null;
+  source_term: string;
+  target_term: string;
+  allowed_variants: string[];
+  kind: GlossaryKind;
+  status: GlossaryStatus;
+  mandatory: boolean;
+  case_sensitive: boolean;
+  first_use_rule: FirstUseRule;
+  domain: string | null;
+  note: string | null;
+  reference: string | null;
+};
+
+export type VersionTermPage = { total: number; items: VersionTerm[] };
+
+/** Прежнее или новое решение по термину — как оно записано в версии. */
+export type TermRecord = Omit<VersionTerm, "id" | "term_id">;
+
+export type TermChange = {
+  id: string;
+  source_term: string;
+  kind: "added" | "changed" | "removed";
+  before: TermRecord | null;
+  after: TermRecord | null;
+  blocks: number;
+};
+
+export type ImpactedBlock = {
+  block: BlockRef;
+  chapter_id: string;
+  chapter_code: string | null;
+  terms: string[];
+};
+
+export type ImpactPage = { total: number; items: ImpactedBlock[] };
 
 /** Запись о загрузке словаря — с разрешением, под которым она прошла. */
 export type GlossaryUpload = {

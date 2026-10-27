@@ -13,8 +13,10 @@
 
 import { useState, useTransition } from "react";
 
-import type { GlossaryKind, GlossaryStatus, GlossaryTerm } from "../../lib/work";
+import type { FirstUseRule, GlossaryKind, GlossaryStatus, GlossaryTerm } from "../../lib/work";
 import {
+  FIRST_USE_HINT,
+  FIRST_USE_RULE,
   GLOSSARY_KIND,
   GLOSSARY_KIND_HINT,
   GLOSSARY_STATUS,
@@ -26,6 +28,7 @@ import { ReportError } from "../ui/toast";
 
 const KINDS = Object.keys(GLOSSARY_KIND) as GlossaryKind[];
 const STATUSES = Object.keys(GLOSSARY_STATUS) as GlossaryStatus[];
+const RULES = Object.keys(FIRST_USE_RULE) as FirstUseRule[];
 
 const STATUS_CHIP: Record<GlossaryStatus, string> = {
   proposed: "chip chip--info",
@@ -160,9 +163,132 @@ export function TermList({ terms, edits }: { terms: GlossaryTerm[]; edits: boole
                 <span className={STATUS_CHIP[term.status]}>{GLOSSARY_STATUS[term.status]}</span>
               </>
             )}
+
+            <TermMore
+              term={term}
+              edits={edits}
+              pending={pending}
+              onSave={(patch) => change(term, patch)}
+            />
           </div>
         ))}
       </div>
     </>
+  );
+}
+
+/** Уточнения решения: варианты, область, первое употребление, обязательность.
+
+   Под раскрытием, а не в строке: решают их реже, чем перевод и
+   состояние, а в строке они сжали бы перевод до слова. Свёрнутое
+   раскрытие само говорит, что уточнено, — его не нужно открывать, чтобы
+   увидеть варианты. */
+function TermMore({
+  term,
+  edits,
+  pending,
+  onSave,
+}: {
+  term: GlossaryTerm;
+  edits: boolean;
+  pending: boolean;
+  onSave: (patch: TermChange) => void;
+}) {
+  const facts = [
+    term.allowed_variants.length > 0 ? `варианты: ${term.allowed_variants.join("; ")}` : null,
+    term.domain,
+    term.first_use_rule !== "none" ? FIRST_USE_RULE[term.first_use_rule].toLowerCase() : null,
+    term.mandatory ? null : "необязательный",
+  ].filter((fact) => fact !== null);
+
+  if (!edits) {
+    return facts.length === 0 ? null : <p className="gl-more__facts">{facts.join(" · ")}</p>;
+  }
+
+  const untranslatable = term.kind === "do_not_translate";
+
+  return (
+    <details className="gl-more">
+      <summary>
+        {facts.length === 0 ? "Варианты, область, первое употребление" : facts.join(" · ")}
+      </summary>
+
+      <form
+        className="gl-more__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          const domain = String(form.get("domain") ?? "").trim();
+
+          onSave({
+            // У непереводимого поле закрыто и в форму не попадает — его
+            // варианты не трогаем, а не стираем.
+            ...(untranslatable
+              ? {}
+              : {
+                  allowed_variants: String(form.get("variants") ?? "")
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter((line) => line !== ""),
+                }),
+            domain: domain === "" ? null : domain,
+            first_use_rule: String(form.get("first_use_rule")) as FirstUseRule,
+            mandatory: form.get("mandatory") === "on",
+          });
+        }}
+      >
+        <label className="field">
+          <span>Допустимые варианты — по одному в строке</span>
+          <textarea
+            name="variants"
+            rows={3}
+            defaultValue={term.allowed_variants.join("\n")}
+            disabled={pending || untranslatable}
+            placeholder={untranslatable ? "у непереводимого вариантов нет" : "клапан сброса"}
+          />
+        </label>
+
+        <label className="field">
+          <span>Область</span>
+          <input
+            name="domain"
+            maxLength={120}
+            defaultValue={term.domain ?? ""}
+            disabled={pending}
+            placeholder="гидравлика"
+          />
+        </label>
+
+        <label className="field">
+          <span>При первом употреблении</span>
+          <select
+            name="first_use_rule"
+            defaultValue={term.first_use_rule}
+            disabled={pending}
+            title={FIRST_USE_HINT[term.first_use_rule]}
+          >
+            {RULES.map((rule) => (
+              <option key={rule} value={rule} title={FIRST_USE_HINT[rule]}>
+                {FIRST_USE_RULE[rule]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="gl-check">
+          <input
+            type="checkbox"
+            name="mandatory"
+            defaultChecked={term.mandatory}
+            disabled={pending}
+          />
+          <span>Обязательный — без него перевод блока помечается</span>
+        </label>
+
+        <button className="btn btn--ghost btn--small" type="submit" disabled={pending}>
+          Сохранить уточнения
+        </button>
+      </form>
+    </details>
   );
 }

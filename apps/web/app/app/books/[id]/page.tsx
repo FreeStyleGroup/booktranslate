@@ -9,6 +9,7 @@ import {
   type Book,
   type BookKit,
   type BookStructure,
+  type BookTerminology,
   type Document,
   type Project,
 } from "../../../lib/work";
@@ -68,7 +69,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
   }
 
   const edition = book.data;
-  const [kit, project, documents, me, organization, structure] = await Promise.all([
+  const [kit, project, documents, me, organization, structure, terminology] = await Promise.all([
     load<BookKit>(`/books/${id}/sources`, here),
     load<Project>(`/projects/${edition.project_id}`, here),
     // Файлы проекта, чтобы предложить уже загруженные. Потолок тот же, что
@@ -78,6 +79,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
     currentUser(here),
     organizationId(),
     load<BookStructure>(`/books/${id}/chapters`, here),
+    load<BookTerminology>(`/books/${id}/terminology`, here),
   ]);
 
   const membership =
@@ -197,6 +199,19 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
           Открыть
         </Link>
       </section>
+
+      {/* Дальше — терминология: перевод главы открыт только при
+          утверждённой версии глоссария. */}
+      <section className="tile wk-call bk-next">
+        <div>
+          <h3>Терминология</h3>
+          <p className="tile__note">{terminologyNote(terminology.data)}</p>
+        </div>
+
+        <Link className="btn btn--ghost btn--small" href={`/app/books/${edition.id}/terminology`}>
+          Открыть
+        </Link>
+      </section>
     </>
   );
 }
@@ -218,4 +233,28 @@ function structureNote(structure: BookStructure | undefined): string {
   ).length;
 
   return `${thousands(total)} ${plural(total, "глава", "главы", "глав")}, утверждено ${thousands(approved)}.`;
+}
+
+/** Состояние терминологии одной фразой — для плитки на карточке книги. */
+function terminologyNote(terminology: BookTerminology | undefined): string {
+  if (terminology === undefined) {
+    return "Состояние терминологии сейчас не узнать — откройте её экран.";
+  }
+
+  const total = terminology.chapters.length;
+  const open = terminology.chapters.filter((gate) => gate.open).length;
+  const approved = terminology.versions.find(
+    (version) => version.status === "approved" && version.chapter_id === null,
+  );
+
+  if (total === 0) {
+    return "Терминология решается по главам — сначала разметьте структуру книги.";
+  }
+
+  const version =
+    approved === undefined
+      ? "Утверждённой версии глоссария для книги нет"
+      : `Глоссарий ${approved.label} утверждён`;
+
+  return `${version}; перевод открыт в ${thousands(open)} из ${thousands(total)} ${plural(total, "главы", "глав", "глав")}.`;
 }
