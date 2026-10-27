@@ -72,13 +72,9 @@ docker compose exec api pytest
 переменные, первый администратор и проверка после выката —
 **`docs/DEPLOY.md`**.
 
-Vercel остался для превью: проект `booktranslate` в аккаунте
-`freestyletravel` (отсюда `freestyletravel` в адресах вида
-`booktranslate-<хеш>-freestyletravel.vercel.app` — Vercel подставляет slug
-аккаунта, а не имя проекта), Root Directory — `apps/web`, каждая ветка
-получает свою ссылку.
-
-⚠️ По умолчанию Vercel закрывает деплои своей авторизацией: посторонний
-получает редирект на `vercel.com/sso-api`, а не страницу. Чтобы показать
-ссылку заказчику — Project Settings → Deployment Protection → Vercel
-Authentication → Disabled для нужного окружения.
+Сборки на Vercel выключены (`apps/web/vercel.json`,
+`git.deploymentEnabled: false`): сайт на Vercel не живёт, а превью веток
+падали с сентября и только присылали письма об ошибках. Проект
+`booktranslate` в аккаунте `freestyletravel` остался подключённым к
+репозиторию; как вернуть превью — `docs/DEPLOY.md`, раздел «Витрина на
+Vercel».
