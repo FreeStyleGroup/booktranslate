@@ -71,5 +71,5 @@ docker compose exec api pytest
 
 В репозитории нет ни ключей, ни паролей, ни строк подключения с ними.
 Локальные значения — в `.env` (он в `.gitignore`), пример — в `.env.example`.
-Секреты CI — в GitHub Secrets, секреты витрины — в переменных окружения
-проекта Vercel.
+Секреты CI — в GitHub Secrets, секреты сервера — в `.env` на нём самом
+(`docs/DEPLOY.md`).
