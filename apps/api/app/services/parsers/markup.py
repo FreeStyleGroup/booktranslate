@@ -85,6 +85,17 @@ HEADING_LEVELS = {f"h{level}": level for level in range(1, 7)}
 # Теги, текст которых — содержимое знак в знак, а не форматирование.
 VERBATIM_TAGS = frozenset({"pre"})
 
+# Что внутри фразы не переводится: формула и код в строке. Отмечаются в блоке, и
+# модель получает вместо них заменитель — см. `services/protection.py`.
+PROTECTED_TAGS = {
+    "math": "formula",
+    "code": "code",
+    "kbd": "code",
+    "samp": "code",
+    "tt": "code",
+    "var": "code",
+}
+
 # Надписи внутри SVG — часть рисунка, а не текст главы: их перевод — это
 # перерисовка изображения, а не абзац рядом с ним.
 _PICTURE_TAGS = frozenset({"svg"})
@@ -250,6 +261,47 @@ def block_text(element: Tag) -> str:
     return _LINE_EDGE.sub("\n", text).strip(" \n")
 
 
+def protected_spans(element: Tag, text: str) -> list[dict[str, Any]]:
+    """Где в тексте блока стоят формулы и код в строке.
+
+    Координаты ищутся в готовом тексте, а не считаются при сборке: схлопывание
+    пробелов сдвигает всё, а сопоставить узел с подстрокой можно и по порядку,
+    потому что куски идут в тексте в том же порядке, что и в разметке.
+    """
+    if element.name in VERBATIM_TAGS:
+        return []
+
+    spans: list[dict[str, Any]] = []
+    cursor = 0
+
+    for node in element.find_all(list(PROTECTED_TAGS)):
+        if not isinstance(node, Tag) or any(
+            parent.name in PROTECTED_TAGS for parent in _parents_within(node, element)
+        ):
+            continue
+
+        piece = _HTML_SPACE.sub(
+            " ", "".join(str(item) for item in block_strings(node) if _inside_block(item, element))
+        ).strip()
+
+        if not piece:
+            continue
+
+        at = text.find(piece, cursor)
+        if at < 0:
+            continue
+
+        spans.append({"start": at, "end": at + len(piece), "kind": PROTECTED_TAGS[node.name]})
+        cursor = at + len(piece)
+
+    return spans
+
+
+def _inside_block(node: PageElement, element: Tag) -> bool:
+    """Узел входит в текст блока: не надпись рисунка и не выносная формула."""
+    return not _inside_object(node, element)
+
+
 def _verbatim_text(element: Tag) -> str:
     """Текст `<pre>` как есть: отступы, пустые строки и табуляция на месте.
 
@@ -311,9 +363,12 @@ def blocks_from_html(markup: str, location: dict[str, Any] | None = None) -> Ite
         if links:
             place["links"] = links
 
-        block = ParsedBlock(
-            text=block_text(element), kind=BLOCK_KINDS[element.name], location=place
-        )
+        text = block_text(element)
+        protected = protected_spans(element, text)
+        if protected:
+            place["protected"] = protected
+
+        block = ParsedBlock(text=text, kind=BLOCK_KINDS[element.name], location=place)
         owner = _owner(element, owners)
 
         if owner is not None:

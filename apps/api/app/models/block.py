@@ -89,6 +89,17 @@ class Block(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     # Входит ли блок в текущую версию мастера главы.
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Какая редакция перевода сейчас считается текстом книги. Единственное, что
+    # у блока меняется после перевода: сами редакции неизменяемы.
+    current_revision_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey(
+            "translation_revisions.id",
+            name="blocks_current_revision_id_fkey",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+    )
 
     @property
     def code(self) -> str:
