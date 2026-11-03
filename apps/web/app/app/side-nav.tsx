@@ -31,6 +31,7 @@ function groups(counts: NavCounts | null): { title: string; items: Item[] }[] {
         // принесли.
         { href: "/app/books", icon: "📕", label: "Книги", count: counts?.books },
         { href: "/app/documents", icon: "📚", label: "Исходные файлы", count: counts?.documents },
+        { href: "/app/qa", icon: "🧪", label: "Проверки" },
         { href: "/app/issues", icon: "🐞", label: "Реестр ошибок", count: counts?.open_issues },
       ],
     },

@@ -689,3 +689,36 @@
   font-size: 13px;
   color: var(--ink-soft);
 }
+
+/* ---------- проверки главы ---------- */
+
+/* Два индикатора рядом: это разные вещи, и одна не заменяет другую. */
+.bk-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.bk-check {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.bk-check__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@media (max-width: 760px) {
+  .bk-checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -124,6 +124,29 @@ export const REVISION_STAGE_LABEL: Record<string, string> = {
   final_candidate: "кандидат в выпуск",
 };
 
+export const QA_CHECK_LABEL: Record<string, string> = {
+  empty: "Пустой перевод",
+  untranslated: "Не переведено",
+  numbers: "Числа",
+  signs: "Знак числа",
+  ranges: "Диапазон",
+  units: "Единицы",
+  variables: "Имена из кода",
+  cross_references: "Ссылки",
+  object_placeholders: "Защищённые объекты",
+  placeholders: "Подстановки и разметка",
+  list_numbering: "Нумерация списка",
+  glossary: "Термины",
+  first_use: "Первое употребление",
+  code_changed: "Листинг",
+  semantic: "Смысловая сверка",
+};
+
+export const QA_RULE_LABEL: Record<string, string> = {
+  optional_term: "термин необязательный",
+  localized_marker: "буква пункта заменена на русскую",
+};
+
 export const ISSUE_CATEGORY_LABEL: Record<IssueCategory, string> = {
   translation: "Перевод",
   terminology: "Терминология",

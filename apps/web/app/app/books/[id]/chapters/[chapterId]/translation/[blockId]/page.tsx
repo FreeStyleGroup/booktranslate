@@ -189,6 +189,8 @@ export default async function BlockHistoryPage({
                 ) : (
                   <span className="chip chip--warn">не текущая</span>
                 )}
+                {revision.formal_checked && <span className="chip chip--ok">формально проверена</span>}
+                {revision.semantic_checked && <span className="chip chip--ok">смысл сверен</span>}
               </span>
             </div>
 
