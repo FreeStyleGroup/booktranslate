@@ -411,7 +411,7 @@ function impactColumns(
 ): Column<ImpactedBlock & { id: string }>[] {
   return [
     {
-      title: "Block ID",
+      title: "Код блока",
       cell: (item) => (
         <span className="bk-block-id">
           <Link href={findBlock(item.block.full_code)}>{item.block.full_code}</Link>

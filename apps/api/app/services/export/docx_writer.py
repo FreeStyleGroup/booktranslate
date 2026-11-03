@@ -65,7 +65,7 @@ class DocxRenderer:
         try:
             document = docx.Document(str(source))
         except Exception as error:  # библиотека бросает собственные типы ошибок
-            raise ExportError(f"Исходный файл не читается как DOCX: {error}") from error
+            raise ExportError("Исходный файл не читается как DOCX: он повреждён") from error
 
         translations = _by_place(blocks)
 

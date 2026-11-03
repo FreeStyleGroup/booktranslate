@@ -9,7 +9,14 @@ import {
   type Project,
   type SortOrder,
 } from "../../lib/work";
-import { BOOK_STATUS_CHIP, BOOK_STATUS_LABEL, plural, thousands, when } from "../labels";
+import {
+  BOOK_STATUS_CHIP,
+  BOOK_STATUS_LABEL,
+  languagePair,
+  plural,
+  thousands,
+  when,
+} from "../labels";
 import "../work.css";
 import "../ui/ui.css";
 import { CopyId } from "../ui/copy-id";
@@ -208,7 +215,7 @@ function columns(withProject: boolean): Column<Row>[] {
       secondary: true,
       cell: (row) => (
         <span className="chip chip--info">
-          {row.source_language} → {row.target_language}
+          {languagePair(row.source_language, row.target_language)}
         </span>
       ),
     },

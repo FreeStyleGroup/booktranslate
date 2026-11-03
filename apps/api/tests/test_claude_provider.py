@@ -165,7 +165,7 @@ async def test_refusal_is_reported_with_reason() -> None:
 async def test_broken_json_is_reported() -> None:
     client = Client([Message([Block("вот вам перевод")])])
 
-    with pytest.raises(ProviderError, match="JSON"):
+    with pytest.raises(ProviderError, match="неверном виде"):
         await provider(client).translate([request("first")])
 
 

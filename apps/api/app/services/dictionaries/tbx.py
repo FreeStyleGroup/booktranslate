@@ -39,7 +39,7 @@ def read_tbx(data: bytes, *, source_language: str, target_language: str) -> Dict
     try:
         root = ElementTree.fromstring(data)
     except Exception as error:  # noqa: BLE001 — разбор чужого XML падает по-разному
-        raise DictionaryError(f"Файл не разобрался как XML: {error}") from error
+        raise DictionaryError("Файл не разобрался как XML: разметка повреждена") from error
 
     contents = DictionaryContents()
     entries = [node for node in root.iter() if _name(node) in _ENTRIES]

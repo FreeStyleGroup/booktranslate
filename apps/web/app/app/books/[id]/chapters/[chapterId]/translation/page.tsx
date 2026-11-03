@@ -145,7 +145,7 @@ export default async function ChapterTranslationPage({
 function columns(here: string, prefix: string): Column<ChapterBlock>[] {
   return [
     {
-      title: "Block ID",
+      title: "Код блока",
       cell: (block) => <CopyId value={`${prefix}${block.code}`} title="код блока" />,
     },
     {

@@ -193,7 +193,8 @@ def _reason(error: Exception) -> str:
     if "Password" in name:
         return "документ защищён паролем"
 
-    return str(error) or name
+    # Текст чужой библиотеки на экран не идёт: он на английском и говорит о внутренностях разбора.
+    return "он повреждён"
 
 
 def _box_of(element: LTTextContainer[Any], page: int) -> _Box | None:

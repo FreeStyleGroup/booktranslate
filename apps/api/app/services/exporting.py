@@ -83,8 +83,8 @@ class ExportService(TenantService):
 
         if export_format is ExportFormat.SOURCE:
             raise UnsupportedFormatError(
-                "Формат оригинала — только у книги целиком. Для главы доступны docx, markdown "
-                "и text."
+                "Формат оригинала — только у книги целиком. Для главы доступны Word, Markdown "
+                "и простой текст."
             )
 
         chapter = await self._session.scalar(self.scoped(Chapter).where(Chapter.id == chapter_id))
@@ -159,8 +159,8 @@ class ExportService(TenantService):
 
         if untranslated and not allow_untranslated:
             raise ConflictError(
-                f"Не переведено блоков: {untranslated}. Выгрузить черновик можно с "
-                "allow_untranslated=true — непереведённое уйдёт исходным текстом."
+                f"Не переведено блоков: {untranslated}. Выгрузить можно только как черновик: "
+                "непереведённое уйдёт исходным текстом."
             )
 
         rendered = await self._render(renderer, blocks, document)

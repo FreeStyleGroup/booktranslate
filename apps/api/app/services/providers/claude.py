@@ -98,8 +98,8 @@ original — после перевода дай в скобках исходну
 
 
 _TRUNCATED = (
-    "Перевод не уместился в ответ модели: увеличьте ANTHROPIC_MAX_TOKENS или уменьшите "
-    "размер сегмента"
+    "Перевод не уместился в ответ модели: администратору нужно увеличить предел ответа "
+    "или уменьшить размер пачки"
 )
 
 
@@ -242,7 +242,7 @@ class ClaudeProvider:
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as error:
-            raise ProviderError(f"Ответ модели не разобрался как JSON: {error}") from error
+            raise ProviderError("Модель вернула ответ в неверном виде") from error
 
         items = payload.get("translations") if isinstance(payload, dict) else None
         if not isinstance(items, list):

@@ -220,10 +220,10 @@ def _pdf_metadata(path: Path) -> tuple[int | None, str | None, str | None, list[
             info = document.info[0] if document.info else {}
 
             return pages, _pdf_text(info.get("Title")), _pdf_text(info.get("Author")), []
-    except (PSException, PDFException, OSError) as error:
+    except (PSException, PDFException, OSError):
         # Сведения не прочитались, но текст из файла до этого достался:
         # это повод для замечания, а не для отказа в источнике.
-        return None, None, None, [f"Сведения PDF не читаются: {error}"]
+        return None, None, None, ["Сведения PDF не читаются: файл повреждён"]
 
 
 def _pdf_text(value: object) -> str | None:

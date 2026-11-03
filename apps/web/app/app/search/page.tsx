@@ -4,12 +4,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { load, type SearchResult } from "../../lib/work";
-import {
-  GLOSSARY_KIND,
-  KIND_ONE,
-  plural,
-  thousands,
-} from "../labels";
+import { GLOSSARY_KIND, KIND_ONE, languagePair, plural, thousands } from "../labels";
 import "../work.css";
 import "./search.css";
 
@@ -160,7 +155,8 @@ function Results({ result }: { result: SearchResult }) {
                   <Mark text={item.target_term} query={query} />
                 </b>
                 <span className="tile__note">
-                  {item.source_language} → {item.target_language} · {GLOSSARY_KIND[item.kind]}
+                  {languagePair(item.source_language, item.target_language)} ·{" "}
+                  {GLOSSARY_KIND[item.kind]}
                 </span>
               </span>
             </Link>

@@ -11,6 +11,7 @@
    Форма свёрнута, пока её не попросили: на экране со списком главное —
    список, а не пустые поля над ним. */
 
+import { languagePair } from "../labels";
 import { useActionState, useState, type ReactNode } from "react";
 
 import type { Project } from "../../lib/work";
@@ -79,7 +80,7 @@ export function NewBook({
               <select name="project_id" defaultValue={current ?? projects[0]?.id}>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
-                    {project.name} ({project.source_language} → {project.target_language})
+                    {project.name} ({languagePair(project.source_language, project.target_language)})
                   </option>
                 ))}
               </select>

@@ -9,7 +9,13 @@
 
 import { useActionState } from "react";
 
-import { FIRST_USE_HINT, FIRST_USE_RULE, GLOSSARY_KIND, GLOSSARY_KIND_HINT } from "../labels";
+import {
+  FIRST_USE_HINT,
+  FIRST_USE_RULE,
+  GLOSSARY_KIND,
+  GLOSSARY_KIND_HINT,
+  languagePair,
+} from "../labels";
 import { addTerm, type AddResult } from "./actions";
 import type { Pair } from "./page";
 import { ReportError } from "../ui/toast";
@@ -61,7 +67,7 @@ export function AddTerm({ pairs }: { pairs: Pair[] }) {
             <select name="pair" defaultValue={pairs[0]?.value}>
               {pairs.map((pair) => (
                 <option key={pair.value} value={pair.value}>
-                  {pair.source} → {pair.target}
+                  {languagePair(pair.source, pair.target)}
                 </option>
               ))}
             </select>

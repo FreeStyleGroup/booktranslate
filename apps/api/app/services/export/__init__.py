@@ -60,7 +60,7 @@ def renderer_for(export_format: ExportFormat, source_format: SourceFormat) -> Re
         if renderer is None:
             raise ExportError(
                 f"Сборка обратно в {source_format.value} пока не поддерживается. "
-                "Доступны docx, markdown и text."
+                "Доступны Word, Markdown и простой текст."
             )
 
         return renderer

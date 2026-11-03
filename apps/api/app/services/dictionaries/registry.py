@@ -96,7 +96,7 @@ def read_registry(data: bytes) -> DictionaryContents:
     try:
         document = docx.Document(io.BytesIO(data))
     except Exception as error:  # noqa: BLE001 — чужой DOCX падает по-разному
-        raise DictionaryError(f"Файл не открылся как DOCX: {error}") from error
+        raise DictionaryError("Файл не открылся как DOCX: он повреждён") from error
 
     contents = DictionaryContents()
     entry: str | None = None

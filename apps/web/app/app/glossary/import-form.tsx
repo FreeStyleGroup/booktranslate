@@ -15,7 +15,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import type { GlossaryUpload } from "../../lib/work";
-import { thousands, when } from "../labels";
+import { languagePair, thousands, when } from "../labels";
 import type { Pair } from "./page";
 import { ReportError } from "../ui/toast";
 
@@ -142,7 +142,7 @@ export function ImportForm({
               />
             </div>
             <small>
-              Таблица: колонки «source, target, note». Заведённое руками файл
+              Таблица: колонки source (оригинал), target (перевод), note (примечание). Заведённое руками файл
               не перезаписывает.
             </small>
           </div>
@@ -152,7 +152,7 @@ export function ImportForm({
             <select name="pair" defaultValue={pairs[0]?.value}>
               {pairs.map((pair) => (
                 <option key={pair.value} value={pair.value}>
-                  {pair.source} → {pair.target}
+                  {languagePair(pair.source, pair.target)}
                 </option>
               ))}
             </select>
@@ -233,7 +233,8 @@ function History({ uploads }: { uploads: GlossaryUpload[] }) {
             <b>{upload.filename}</b>
             <span className="tile__note">
               {" "}
-              · {upload.origin} · {upload.source_language} → {upload.target_language} ·{" "}
+              · {upload.origin.toUpperCase()} ·{" "}
+              {languagePair(upload.source_language, upload.target_language)} ·{" "}
               {thousands(upload.added + upload.updated)} записей · {when(upload.created_at)}
             </span>
             {upload.shared && <span className="chip chip--info">отдан площадке</span>}

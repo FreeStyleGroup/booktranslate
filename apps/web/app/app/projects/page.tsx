@@ -4,7 +4,7 @@ import Link from "next/link";
 import { currentUser } from "../../lib/current-user";
 import { organizationId } from "../../lib/session";
 import { load, type Document, type Project } from "../../lib/work";
-import { plural, thousands, when } from "../labels";
+import { languagePair, plural, thousands, when } from "../labels";
 import "../work.css";
 import { DeleteProject } from "./delete-project";
 import { NewProject } from "./new-project";
@@ -92,7 +92,7 @@ export default async function ProjectsPage() {
                     на что нажимают каждый день. */}
                 <span className="wk-card__side">
                   <span className="chip chip--info">
-                    {project.source_language} → {project.target_language}
+                    {languagePair(project.source_language, project.target_language)}
                   </span>
                   {manages && (
                     <DeleteProject

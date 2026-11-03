@@ -284,7 +284,7 @@ def _payload(raw: str) -> dict[str, Any]:
     try:
         payload = json.loads(match.group(0))
     except json.JSONDecodeError as error:
-        raise ProviderError(f"Ответ поиска не разобрался как JSON: {error}") from error
+        raise ProviderError("Поиск вернул ответ в неверном виде") from error
 
     if not isinstance(payload, dict):
         raise ProviderError("Ответ поиска — не объект")
