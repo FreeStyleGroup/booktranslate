@@ -124,7 +124,7 @@ export default async function CabinetLayout({ children }: { children: ReactNode 
           </div>
         </header>
 
-        <div className="cab__body">{children}</div>
+        <main className="cab__body">{children}</main>
 
         {/* Подвал есть и здесь, а не только на главной: кабинет — тоже
             страница сайта, и человеку, который провёл в нём час, некуда

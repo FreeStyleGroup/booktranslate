@@ -13,6 +13,7 @@ import {
   type RevisionHistory,
 } from "../../../../../../../lib/work";
 import {
+  EDIT_REASON_LABEL,
   REVISION_ORIGIN_CHIP,
   REVISION_ORIGIN_LABEL,
   REVISION_STAGE_LABEL,
@@ -189,6 +190,11 @@ export default async function BlockHistoryPage({
                 ) : (
                   <span className="chip chip--warn">не текущая</span>
                 )}
+                {revision.edit_reason !== null && (
+                  <span className="chip chip--info">
+                    правка: {EDIT_REASON_LABEL[revision.edit_reason].toLowerCase()}
+                  </span>
+                )}
                 {revision.formal_checked && <span className="chip chip--ok">формально проверена</span>}
                 {revision.semantic_checked && <span className="chip chip--ok">смысл сверен</span>}
               </span>
@@ -227,6 +233,14 @@ export default async function BlockHistoryPage({
                 .filter((part) => part !== null)
                 .join(" · ")}
             </p>
+
+            {revision.issue_id !== null && (
+              <p className="tile__note">
+                <Link href={`/app/issues/${revision.issue_id}`}>
+                  Замечание, по которому внесена правка
+                </Link>
+              </p>
+            )}
 
             {canAdopt &&
               block.active &&

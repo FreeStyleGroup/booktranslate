@@ -500,6 +500,8 @@ export type BlockRevision = {
   glossary_label: string | null;
   ignore_terminology: boolean;
   author: string | null;
+  edit_reason: EditReason | null;
+  issue_id: string | null;
   formal_checked: boolean;
   semantic_checked: boolean;
   compared_with: number | null;
@@ -790,6 +792,84 @@ export type CatalogEntry = {
 
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
+
+/* Редактура и финальная сверка. */
+
+export type ReviewKind = "technical" | "literary" | "final_compare";
+export type ReviewMark = "ok" | "issue";
+export type EditReason = "style" | "calque" | "readability";
+
+export type ReviewRun = {
+  id: string;
+  book_id: string;
+  book_title: string;
+  chapter_id: string;
+  chapter_title: string | null;
+  kind: ReviewKind;
+  status: "open" | "completed";
+  reviewer: string | null;
+  base_revision_set_hash: string;
+  completed_revision_set_hash: string | null;
+  completed_at: string | null;
+  created_at: string;
+  // Текст изменился после завершения: эта работа была про другой текст.
+  stale: boolean;
+  blocks_total: number;
+  blocks_done: number;
+  objects_total: number;
+  objects_done: number;
+  untranslated: number;
+  complete: boolean;
+};
+
+export type ChapterReviews = {
+  technical: ReviewRun | null;
+  literary: ReviewRun | null;
+  final_compare: ReviewRun | null;
+};
+
+export type ReviewOpenIssue = {
+  id: string;
+  code: string;
+  severity: IssueSeverity;
+  status: IssueStatus;
+};
+
+export type ReviewNextBlock = {
+  id: string;
+  code: string;
+  ordinal: number;
+  kind: string;
+  source_text: string;
+  revision_id: string;
+  revision_no: number;
+  text: string;
+  protected: boolean;
+  context: { code: string; ordinal: number; source_text: string; translation: string | null }[];
+  terms: { source: string; target: string; mandatory: boolean }[];
+  objects: {
+    id: string;
+    chapter_id: string;
+    code: string;
+    type: string;
+    relation: string;
+  }[];
+  issues: ReviewOpenIssue[];
+};
+
+export type ReviewNextObject = {
+  id: string;
+  code: string;
+  type: string;
+  content_hash: string;
+  position: number;
+  source_text: string;
+  translation: string | null;
+  issues: ReviewOpenIssue[];
+};
+
+/** Оба поля пусты: просмотрено всё. */
+export type ReviewNext = { block: ReviewNextBlock | null; object: ReviewNextObject | null };
 
 /* Проверки. */
 

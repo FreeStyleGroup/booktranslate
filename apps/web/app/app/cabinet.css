@@ -619,6 +619,13 @@
   letter-spacing: -0.015em;
 }
 
+.tile > h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
 .tile__note {
   font-size: 13px;
   color: var(--ink-faint);

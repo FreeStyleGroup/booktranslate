@@ -15,6 +15,7 @@ import {
   type ChapterChecks,
   type ChapterEstimate,
   type ChapterMaster,
+  type ChapterReviews,
   type ChapterTranslation,
   type IssueStats,
   type TerminologyGate,
@@ -40,6 +41,7 @@ import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
 import { ChecksPanel } from "./checks-panel";
+import { ReviewsPanel } from "./reviews-panel";
 import { TranslationPanel } from "./translation-panel";
 import { IssuesTile } from "../../../../issues/issues-tile";
 
@@ -74,6 +76,8 @@ const BYPASSING = new Set(["owner", "admin"]);
 // Те же роли, что в API. Смысловая сверка стоит денег: переводчик сам себе её не назначает.
 const CHECKING = new Set(["owner", "admin", "manager", "translator", "reviewer"]);
 const REVIEWING = new Set(["owner", "admin", "manager", "reviewer"]);
+// Литературную правку вносит и переводчик: технические сущности стережёт защита, а не роль.
+const EDITING_STYLE = new Set(["owner", "admin", "manager", "reviewer", "translator"]);
 
 const TEXT_TAB = "text";
 const TABS = [TEXT_TAB, ...OBJECT_TABS.map((tab) => tab.type)];
@@ -94,7 +98,7 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, reviews, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
@@ -104,6 +108,7 @@ export default async function ChapterPage({
     load<ChapterEstimate>(`/chapters/${chapterId}/translation/estimate`, here),
     load<IssueStats>(`/issues/stats?chapter_id=${chapterId}`, here),
     load<ChapterChecks>(`/chapters/${chapterId}/qa`, here),
+    load<ChapterReviews>(`/chapters/${chapterId}/reviews`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -130,6 +135,7 @@ export default async function ChapterPage({
   const canBypass = membership !== undefined && BYPASSING.has(membership.role);
   const canCheck = membership !== undefined && CHECKING.has(membership.role);
   const canReview = membership !== undefined && REVIEWING.has(membership.role);
+  const canEditStyle = membership !== undefined && EDITING_STYLE.has(membership.role);
 
   const current = versions.data[0];
   const requested = query.get("version");
@@ -232,6 +238,18 @@ export default async function ChapterPage({
           canBypass={canBypass}
         />
       )}
+
+      {reviews.data !== undefined &&
+        translation.data !== undefined &&
+        translation.data.translated > 0 && (
+          <ReviewsPanel
+            bookId={id}
+            chapterId={chapterId}
+            state={reviews.data}
+            canReview={canReview}
+            canEditStyle={canEditStyle}
+          />
+        )}
 
       {shown !== undefined && current !== undefined && shown.id !== current.id && (
         // Прежняя версия открыта нарочно — но это должно быть видно сразу,
