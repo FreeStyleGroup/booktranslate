@@ -441,6 +441,34 @@ export async function startTranslation(
 }
 
 /** Остановить прогон. Сделанное остаётся: оно зафиксировано после каждой пачки. */
+/** Поставить проверку главы в очередь. Живое задание на главу одно: это решает API. */
+export async function startChecks(
+  bookId: string,
+  chapterId: string,
+  kind: "deterministic" | "semantic",
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/chapters/${chapterId}/qa`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+      body: { kind: kind === "semantic" ? "semantic" : "deterministic" },
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+
+  return { done: true };
+}
+
 export async function cancelRun(
   bookId: string,
   chapterId: string,

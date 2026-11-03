@@ -12,6 +12,7 @@ import {
   type BookKit,
   type BookObject,
   type BookStructure,
+  type ChapterChecks,
   type ChapterEstimate,
   type ChapterMaster,
   type ChapterTranslation,
@@ -38,6 +39,7 @@ import { FindBlock } from "../../../find-block";
 import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
+import { ChecksPanel } from "./checks-panel";
 import { TranslationPanel } from "./translation-panel";
 import { IssuesTile } from "../../../../issues/issues-tile";
 
@@ -69,6 +71,9 @@ const OFFSET_MAX = 1_000_000;
 const MANAGING = new Set(["owner", "admin", "manager", "translator"]);
 // Обход гейта терминологии — только администратор: решение с причиной и в журнал.
 const BYPASSING = new Set(["owner", "admin"]);
+// Те же роли, что в API. Смысловая сверка стоит денег: переводчик сам себе её не назначает.
+const CHECKING = new Set(["owner", "admin", "manager", "translator", "reviewer"]);
+const REVIEWING = new Set(["owner", "admin", "manager", "reviewer"]);
 
 const TEXT_TAB = "text";
 const TABS = [TEXT_TAB, ...OBJECT_TABS.map((tab) => tab.type)];
@@ -89,7 +94,7 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, estimate, issueStats, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
@@ -98,6 +103,7 @@ export default async function ChapterPage({
     load<ChapterTranslation>(`/chapters/${chapterId}/translation`, here),
     load<ChapterEstimate>(`/chapters/${chapterId}/translation/estimate`, here),
     load<IssueStats>(`/issues/stats?chapter_id=${chapterId}`, here),
+    load<ChapterChecks>(`/chapters/${chapterId}/qa`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -122,6 +128,8 @@ export default async function ChapterPage({
     me?.memberships.find((item) => item.organization_id === organization) ?? me?.memberships[0];
   const canManage = membership !== undefined && MANAGING.has(membership.role);
   const canBypass = membership !== undefined && BYPASSING.has(membership.role);
+  const canCheck = membership !== undefined && CHECKING.has(membership.role);
+  const canReview = membership !== undefined && REVIEWING.has(membership.role);
 
   const current = versions.data[0];
   const requested = query.get("version");
@@ -203,6 +211,16 @@ export default async function ChapterPage({
       )}
 
       {gate.data !== undefined && <GatePanel gate={gate.data} bookId={id} termsLink />}
+
+      {checks.data !== undefined && (
+        <ChecksPanel
+          bookId={id}
+          chapterId={chapterId}
+          state={checks.data}
+          canCheck={canCheck}
+          canReview={canReview}
+        />
+      )}
 
       {translation.data !== undefined && current !== undefined && (
         <TranslationPanel

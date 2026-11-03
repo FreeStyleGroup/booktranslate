@@ -248,9 +248,9 @@ function describe(job: TranslationJob, percent: number): string {
     case "waiting":
       return job.attempts > 0 ? `в очереди · заход ${job.attempts + 1}` : "в очереди";
     case "running":
-      return `переводится · ${percent}% · ${thousands(job.items_done)} из ${thousands(job.items_total)}`;
+      return `${job.kind === "qa" ? "проверяется" : "переводится"} · ${percent}% · ${thousands(job.items_done)} из ${thousands(job.items_total)}`;
     case "done":
-      return `переведена · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
+      return `${job.kind === "qa" ? "проверена" : "переведена"} · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
     case "failed":
       return `сорвалась · ${when(job.finished_at ?? job.updated_at)} · ${job.error ?? "причина не записана"}`;
     case "cancelled":

@@ -377,10 +377,11 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 /** Задание на перевод книги — работа, которая идёт без человека. */
 export type TranslationJob = {
   id: string;
-  kind: "chapter";
+  kind: "chapter" | "qa";
   chapter_id: string;
   book_id: string;
-  run_id: string;
+  run_id: string | null;
+  qa_run_id: string | null;
   // Название книги — с заданием: список заданий читают люди.
   title: string;
   state: JobState;
@@ -472,6 +473,8 @@ export type ChapterBlock = {
   protected: boolean;
   current: RevisionBrief | null;
   variants: number;
+  formal_checked: boolean;
+  semantic_checked: boolean;
 };
 
 export type ChapterBlockPage = { total: number; items: ChapterBlock[] };
@@ -497,6 +500,8 @@ export type BlockRevision = {
   glossary_label: string | null;
   ignore_terminology: boolean;
   author: string | null;
+  formal_checked: boolean;
+  semantic_checked: boolean;
   compared_with: number | null;
   changes: RevisionChange[];
   created_at: string;
@@ -785,6 +790,67 @@ export type CatalogEntry = {
 
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
+
+/* Проверки. */
+
+export type QAKind = "deterministic" | "semantic";
+
+export type QARun = {
+  id: string;
+  chapter_id: string;
+  kind: QAKind;
+  scope: "risky" | "all";
+  check_profile_version: string;
+  revision_set_hash: string;
+  model: string | null;
+  blocks_total: number;
+  blocks_checked: number;
+  blocks_untranslated: number;
+  findings_total: number;
+  issues_created: number;
+  rejections: { block_id: string; code: string; reason: string }[];
+  input_tokens: number;
+  output_tokens: number;
+  job_id: string | null;
+  state: JobState | null;
+  error: string | null;
+  created_at: string;
+};
+
+export type ChapterChecks = {
+  total: number;
+  translated: number;
+  formal: number;
+  semantic: number;
+  revision_set_hash: string;
+  latest_formal: QARun | null;
+  latest_semantic: QARun | null;
+  live: QARun | null;
+  semantic_scope: "risky" | "all";
+};
+
+export type QAFinding = {
+  id: string;
+  qa_run_id: string;
+  book_id: string;
+  chapter_id: string;
+  block_id: string;
+  block_code: string;
+  revision_id: string;
+  kind: QAKind;
+  check: string;
+  message: string;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  disposition: "registered" | "not_required";
+  rule: string | null;
+  issue_id: string | null;
+  issue_code: string | null;
+  issue_status: IssueStatus | null;
+  created_at: string;
+};
+
+export type QAFindingPage = { total: number; items: QAFinding[] };
 
 /* Реестр ошибок. */
 

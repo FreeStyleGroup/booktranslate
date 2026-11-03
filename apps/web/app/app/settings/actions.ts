@@ -62,6 +62,7 @@ export type WorkspaceSettings = {
   // Разрешено ли площадке брать термины загруженных словарей в общий.
   share_glossary: boolean;
   two_person_review: boolean;
+  semantic_scope: "risky" | "all";
 };
 
 export type ModelResult = {
@@ -115,7 +116,10 @@ export async function saveReview(_previous: ModelResult, formData: FormData): Pr
       method: "PUT",
       token,
       organizationId: await organizationId(),
-      body: { two_person_review: formData.get("two_person_review") === "yes" },
+      body: {
+        two_person_review: formData.get("two_person_review") === "yes",
+        semantic_scope: formData.get("semantic_scope") === "all" ? "all" : "risky",
+      },
     });
 
     revalidatePath("/app/settings");

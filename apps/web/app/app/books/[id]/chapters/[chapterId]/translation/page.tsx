@@ -186,6 +186,8 @@ function columns(here: string, prefix: string): Column<ChapterBlock>[] {
           <Link className="tile__note" href={`${here}/${block.id}`}>
             {block.current === null ? "открыть" : `v${block.current.revision_no}`}
           </Link>
+          {block.formal_checked && <span className="chip chip--ok">формально</span>}
+          {block.semantic_checked && <span className="chip chip--ok">смысл</span>}
           {block.variants > 0 && (
             <span className="chip chip--warn">
               {block.variants} {plural(block.variants, "вариант", "варианта", "вариантов")}

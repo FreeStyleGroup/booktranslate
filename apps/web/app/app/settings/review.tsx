@@ -19,8 +19,8 @@ export function Review({ settings }: { settings: WorkspaceSettings }) {
   return (
     <section className="tile st-block">
       <div className="tile__head">
-        <h3>Проверка критичных ошибок</h3>
-        <span className="tile__note">кто вправе решать</span>
+        <h3>Проверки и решения</h3>
+        <span className="tile__note">кто решает и что сверяет модель</span>
       </div>
 
       {/* Форма пересобирается после записи, как остальные: иначе флажок покажется сброшенным. */}
@@ -41,6 +41,18 @@ export function Review({ settings }: { settings: WorkspaceSettings }) {
           </span>
         </label>
 
+        <label className="field">
+          <span>Что отдавать на смысловую сверку</span>
+          <select name="semantic_scope" defaultValue={current.semantic_scope}>
+            <option value="risky">Только рискованное</option>
+            <option value="all">Все блоки, кроме листингов</option>
+          </select>
+          <small>
+            Рискованное — числа, формулы и код внутри текста, таблицы, подписи, предупреждения,
+            обязательные термины. Сверка всей книги примерно удваивает расход на модель.
+          </small>
+        </label>
+
         <div className="wk-actions">
           <button className="btn btn--primary" type="submit" disabled={busy}>
             {busy ? "Сохраняем…" : "Сохранить"}
@@ -52,8 +64,9 @@ export function Review({ settings }: { settings: WorkspaceSettings }) {
 
       {state.saved !== undefined && state.error === undefined && (
         <p className="wk-note" role="status">
-          <span aria-hidden="true">✅</span> Записано: правило{" "}
-          {current.two_person_review ? "включено" : "выключено"}.
+          <span aria-hidden="true">✅</span> Записано: правило двух человек{" "}
+          {current.two_person_review ? "включено" : "выключено"}, на сверку идёт{" "}
+          {current.semantic_scope === "all" ? "всё" : "только рискованное"}.
         </p>
       )}
     </section>
