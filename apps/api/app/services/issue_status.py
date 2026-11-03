@@ -37,6 +37,19 @@ DECIDED = frozenset({IssueStatus.CLOSED, IssueStatus.REJECTED})
 OPEN = frozenset(IssueStatus) - DECIDED
 
 
+# Отказ читает человек: технические имена состояний ему ни о чём не говорят.
+STATUS_WORD = {
+    IssueStatus.NEW: "новая",
+    IssueStatus.NEEDS_CLARIFICATION: "нужно уточнение",
+    IssueStatus.CONFIRMED: "подтверждена",
+    IssueStatus.FIXED: "исправлена",
+    IssueStatus.VERIFIED: "проверена",
+    IssueStatus.CLOSED: "закрыта",
+    IssueStatus.REJECTED: "отклонена",
+    IssueStatus.REOPENED: "открыта заново",
+}
+
+
 def can_transition(current: IssueStatus, target: IssueStatus) -> bool:
     return target in TRANSITIONS[current]
 
@@ -44,4 +57,6 @@ def can_transition(current: IssueStatus, target: IssueStatus) -> bool:
 def require_transition(current: IssueStatus, target: IssueStatus) -> None:
     """Отказ со словами, а не молчаливое «ничего не изменилось»: API отвечает 409."""
     if not can_transition(current, target):
-        raise ConflictError(f"Из состояния «{current.value}» нельзя перейти в «{target.value}»")
+        raise ConflictError(
+            f"Из состояния «{STATUS_WORD[current]}» нельзя перейти в «{STATUS_WORD[target]}»"
+        )

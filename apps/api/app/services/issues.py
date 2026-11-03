@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,8 +36,14 @@ from app.models.issue import (
     IssueStatus,
 )
 from app.models.organization import Membership, Role, User
-from app.models.translation import TranslationRevision
-from app.models.workspace import WorkspaceSettings
+from app.models.regression import (
+    RegressionDecision,
+    RegressionItem,
+    RegressionRun,
+    RegressionStatus,
+)
+from app.models.translation import RevisionOrigin, RevisionStage, TranslationRevision
+from app.models.workspace import MemoryPublish, WorkspaceSettings
 from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.book_objects import ObjectService, own_blocks
@@ -46,9 +52,13 @@ from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 from app.services.glossary import GlossaryService, Term
 from app.services.issue_numbers import IssueNumberService
 from app.services.issue_status import DECIDED, OPEN, can_transition, require_transition
+from app.services.memory import HUMAN, TranslationMemory
+from app.services.regression_graph import RegressionGraph
 from app.services.search import ESCAPE, contains
 from app.services.storage import ObjectStorage
 from app.services.terminology_gate import TerminologyGate
+from app.services.translation_runner import is_protected
+from app.services.workspace import memory_publish_for
 
 # Заметить ошибку может любой, кто работает с текстом.
 REGISTERING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR, Role.REVIEWER)
@@ -174,6 +184,8 @@ class IssueView:
     events: list[EventRow]
     attachments: list[IssueAttachment]
     candidates: list[FixCandidate]
+    # Какие блоки можно править по этому замечанию и что в них стоит сейчас.
+    editable: list[FixCandidate]
     children: list[Issue]
     parent: Issue | None
     actions: list[str]
@@ -426,6 +438,7 @@ class IssueService(TenantService):
             events=await self._events(issue.id),
             attachments=await self.attachments(issue.id),
             candidates=await self._candidates(issue, subject),
+            editable=await self._editable(issue, subject),
             children=await self._children(issue.id),
             parent=(
                 await self.get(issue.parent_issue_id) if issue.parent_issue_id is not None else None
@@ -462,7 +475,7 @@ class IssueService(TenantService):
         if working and status is IssueStatus.NEEDS_CLARIFICATION:
             actions.append("answer_clarification")
         if working and can_transition(status, IssueStatus.FIXED):
-            actions.append("fix")
+            actions.extend(["edit", "fix"])
         if deciding and can_transition(status, IssueStatus.VERIFIED):
             actions.append("verify")
         if deciding and can_transition(status, IssueStatus.CLOSED):
@@ -522,6 +535,89 @@ class IssueService(TenantService):
 
     # ── исправление и его проверка ──
 
+    async def edit(
+        self,
+        issue_id: uuid.UUID,
+        *,
+        block_id: uuid.UUID,
+        base_revision_id: uuid.UUID,
+        text: str,
+        note: str | None = None,
+    ) -> Issue:
+        """Исправить текст по подтверждённому замечанию: новая редакция, черновик не трогается.
+
+        Правка называет редакцию, которую человек видел. Если текущая уже другая, это конфликт, а
+        не затирание: кто-то успел раньше, и сравнивать надо заново. Замечание переходит в
+        «исправлено» и не закрывается само: проверять будет другой шаг.
+        """
+        self._context.require(*REGISTERING_ROLES)
+
+        issue = await self._locked(issue_id)
+        self._require_live(issue)
+
+        # Двое правили одно замечание: второму важно знать именно это, а не про состояния.
+        if issue.status is IssueStatus.FIXED:
+            raise ConflictError(
+                "Замечание уже исправил другой редактор: сравните текст ещё раз. Если исправление "
+                "не подходит, откройте замечание заново"
+            )
+
+        require_transition(issue.status, IssueStatus.FIXED)
+
+        subject = await self._subject_of(issue)
+
+        if block_id not in {entry.id for entry in subject}:
+            raise ConflictError("Этот блок не относится к замечанию")
+
+        block = await self._session.scalar(
+            self.scoped(Block).where(Block.id == block_id).with_for_update()
+        )
+        if block is None:
+            raise NotFoundError("Блок не найден")
+        if not block.active:
+            raise ConflictError("Блок больше не входит в текущую версию мастера")
+        if is_protected(block.kind, block.source_text):
+            raise ConflictError("Этот блок переносится знак в знак: править в нём нечего")
+
+        if block.current_revision_id != base_revision_id:
+            raise ConflictError("Текст уже изменён другим редактором: сравните ещё раз")
+
+        clean = text.strip()
+        if not clean:
+            raise InvalidInputError("Исправленный текст пуст")
+        if "⟦" in clean:
+            raise InvalidInputError("В тексте остался заменитель объекта")
+
+        base = await self._session.get(TranslationRevision, base_revision_id)
+        if base is None:
+            raise NotFoundError("Редакция не найдена")
+        if base.text == clean:
+            raise InvalidInputError("Текст не изменился")
+
+        number = await self._session.scalar(
+            select(func.max(TranslationRevision.revision_no)).where(
+                TranslationRevision.block_id == block.id
+            )
+        )
+        revision = TranslationRevision(
+            id=uuid.uuid4(),
+            organization_id=self.organization_id,
+            block_id=block.id,
+            revision_no=int(number or 0) + 1,
+            stage=RevisionStage.WORKING,
+            origin=RevisionOrigin.HUMAN,
+            text=clean,
+            supersedes_id=base.id,
+            created_by_id=self._context.user.id,
+        )
+        self._session.add(revision)
+        await self._session.flush()
+        block.current_revision_id = revision.id
+
+        await self._mark_fixed(issue, block, revision, old_text=base.text, note=note)
+
+        return await self._saved(issue)
+
     async def fix(
         self, issue_id: uuid.UUID, *, revision_id: uuid.UUID, note: str | None = None
     ) -> Issue:
@@ -551,11 +647,42 @@ class IssueService(TenantService):
         if str(revision.id) in issue.discovered_revisions:
             raise ConflictError("Замечание поставлено на эту самую редакцию: она его не исправляет")
 
+        base = (
+            await self._session.get(TranslationRevision, revision.supersedes_id)
+            if revision.supersedes_id is not None
+            else None
+        )
+        await self._mark_fixed(
+            issue,
+            block,
+            revision,
+            old_text=base.text if base is not None else (issue.target_snapshot or ""),
+            note=note,
+        )
+
+        return await self._saved(issue)
+
+    async def _mark_fixed(
+        self,
+        issue: Issue,
+        block: Block,
+        revision: TranslationRevision,
+        *,
+        old_text: str,
+        note: str | None,
+    ) -> None:
+        """Перевести в «исправлено» и завести регрессию: что могло задеть это изменение."""
         issue.fix_revision_id = revision.id
         issue.fixed_by_id = self._context.user.id
         self._move(issue, IssueStatus.FIXED, note=_clean(note), revision_id=revision.id)
 
-        return await self._saved(issue)
+        await RegressionGraph(self._session, self._context, self._storage).open_for(
+            issue,
+            block,
+            old_text=old_text,
+            new_text=revision.text,
+            revision_id=revision.id,
+        )
 
     async def verify(self, issue_id: uuid.UUID, *, note: str | None = None) -> Issue:
         """Подтвердить исправление. Проверяется та редакция, что стоит в тексте сейчас."""
@@ -580,6 +707,9 @@ class IssueService(TenantService):
             issue, IssueStatus.VERIFIED, note=_clean(note), revision_id=issue.fix_revision_id
         )
 
+        if await memory_publish_for(self._session, self.organization_id) is MemoryPublish.VERIFIED:
+            await self._publish(issue)
+
         return await self._saved(issue)
 
     async def close(self, issue_id: uuid.UUID, *, note: str | None = None) -> Issue:
@@ -594,9 +724,54 @@ class IssueService(TenantService):
         if unresolved:
             raise ConflictError("Сначала решите дочерние замечания: " + ", ".join(unresolved))
 
+        pending = await self._regression_pending(issue)
+        if pending:
+            raise ConflictError(
+                f"Сначала завершите регрессию: не решено обязательных мест — {pending}"
+            )
+
         self._move(issue, IssueStatus.CLOSED, note=_clean(note), revision_id=issue.fix_revision_id)
 
+        if await memory_publish_for(self._session, self.organization_id) is MemoryPublish.CLOSED:
+            await self._publish(issue)
+
         return await self._saved(issue)
+
+    async def _regression_pending(self, issue: Issue) -> int:
+        """Сколько обязательных мест не решено в прогоне нынешнего исправления."""
+        amount = await self._session.scalar(
+            select(func.count())
+            .select_from(RegressionItem)
+            .join(RegressionRun, RegressionRun.id == RegressionItem.run_id)
+            .where(
+                RegressionRun.issue_id == issue.id,
+                RegressionRun.fix_revision_id == issue.fix_revision_id,
+                RegressionItem.required.is_(True),
+                RegressionItem.decision == RegressionDecision.PENDING,
+            )
+        )
+
+        return int(amount or 0)
+
+    async def _publish(self, issue: Issue) -> None:
+        """Проверенное исправление — в память переводов; раньше проверки оно туда не попадает."""
+        revision = await self._session.get(TranslationRevision, issue.fix_revision_id)
+        if revision is None:
+            return
+
+        block = await self._block(revision.block_id)
+        if is_protected(block.kind, block.source_text):
+            return
+
+        book = await self._book(issue.book_id)
+
+        await TranslationMemory(self._session, self._context).remember(
+            [(block.source_text, revision.text)],
+            source_language=book.source_language,
+            target_language=book.target_language,
+            origin=HUMAN,
+            verified=True,
+        )
 
     async def reopen(self, issue_id: uuid.UUID, *, note: str) -> Issue:
         self._context.require(*REGISTERING_ROLES)
@@ -612,6 +787,16 @@ class IssueService(TenantService):
         require_transition(issue.status, IssueStatus.REOPENED)
 
         current = await self._current_of(await self._subject_of(issue))
+
+        # Прогон был про прежнее исправление: решения по нему к новому тексту не относятся.
+        await self._session.execute(
+            update(RegressionRun)
+            .where(
+                RegressionRun.issue_id == issue.id,
+                RegressionRun.status != RegressionStatus.COMPLETED,
+            )
+            .values(status=RegressionStatus.SUPERSEDED)
+        )
 
         issue.fix_revision_id = None
         issue.fixed_by_id = None
@@ -1141,6 +1326,20 @@ class IssueService(TenantService):
             for block in subject
             if block.current_revision_id is not None
             and str(block.current_revision_id) not in issue.discovered_revisions
+        ]
+
+    async def _editable(self, issue: Issue, subject: Sequence[Block]) -> list[FixCandidate]:
+        if not can_transition(issue.status, IssueStatus.FIXED):
+            return []
+
+        revisions = await self._revisions(block.current_revision_id for block in subject)
+
+        return [
+            FixCandidate(revision=revisions[block.current_revision_id], block=block)
+            for block in subject
+            if block.current_revision_id is not None
+            and block.active
+            and not is_protected(block.kind, block.source_text)
         ]
 
     async def _children(self, issue_id: uuid.UUID) -> list[Issue]:

@@ -165,7 +165,7 @@ class TranslationRunner(TenantService):
         )
 
         if run.kind is RunKind.DRAFT:
-            rest = await self._reuse(run, book, rest, first_use)
+            rest = await self._reuse(run, book, rest, first_use, glossary)
 
         groups = await self._groups(run, rest, order, glossary, book, first_use)
 
@@ -244,6 +244,7 @@ class TranslationRunner(TenantService):
         book: BookEdition,
         blocks: list[Block],
         first_use: dict[uuid.UUID, tuple[str, ...]],
+        glossary: Glossary,
     ) -> list[Block]:
         """Закрыть то, чему уже есть готовый перевод, и вернуть остальное.
 
@@ -274,7 +275,8 @@ class TranslationRunner(TenantService):
                 continue
 
             unit = units.get(fingerprint(block.source_text))
-            if unit is not None:
+            # Проверенный перевод всё равно не годится, если расходится с нынешним глоссарием.
+            if unit is not None and not glossary.missing_in(block.source_text, unit.target_text):
                 ready.append(
                     _Ready(block, unit.target_text, RevisionOrigin.MEMORY, memory_unit_id=unit.id)
                 )

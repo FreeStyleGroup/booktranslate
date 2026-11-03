@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import Role
 from app.models.qa import QAScope
-from app.models.workspace import WorkspaceSettings
+from app.models.workspace import MemoryPublish, WorkspaceSettings
 from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.errors import InvalidInputError
@@ -31,7 +31,14 @@ from app.services.subjects import is_subject
 SETTINGS_ROLES = (Role.ADMIN,)
 
 UPDATABLE_FIELDS = frozenset(
-    {"translation_model", "subject", "share_glossary", "two_person_review", "semantic_scope"}
+    {
+        "translation_model",
+        "subject",
+        "share_glossary",
+        "two_person_review",
+        "semantic_scope",
+        "memory_publish_on",
+    }
 )
 
 
@@ -59,6 +66,17 @@ async def semantic_scope_for(session: AsyncSession, organization_id: uuid.UUID) 
     )
 
     return chosen or QAScope.RISKY
+
+
+async def memory_publish_for(session: AsyncSession, organization_id: uuid.UUID) -> MemoryPublish:
+    """Когда исправление идёт в память. По умолчанию после проверки: иначе она пустует."""
+    chosen = await session.scalar(
+        select(WorkspaceSettings.memory_publish_on).where(
+            WorkspaceSettings.organization_id == organization_id
+        )
+    )
+
+    return chosen or MemoryPublish.VERIFIED
 
 
 async def subject_for(session: AsyncSession, organization_id: uuid.UUID) -> str | None:
@@ -134,6 +152,7 @@ class WorkspaceSettingsService(TenantService):
                 share_glossary=False,
                 two_person_review=False,
                 semantic_scope=QAScope.RISKY,
+                memory_publish_on=MemoryPublish.VERIFIED,
             )
             self._session.add(settings)
 

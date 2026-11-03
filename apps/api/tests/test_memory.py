@@ -40,7 +40,7 @@ async def seed(session: AsyncSession, account: Account, pairs: list[tuple[str, s
     context = RequestContext(user=user, organization_id=account.organization_id, role=Role.OWNER)
 
     await TranslationMemory(session, context).remember(
-        pairs, source_language="en", target_language="ru", origin="claude-opus-5"
+        pairs, source_language="en", target_language="ru", origin="claude-opus-5", verified=True
     )
     await session.commit()
 

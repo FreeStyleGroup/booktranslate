@@ -99,6 +99,7 @@ class TranslationMemory(TenantService):
             TranslationUnit.source_language == source_language,
             TranslationUnit.target_language == target_language,
             TranslationUnit.source_hash.in_(hashes),
+            TranslationUnit.verified.is_(True),
         )
 
         return {unit.source_hash: unit for unit in await self._session.scalars(query)}
@@ -124,6 +125,7 @@ class TranslationMemory(TenantService):
                 TranslationUnit.source_language == source_language,
                 TranslationUnit.target_language == target_language,
                 TranslationUnit.source_hash.in_(batch[start : start + LOOKUP_BATCH]),
+                TranslationUnit.verified.is_(True),
             )
 
             found.update(await self._session.scalars(query))
@@ -137,6 +139,7 @@ class TranslationMemory(TenantService):
         source_language: str,
         target_language: str,
         origin: str,
+        verified: bool = False,
     ) -> int:
         """Запомнить пары «исходник — перевод».
 
@@ -173,6 +176,7 @@ class TranslationMemory(TenantService):
                     "source_text": source_text,
                     "target_text": target_text,
                     "origin": origin,
+                    "verified": verified,
                 }
             )
 
@@ -185,6 +189,7 @@ class TranslationMemory(TenantService):
             set_={
                 "target_text": statement.excluded.target_text,
                 "origin": statement.excluded.origin,
+                "verified": statement.excluded.verified,
             },
             where=(TranslationUnit.origin != "human") | (statement.excluded.origin == "human"),
         )
@@ -316,6 +321,8 @@ class TranslationMemory(TenantService):
         unit = await self._get(unit_id)
         unit.target_text = target_text.strip()
         unit.origin = HUMAN
+        # Поправил человек: такая пара считается проверенной.
+        unit.verified = True
 
         await self._session.commit()
         await self._session.refresh(unit)

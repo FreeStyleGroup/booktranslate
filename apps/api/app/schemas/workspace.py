@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from app.models.qa import QAScope
+from app.models.workspace import MemoryPublish
 
 
 class ModelChoicePublic(BaseModel):
@@ -41,6 +42,8 @@ class WorkspaceSettingsPublic(BaseModel):
     two_person_review: bool
     # Что отдавать на смысловую сверку.
     semantic_scope: QAScope
+    # Когда исправление попадает в память переводов.
+    memory_publish_on: MemoryPublish
 
 
 class WorkspaceSettingsUpdate(BaseModel):
@@ -56,3 +59,4 @@ class WorkspaceSettingsUpdate(BaseModel):
     share_glossary: bool | None = None
     two_person_review: bool | None = None
     semantic_scope: QAScope | None = None
+    memory_publish_on: MemoryPublish | None = None

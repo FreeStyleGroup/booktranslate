@@ -70,6 +70,9 @@ class TranslationUnit(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # доверять: правка редактора надёжнее машинного перевода, и при
     # совпадении она должна вытеснять его, а не наоборот.
     origin: Mapped[str] = mapped_column(String(120), nullable=False, default="machine")
+    # Проверен ли перевод человеком. Подсказкой служит только проверенное: память выдаёт текст
+    # без модели и без проверки, и непроверенный текст разошёлся бы по книге молча.
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Сколько раз пара пригодилась. Не статистика ради статистики: по ней
     # видно, что именно окупает память, и её же показывают заказчику как

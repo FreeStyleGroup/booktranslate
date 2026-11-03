@@ -52,6 +52,13 @@ from app.models.qa import (
     QAScope,
     RevisionCheck,
 )
+from app.models.regression import (
+    DependencyKind,
+    RegressionDecision,
+    RegressionItem,
+    RegressionRun,
+    RegressionStatus,
+)
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
@@ -106,6 +113,11 @@ __all__ = [
     "QARun",
     "QAScope",
     "RevisionCheck",
+    "DependencyKind",
+    "RegressionDecision",
+    "RegressionItem",
+    "RegressionRun",
+    "RegressionStatus",
     "JobKind",
     "JobState",
     "Membership",

@@ -11,6 +11,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.issue import IssueCategory, IssueEventKind, IssueSeverity, IssueStatus
+from app.models.regression import DependencyKind, RegressionDecision, RegressionStatus
 
 TEXT_MAX = 10_000
 NOTE_MAX = 4_000
@@ -41,6 +42,60 @@ class RequiredNote(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     note: Note
+
+
+class IssueEdit(BaseModel):
+    """Правка называет редакцию, которую человек видел: так нельзя затереть более новую."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_id: uuid.UUID
+    base_revision_id: uuid.UUID
+    text: str = Field(min_length=1, max_length=100_000)
+    note: str | None = Field(default=None, max_length=NOTE_MAX)
+
+
+class RegressionApply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    overwrite_final: bool = False
+    note: str | None = Field(default=None, max_length=NOTE_MAX)
+
+
+class RegressionDecide(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    affected: bool
+    note: str | None = Field(default=None, max_length=TEXT_MAX)
+    category: IssueCategory | None = None
+    severity: IssueSeverity | None = None
+
+
+class RegressionItemPublic(BaseModel):
+    id: uuid.UUID
+    kind: DependencyKind
+    block_id: uuid.UUID | None
+    object_id: uuid.UUID | None
+    code: str
+    required: bool
+    safe: bool
+    source_text: str | None
+    current_text: str | None
+    proposed_text: str | None
+    final_candidate: bool
+    decision: RegressionDecision
+    note: str | None
+    child_issue_id: uuid.UUID | None
+    child_code: str | None
+
+
+class RegressionRunPublic(BaseModel):
+    id: uuid.UUID
+    status: RegressionStatus
+    fix_revision_id: uuid.UUID
+    pending: int
+    items: list[RegressionItemPublic]
 
 
 class IssueFix(BaseModel):
@@ -143,6 +198,14 @@ class IssueCandidatePublic(BaseModel):
     text: str
 
 
+class IssueEditablePublic(BaseModel):
+    block_id: uuid.UUID
+    block_code: str
+    revision_id: uuid.UUID
+    revision_no: int
+    text: str
+
+
 class IssueAttachmentPublic(BaseModel):
     id: uuid.UUID
     filename: str
@@ -174,6 +237,7 @@ class IssueDetailPublic(IssuePublic):
     events: list[IssueEventPublic]
     attachments: list[IssueAttachmentPublic]
     candidates: list[IssueCandidatePublic]
+    editable: list[IssueEditablePublic]
     children: list[IssueBrief]
     parent: IssueBrief | None
     # Что можно сделать с этим замечанием прямо сейчас этому человеку.
