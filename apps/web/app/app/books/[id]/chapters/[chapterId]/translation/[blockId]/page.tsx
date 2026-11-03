@@ -8,7 +8,6 @@ import {
   load,
   type Book,
   type BookStructure,
-  type RevisionChange,
   type IssuePage,
   type RevisionHistory,
 } from "../../../../../../../lib/work";
@@ -26,6 +25,7 @@ import "../../../../../books.css";
 import "../../../../../../issues/issues.css";
 import { CopyId } from "../../../../../../ui/copy-id";
 import { RegisterIssue } from "../../../../../../issues/register-issue";
+import { RevisionDiff } from "../../../../../revision-diff";
 import { AdoptButton, RetranslateButton } from "./revision-actions";
 
 export const metadata: Metadata = {
@@ -45,22 +45,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Те же наборы, что в API: кнопку показывать тому, кто ею может воспользоваться.
 const TRANSLATING = new Set(["owner", "admin", "manager", "translator"]);
 const EDITING = new Set(["owner", "admin", "manager", "translator", "reviewer"]);
-
-function Changes({ items }: { items: RevisionChange[] }) {
-  return (
-    <p className="bk-diff">
-      {items.map((item, index) =>
-        item.op === "insert" ? (
-          <ins key={index}>{item.text}</ins>
-        ) : item.op === "delete" ? (
-          <del key={index}>{item.text}</del>
-        ) : (
-          <span key={index}>{item.text}</span>
-        ),
-      )}
-    </p>
-  );
-}
 
 export default async function BlockHistoryPage({
   params,
@@ -211,7 +195,7 @@ export default async function BlockHistoryPage({
             {revision.changes.some((item) => item.op !== "equal") && (
               <details className="bk-raw" open={!revision.current}>
                 <summary>Что изменилось относительно редакции {revision.compared_with}</summary>
-                <Changes items={revision.changes} />
+                <RevisionDiff items={revision.changes} />
               </details>
             )}
 

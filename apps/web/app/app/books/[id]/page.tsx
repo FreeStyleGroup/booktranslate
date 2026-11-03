@@ -228,16 +228,22 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
       {/* Пока ничего не переведено, выгружать нечего: получилась бы копия исходника. */}
       {kit.data !== undefined && kit.data.export_formats.length > 0 && kit.data.translated > 0 && (
         <section className="tile">
-          <h3>Черновая выгрузка книги</h3>
+          <h3>Рабочая выгрузка книги</h3>
           <p className="tile__note">
-            Текущие редакции одним файлом. Это не выпуск — он появится отдельно, с закреплёнными
-            версиями глав.
+            Текущие редакции одним файлом, у каждого блока его код: чтобы обсуждать правки.
+            Читательская версия собирается из утверждённых версий глав.
           </p>
           <ExportLinks
             path={`/api/books/${edition.id}/export`}
             formats={kit.data.export_formats}
             draft={kit.data.translated < kit.data.blocks}
+            working
           />
+          <div className="wk-actions">
+            <Link className="btn btn--primary btn--small" href={`/app/books/${edition.id}/assembly`}>
+              Сборка книги и читательская версия
+            </Link>
+          </div>
         </section>
       )}
     </>

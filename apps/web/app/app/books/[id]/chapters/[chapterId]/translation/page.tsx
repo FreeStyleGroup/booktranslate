@@ -108,15 +108,16 @@ export default async function ChapterTranslationPage({
 
       {state.data !== undefined && state.data.translated > 0 && (
         <section className="tile">
-          <h3>Черновая выгрузка</h3>
+          <h3>Рабочая выгрузка</h3>
           <p className="tile__note">
-            Текущие редакции одним файлом: показать середину работы, отдать главу на вычитку. Это не
-            выпуск — он появится отдельно, с закреплёнными версиями.
+            Текущие редакции одним файлом, у каждого блока его код: чтобы обсуждать правки. Читателю
+            такой файл не отдают: чистый файл даёт читательская версия из утверждённого выпуска.
           </p>
           <ExportLinks
             path={`/api/chapters/${chapterId}/export`}
             formats={["docx", "markdown", "text"]}
             draft={state.data.pending > 0}
+            working
           />
         </section>
       )}

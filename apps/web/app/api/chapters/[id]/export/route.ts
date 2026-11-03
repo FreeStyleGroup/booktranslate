@@ -36,5 +36,9 @@ export async function GET(
     query.set("allow_untranslated", "true");
   }
 
+  if (wanted.get("codes") === "1") {
+    query.set("codes", "true");
+  }
+
   return relayFile(`/chapters/${id}/export?${query}`, [UNTRANSLATED_HEADER]);
 }
