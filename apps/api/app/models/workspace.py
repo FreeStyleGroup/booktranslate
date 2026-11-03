@@ -15,12 +15,13 @@
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, Enum, ForeignKey, String
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPrimaryKey
+from app.models.qa import QAScope
 
 
 class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
@@ -47,3 +48,8 @@ class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
     # Критичное замечание решает не тот, кто его нашёл или исправил. Выключено по умолчанию: в
     # команде из одного редактора это правило остановило бы работу.
     two_person_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Что отдавать на смысловую сверку: второй проход модели по всей книге удваивает расход.
+    semantic_scope: Mapped[QAScope] = mapped_column(
+        Enum(QAScope, name="qa_scope", native_enum=True), nullable=False, default=QAScope.RISKY
+    )

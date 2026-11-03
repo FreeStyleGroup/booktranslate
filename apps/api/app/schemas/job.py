@@ -22,7 +22,8 @@ class TranslationJobPublic(BaseModel):
     kind: JobKind
     chapter_id: uuid.UUID
     book_id: uuid.UUID
-    run_id: uuid.UUID
+    run_id: uuid.UUID | None
+    qa_run_id: uuid.UUID | None
     # Название книги — из подгруженной вместе с заданием записи: список
     # заданий читают люди, а не программы, и «книга такая-то переведена»
     # без названия им не о чем.

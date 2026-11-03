@@ -37,6 +37,12 @@ from app.services.providers.lookup import (
     Reference,
     TermLookupProvider,
 )
+from app.services.providers.semantic import (
+    SEMANTIC_PROMPT_VERSION,
+    ClaudeReviewer,
+    SemanticReviewer,
+    StubReviewer,
+)
 
 STUB = "stub"
 CLAUDE = "claude"
@@ -164,6 +170,39 @@ def provider_info(model: str | None = None) -> ProviderInfo:
     )
 
 
+def semantic_info(model: str | None = None) -> ProviderInfo:
+    """Чем будет идти смысловая сверка — для записи в прогон."""
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return ProviderInfo(provider=STUB, model=STUB, prompt_version=STUB)
+
+    return ProviderInfo(
+        provider=CLAUDE,
+        model=model or settings.anthropic_model,
+        prompt_version=SEMANTIC_PROMPT_VERSION,
+    )
+
+
+@lru_cache
+def get_reviewer(model: str | None = None) -> SemanticReviewer:
+    """Смысловая сверка — той же моделью и теми же настройками, что перевод."""
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return StubReviewer()
+
+    return ClaudeReviewer(
+        _client(),
+        ClaudeSettings(
+            model=model or settings.anthropic_model,
+            max_tokens=settings.anthropic_max_tokens,
+            effort=settings.anthropic_effort or None,
+            use_fallbacks=settings.anthropic_use_fallbacks and not settings.anthropic_base_url,
+        ),
+    )
+
+
 @lru_cache
 def get_lookup() -> TermLookupProvider:
     """Источник справок о терминах.
@@ -215,6 +254,8 @@ __all__ = [
     "get_lookup",
     "get_provider",
     "get_provider_factory",
+    "get_reviewer",
+    "semantic_info",
     "keys_of",
     "provider_info",
     "provider_name",

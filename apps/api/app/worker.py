@@ -25,6 +25,7 @@ import os
 import signal
 import socket
 import sys
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -35,15 +36,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
-from app.models.job import JobState, TranslationJob
+from app.models.job import JobKind, JobState, TranslationJob
 from app.models.organization import Membership, Role, User
+from app.models.qa import QAKind, QARun
 from app.models.translation import TranslationRun
 from app.services.context import RequestContext
 from app.services.errors import DomainError
 from app.services.jobs import JobQueue
 from app.services.notify import NotificationService, ready_message
-from app.services.providers import STUB, get_provider, provider_info
-from app.services.translation_runner import TranslationRunner
+from app.services.providers import STUB, get_provider, get_reviewer, provider_info, semantic_info
+from app.services.qa_runner import QARunner
+from app.services.storage import get_storage
+from app.services.translation_runner import Advance, TranslationRunner
 
 logger = logging.getLogger("app.worker")
 
@@ -114,6 +118,59 @@ async def run_job(
     context: RequestContext,
     stop: asyncio.Event,
 ) -> Outcome:
+    """Выполнить задание: рабочий выбирает обработчик по виду работы."""
+    if job.kind is JobKind.QA:
+        return await run_qa(session, queue, job, context, stop)
+
+    return await run_translation(session, queue, job, context, stop)
+
+
+async def run_qa(
+    session: AsyncSession,
+    queue: JobQueue,
+    job: TranslationJob,
+    context: RequestContext,
+    stop: asyncio.Event,
+) -> Outcome:
+    """Выполнить прогон проверки главы."""
+    run = await session.get(QARun, job.qa_run_id)
+
+    if run is None:
+        return Outcome(JobState.FAILED, done=job.items_done, error="Прогон проверки не найден")
+
+    reviewer = None
+
+    if run.kind is QAKind.SEMANTIC:
+        info = semantic_info(run.model)
+
+        if (info.provider, info.prompt_version) != (run.provider, run.check_profile_version):
+            return Outcome(
+                JobState.FAILED,
+                done=job.items_done,
+                error="Настройки модели изменились после постановки в очередь: запустите заново.",
+            )
+
+        reviewer = get_reviewer(None if run.provider == STUB else run.model)
+
+    runner = QARunner(session, context, get_storage(), reviewer)
+    run_id = run.id
+
+    return await _drive(
+        session,
+        queue,
+        job,
+        stop,
+        lambda limit: runner.advance(run_id, limit=limit),
+    )
+
+
+async def run_translation(
+    session: AsyncSession,
+    queue: JobQueue,
+    job: TranslationJob,
+    context: RequestContext,
+    stop: asyncio.Event,
+) -> Outcome:
     """Выполнить прогон перевода главы — до конца или до причины остановиться."""
     run = await session.get(TranslationRun, job.run_id)
 
@@ -138,16 +195,34 @@ async def run_job(
     runner = TranslationRunner(
         session, context, get_provider(None if run.provider == STUB else run.model)
     )
+    run_id = run.id
+
+    return await _drive(
+        session,
+        queue,
+        job,
+        stop,
+        lambda limit: runner.advance(run_id, limit=limit),
+    )
+
+
+async def _drive(
+    session: AsyncSession,
+    queue: JobQueue,
+    job: TranslationJob,
+    stop: asyncio.Event,
+    advance: Callable[[int], Awaitable[Advance]],
+) -> Outcome:
+    """Вести прогон пачками, отмечаясь живым после каждой: сделанное уже зафиксировано."""
     batch = get_settings().worker_batch
     done = job.items_done
-    run_id = run.id
 
     while True:
         if stop.is_set():
             return Outcome(JobState.WAITING, done=done)
 
         try:
-            step = await runner.advance(run_id, limit=batch)
+            step = await advance(batch)
         except DomainError as error:
             await session.rollback()
             await session.refresh(job)
@@ -174,7 +249,7 @@ async def run_job(
             return Outcome(
                 JobState.FAILED,
                 done=done,
-                error=f"Перевод не двигается: осталось блоков {step.remaining}, не взято ни одного",
+                error=f"Работа не двигается: осталось блоков {step.remaining}, не взято ни одного",
             )
 
 
@@ -278,7 +353,11 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
 
     await queue.finish(job, done=outcome.done, state=outcome.state)
 
-    if outcome.state is JobState.DONE:
+    # О проверке не пишут: её заказали здесь и сейчас, а итог виден на странице главы.
+    if outcome.state is JobState.DONE and job.kind is JobKind.QA:
+        logger.info("Задание %s: глава проверена, блоков %d", job.id, outcome.done)
+
+    if outcome.state is JobState.DONE and job.kind is JobKind.CHAPTER:
         logger.info("Задание %s: глава переведена, блоков %d", job.id, outcome.done)
 
         try:

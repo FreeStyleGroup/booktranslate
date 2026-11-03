@@ -240,28 +240,33 @@ class Glossary:
         которого нет в словаре) остаётся, и это осознанный компромисс:
         ложная тревога дешевле пропущенного расхождения.
         """
-        missing = []
+        return [
+            term
+            for term in self.match(source_text)
+            if term.mandatory and term.settled and not _is_used(term, target_text)
+        ]
 
-        for term in self.match(source_text):
-            if not term.mandatory or not term.settled:
-                continue
+    def optional_missing_in(self, source_text: str, target_text: str) -> list[Term]:
+        """Необязательные термины, не попавшие в перевод: это подсказка, а не ошибка."""
+        return [
+            term
+            for term in self.match(source_text)
+            if term.settled and not term.mandatory and not _is_used(term, target_text)
+        ]
 
-            # Годится и основной перевод, и любой согласованный вариант.
-            accepted = (term.target, *term.allowed_variants)
 
-            # Непереводимое и аббревиатуры сверяются дословно, с регистром:
-            # «USB» превратившийся в «Usb» — это уже ошибка, а не падежная
-            # форма. Обычный термин сверяется без регистра и без окончания.
-            if term.case_sensitive or term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE:
-                found = any(form in target_text for form in accepted)
-            else:
-                text = normalize_term(target_text)
-                found = any(normalize_term(form) in text for form in accepted)
+def _is_used(term: Term, target_text: str) -> bool:
+    """Есть ли термин в переводе: основной перевод или любой согласованный вариант."""
+    accepted = (term.target, *term.allowed_variants)
 
-            if not found:
-                missing.append(term)
+    # Непереводимое и аббревиатуры сверяются с регистром: «USB», превратившийся в «Usb», — это уже
+    # ошибка, а не форма. Обычный термин сверяется без регистра.
+    if term.case_sensitive or term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE:
+        return any(form in target_text for form in accepted)
 
-        return missing
+    text = normalize_term(target_text)
+
+    return any(normalize_term(form) in text for form in accepted)
 
 
 class GlossaryService(TenantService):

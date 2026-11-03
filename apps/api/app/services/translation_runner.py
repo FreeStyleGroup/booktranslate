@@ -155,7 +155,7 @@ class TranslationRunner(TenantService):
             return Advance(processed=0, remaining=0)
 
         glossary = await self._glossary(run, book)
-        first_use = _first_uses(glossary, order)
+        first_use = first_uses(glossary, order)
 
         copies = [block for block in blocks if is_protected(block.kind, block.source_text)]
         rest = [block for block in blocks if not is_protected(block.kind, block.source_text)]
@@ -597,7 +597,7 @@ def _packs(groups: list[_Group], size: int) -> Iterable[list[_Group]]:
         yield pack
 
 
-def _first_uses(glossary: Glossary, order: Sequence[Block]) -> dict[uuid.UUID, tuple[str, ...]]:
+def first_uses(glossary: Glossary, order: Sequence[Block]) -> dict[uuid.UUID, tuple[str, ...]]:
     """В каких блоках термин с правилом встречается в главе впервые.
 
     Область — глава, а не книга: главы переводятся в любом порядке и читаются
