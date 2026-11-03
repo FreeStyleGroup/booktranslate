@@ -77,7 +77,7 @@ const DEMO: Overview = {
     {
       id: "a",
       code: "BK01",
-      title: "API Reference v4",
+      title: "Справочник по API, версия 4",
       blocks: 1240,
       translated: 1240,
       ready_percent: 100,
@@ -85,7 +85,7 @@ const DEMO: Overview = {
     {
       id: "b",
       code: "BK02",
-      title: "Kubernetes Handbook",
+      title: "Руководство по Kubernetes",
       blocks: 8910,
       translated: 6680,
       ready_percent: 75,
@@ -93,7 +93,7 @@ const DEMO: Overview = {
     {
       id: "c",
       code: "BK03",
-      title: "Admin Guide",
+      title: "Руководство администратора",
       blocks: 740,
       translated: 222,
       ready_percent: 30,
@@ -104,7 +104,7 @@ const DEMO: Overview = {
       run_id: "a",
       book_id: "b",
       chapter_id: "c",
-      title: "CH04 · Scheduling",
+      title: "CH04 · Планирование",
       problem: "Без перевода осталось блоков: 3",
     },
   ],

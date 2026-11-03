@@ -104,7 +104,7 @@ SYSTEM_PROMPT = """\
 Ответ — JSON по заданной схеме: для каждого присланного id ровно одна запись. Нет проблем — пустой \
 список findings."""
 
-_TRUNCATED = "Ответ модели не уместился: увеличьте ANTHROPIC_MAX_TOKENS или уменьшите размер блока"
+_TRUNCATED = "Ответ модели не уместился: администратору нужно увеличить предел ответа"
 
 
 @dataclass(slots=True)
@@ -270,7 +270,7 @@ def parse_reviews(raw: str, keys: list[str]) -> dict[str, list[SemanticFinding]]
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise ProviderError(f"Ответ модели не разобрался как JSON: {error}") from error
+        raise ProviderError("Модель вернула ответ в неверном виде") from error
 
     reviews = payload.get("reviews") if isinstance(payload, dict) else None
     if not isinstance(reviews, list):
@@ -307,7 +307,7 @@ def _finding(item: object) -> SemanticFinding:
         category = IssueCategory(item.get("category"))
         severity = IssueSeverity(item.get("severity"))
     except ValueError as error:
-        raise ProviderError(f"Модель назвала неизвестный разряд: {error}") from error
+        raise ProviderError("Модель назвала неизвестный разряд замечания") from error
 
     if category not in ALLOWED_CATEGORIES:
         raise ProviderError(f"Модель назвала неразрешённый разряд: {category.value}")

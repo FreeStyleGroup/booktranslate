@@ -10,7 +10,7 @@
 import { useState, useTransition } from "react";
 
 import type { CatalogEntry } from "../../lib/work";
-import { GLOSSARY_KIND, when } from "../labels";
+import { GLOSSARY_KIND, languagePair, when } from "../labels";
 import { adoptEntry } from "./actions";
 import { ReportError } from "../ui/toast";
 
@@ -60,7 +60,7 @@ export function EntryList({ entries, edits }: { entries: CatalogEntry[]; edits: 
               )}
               <span className="tile__note">{GLOSSARY_KIND[entry.kind]}</span>
               <span className="tile__note">
-                {entry.source_language} → {entry.target_language}
+                {languagePair(entry.source_language, entry.target_language)}
               </span>
             </div>
 
@@ -104,7 +104,8 @@ export function EntryList({ entries, edits }: { entries: CatalogEntry[]; edits: 
 
             <div className="ct-entry__foot">
               <span className="tile__note">
-                {entry.looked_up_by} · {when(entry.checked_at)}
+                {entry.looked_up_by === "offline" ? "без внешнего источника" : entry.looked_up_by} ·{" "}
+                {when(entry.checked_at)}
               </span>
               {edits &&
                 entry.found &&

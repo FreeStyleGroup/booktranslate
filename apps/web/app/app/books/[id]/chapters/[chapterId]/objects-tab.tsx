@@ -62,7 +62,7 @@ export function ObjectsTab({
 
 function columns(type: string, card: (item: BookObject) => string): Column<BookObject>[] {
   const id: Column<BookObject> = {
-    title: "Object ID",
+    title: "Код объекта",
     cell: (item) => <ObjectId item={item} href={card(item)} />,
   };
   const caption: Column<BookObject> = {

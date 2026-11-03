@@ -3,10 +3,12 @@
 import logging
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.errors import handle_domain_error
+from app.api.errors import handle_domain_error, handle_http_error, handle_validation_error
 from app.api.routes import (
     admin,
     admin_glossary,
@@ -93,6 +95,8 @@ def create_app() -> FastAPI:
     # Один обработчик на всё дерево доменных ошибок: Starlette ищет
     # обработчик по предкам исключения, поэтому наследники находятся сами.
     app.add_exception_handler(DomainError, handle_domain_error)
+    app.add_exception_handler(RequestValidationError, handle_validation_error)
+    app.add_exception_handler(StarletteHTTPException, handle_http_error)
 
     app.include_router(health.router)
     app.include_router(auth.router)

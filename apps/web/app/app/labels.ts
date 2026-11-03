@@ -461,6 +461,39 @@ export function when(iso: string): string {
   });
 }
 
+// Названия языков заданы словарём, а не `Intl`: сервер и браузер должны показать одно и то же.
+const LANGUAGE_NAME: Record<string, string> = {
+  ru: "русский",
+  en: "английский",
+  de: "немецкий",
+  fr: "французский",
+  es: "испанский",
+  it: "итальянский",
+  pt: "португальский",
+  zh: "китайский",
+  ja: "японский",
+  ko: "корейский",
+  ar: "арабский",
+  tr: "турецкий",
+  pl: "польский",
+  uk: "украинский",
+  nl: "нидерландский",
+  cs: "чешский",
+  sv: "шведский",
+  fi: "финский",
+  he: "иврит",
+  hi: "хинди",
+};
+
+export function languageName(code: string): string {
+  return LANGUAGE_NAME[code.split("-")[0].toLowerCase()] ?? code;
+}
+
+/** Языковая пара словами: «английский → русский». */
+export function languagePair(source: string, target: string): string {
+  return `${languageName(source)} → ${languageName(target)}`;
+}
+
 export const REVIEW_KIND_LABEL: Record<ReviewKind, string> = {
   technical: "Техническая редактура",
   literary: "Литературная редактура",

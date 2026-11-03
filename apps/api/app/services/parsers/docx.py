@@ -72,7 +72,7 @@ class DocxParser:
         try:
             document = docx.Document(str(path))
         except Exception as error:  # библиотека бросает собственные типы ошибок
-            raise ParsingError(f"Файл не читается как DOCX: {error}") from error
+            raise ParsingError("Файл не читается как DOCX: он повреждён") from error
 
         items = _Body(document).items()
         bind_captions(items)

@@ -44,6 +44,13 @@ BUILDING_ROLES = (Role.ADMIN, Role.MANAGER)
 BLOCKER = "blocker"
 WARNING = "warning"
 
+_OBJECT_GENITIVE = {
+    "figure": "рисунков",
+    "table": "таблиц",
+    "equation": "формул",
+    "code": "листингов",
+}
+
 # Глубже в оглавление книги не заходим: подразделы ему только мешают.
 TOC_LEVELS = 2
 
@@ -412,7 +419,7 @@ class AssemblyService(TenantService):
                     Problem(
                         "duplicate_object_label",
                         WARNING,
-                        f"Подпись {label} встречается {count} раза у объектов вида «{kind}»",
+                        f"Подпись {label} встречается {count} раза среди {_OBJECT_GENITIVE[kind]}",
                     )
                 )
 

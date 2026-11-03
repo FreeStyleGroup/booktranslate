@@ -425,7 +425,7 @@ function ownerColumn(owners: Map<string, Owner>, cardPath: string): Column<Block
 
 const COLUMNS: Column<Block>[] = [
   {
-    title: "Block ID",
+    title: "Код блока",
     // Код — отдельным столбцом и копируемый: по нему блок называют в
     // переписке и в замечаниях, и находят из любого места книги.
     cell: (block) => (

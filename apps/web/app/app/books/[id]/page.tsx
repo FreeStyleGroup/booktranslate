@@ -14,7 +14,14 @@ import {
   type Document,
   type Project,
 } from "../../../lib/work";
-import { BOOK_STATUS_CHIP, BOOK_STATUS_LABEL, plural, thousands, when } from "../../labels";
+import {
+  BOOK_STATUS_CHIP,
+  BOOK_STATUS_LABEL,
+  languagePair,
+  plural,
+  thousands,
+  when,
+} from "../../labels";
 import "../../work.css";
 import "../../ui/ui.css";
 import "../books.css";
@@ -124,7 +131,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
           <CopyId value={edition.code} title="код книги" />
 
           <span className="chip chip--info">
-            {edition.source_language} → {edition.target_language}
+            {languagePair(edition.source_language, edition.target_language)}
           </span>
 
           <span className={BOOK_STATUS_CHIP[edition.status] ?? "chip chip--info"}>

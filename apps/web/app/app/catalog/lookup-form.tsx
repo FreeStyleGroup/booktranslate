@@ -14,7 +14,7 @@
 import { useActionState } from "react";
 
 import type { CatalogSource } from "../../lib/work";
-import { plural, thousands } from "../labels";
+import { languagePair, plural, thousands } from "../labels";
 import { lookupTerms, type LookupResult } from "./actions";
 import { ReportError } from "../ui/toast";
 
@@ -35,7 +35,7 @@ export function LookupForm({ pairs, source }: { pairs: Pair[]; source: CatalogSo
       {source !== null && !source.online && (
         <p className="ct-offline">
           Внешний источник выключен на сервере: справочник ответит «не нашёл» на всё, что не лежит в
-          каталоге. Включается переменной <code>TERM_LOOKUP_PROVIDER=claude</code>.
+          каталоге. Включить его может администратор сервиса.
         </p>
       )}
 
@@ -50,7 +50,7 @@ export function LookupForm({ pairs, source }: { pairs: Pair[]; source: CatalogSo
           <select name="pair" defaultValue={pairs[0]?.value}>
             {pairs.map((pair) => (
               <option key={pair.value} value={pair.value}>
-                {pair.source} → {pair.target}
+                {languagePair(pair.source, pair.target)}
               </option>
             ))}
           </select>

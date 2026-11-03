@@ -22,6 +22,7 @@ import {
   GLOSSARY_STATUS,
   GLOSSARY_STATUS_HINT,
   glossarySource,
+  languagePair,
 } from "../labels";
 import { deleteTerm, updateTerm, type TermChange } from "./actions";
 import { ReportError } from "../ui/toast";
@@ -70,7 +71,8 @@ export function TermList({ terms, edits }: { terms: GlossaryTerm[]; edits: boole
             <div className="gl-row__source">
               <b>{term.source_term}</b>
               <span className="tile__note">
-                {term.source_language} → {term.target_language} · {glossarySource(term.source)}
+                {languagePair(term.source_language, term.target_language)} ·{" "}
+                {glossarySource(term.source)}
                 {term.project_id !== null && " · проект"}
               </span>
               {term.note !== null && term.note !== "" && (

@@ -12,7 +12,7 @@
 import { useState, useTransition } from "react";
 
 import type { TranslationUnit } from "../../lib/work";
-import { plural, thousands, when } from "../labels";
+import { languagePair, plural, thousands, when } from "../labels";
 import { deleteUnit, updateUnit } from "./actions";
 import { ReportError } from "../ui/toast";
 
@@ -46,7 +46,8 @@ export function UnitList({ units, edits }: { units: TranslationUnit[]; edits: bo
             <div className="mm-row__source">
               <p>{unit.source_text}</p>
               <span className="tile__note">
-                {unit.source_language} → {unit.target_language} · {originLabel(unit.origin)} ·{" "}
+                {languagePair(unit.source_language, unit.target_language)} ·{" "}
+                {originLabel(unit.origin)} ·{" "}
                 {unit.hits === 0
                   ? "ещё не пригодилась"
                   : `пригодилась ${thousands(unit.hits)} ${plural(unit.hits, "раз", "раза", "раз")}`}{" "}
