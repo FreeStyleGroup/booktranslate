@@ -11,6 +11,7 @@
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
@@ -24,8 +25,9 @@ from app.services.providers.base import (
     TranslationProvider,
     TranslationRequest,
     Usage,
+    keys_of,
 )
-from app.services.providers.claude import ClaudeProvider, ClaudeSettings
+from app.services.providers.claude import PROMPT_VERSION, ClaudeProvider, ClaudeSettings
 from app.services.providers.lookup import (
     ClaudeLookup,
     Explanation,
@@ -140,6 +142,28 @@ def provider_name(model: str | None = None) -> str:
     return model or settings.anthropic_model
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderInfo:
+    """Чем будут переводить — для записи в прогон, без создания клиента."""
+
+    provider: str
+    model: str
+    prompt_version: str
+
+
+def provider_info(model: str | None = None) -> ProviderInfo:
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return ProviderInfo(provider=STUB, model=STUB, prompt_version=STUB)
+
+    return ProviderInfo(
+        provider=CLAUDE,
+        model=model or settings.anthropic_model,
+        prompt_version=PROMPT_VERSION,
+    )
+
+
 @lru_cache
 def get_lookup() -> TermLookupProvider:
     """Источник справок о терминах.
@@ -180,6 +204,7 @@ __all__ = [
     "OfflineLookup",
     "ProviderError",
     "ProviderFactory",
+    "ProviderInfo",
     "Reference",
     "StubProvider",
     "TermLookupProvider",
@@ -190,5 +215,7 @@ __all__ = [
     "get_lookup",
     "get_provider",
     "get_provider_factory",
+    "keys_of",
+    "provider_info",
     "provider_name",
 ]

@@ -70,6 +70,7 @@ from app.services.providers import (
     TranslationProvider,
     TranslationRequest,
     Usage,
+    keys_of,
 )
 from app.services.terminology import TerminologyService
 
@@ -637,16 +638,19 @@ class TranslationService(TenantService):
         ]
 
         batch = await self._provider.translate(requests)
+        keys = keys_of(requests)
 
-        if len(batch.texts) != len(requests):
+        if set(batch.items) != set(keys):
             raise ConflictError(
                 "Провайдер вернул другое число переводов: "
-                f"ожидалось {len(requests)}, получено {len(batch.texts)}"
+                f"ожидалось {len(keys)}, получено {len(batch.items)}"
             )
 
         pairs: list[tuple[str, str]] = []
 
-        for (_, group), answer in zip(chunk, batch.texts, strict=True):
+        for (_, group), key in zip(chunk, keys, strict=True):
+            answer = batch.items[key]
+
             for segment in group:
                 self._apply(segment, answer, self._provider.name, SegmentStatus.MACHINE, glossary)
 

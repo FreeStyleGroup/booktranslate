@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from app.models.memory import GlossaryEntryKind
+from app.models.memory import FirstUseRule, GlossaryEntryKind
 from app.services.glossary import Term
 from app.services.providers import ProviderError, TranslationRequest
 from app.services.providers.base import Neighbourhood
@@ -52,8 +52,12 @@ class Client:
         self.beta = type("Beta", (), {"messages": self.messages})()
 
 
-def answer(texts: list[str], stop_reason: str = "end_turn") -> Message:
-    payload = {"translations": [{"id": number, "text": text} for number, text in enumerate(texts)]}
+def answer(texts: list[str], stop_reason: str = "end_turn", *, start: int = 0) -> Message:
+    payload = {
+        "translations": [
+            {"id": str(number), "text": text} for number, text in enumerate(texts, start=start)
+        ]
+    }
 
     return Message([Block(json.dumps(payload, ensure_ascii=False))], stop_reason)
 
@@ -84,21 +88,28 @@ async def test_translations_return_in_order_of_request() -> None:
     """Ответ раскладывается по номерам: порядок строк в JSON ничего не решает."""
     payload = {
         "translations": [
-            {"id": 1, "text": "второй"},
-            {"id": 0, "text": "первый"},
+            {"id": "1", "text": "второй"},
+            {"id": "0", "text": "первый"},
         ]
     }
     client = Client([Message([Block(json.dumps(payload, ensure_ascii=False))])])
 
     result = await provider(client).translate([request("first"), request("second")])
 
-    assert result.texts == ["первый", "второй"]
+    assert result.items == {"0": "первый", "1": "второй"}
 
 
 async def test_missing_translation_is_an_error() -> None:
     """Пропущенный сегмент сдвинул бы всю пачку — и текст остался бы связным."""
-    payload = {"translations": [{"id": 0, "text": "первый"}]}
-    client = Client([Message([Block(json.dumps(payload, ensure_ascii=False))])])
+    payload = {"translations": [{"id": "0", "text": "первый"}]}
+    # Половины спрашиваются заново, и вторая не приходит и при повторе.
+    client = Client(
+        [
+            Message([Block(json.dumps(payload, ensure_ascii=False))]),
+            answer(["первый"]),
+            Message([Block(json.dumps({"translations": []}))]),
+        ]
+    )
 
     with pytest.raises(ProviderError, match="не для всех"):
         await provider(client).translate([request("first"), request("second")])
@@ -106,7 +117,7 @@ async def test_missing_translation_is_an_error() -> None:
 
 async def test_thinking_blocks_do_not_hide_the_answer() -> None:
     """При включённом размышлении первый блок ответа — не текст."""
-    payload = {"translations": [{"id": 0, "text": "первый"}]}
+    payload = {"translations": [{"id": "0", "text": "первый"}]}
     client = Client(
         [
             Message(
@@ -115,7 +126,7 @@ async def test_thinking_blocks_do_not_hide_the_answer() -> None:
         ]
     )
 
-    assert (await provider(client).translate([request("first")])).texts == ["первый"]
+    assert (await provider(client).translate([request("first")])).items == {"0": "первый"}
 
 
 async def test_truncated_batch_is_split_in_half() -> None:
@@ -124,13 +135,13 @@ async def test_truncated_batch_is_split_in_half() -> None:
         [
             answer(["", ""], stop_reason="max_tokens"),
             answer(["первый"]),
-            answer(["второй"]),
+            answer(["второй"], start=1),
         ]
     )
 
     result = await provider(client).translate([request("first"), request("second")])
 
-    assert result.texts == ["первый", "второй"]
+    assert result.items == {"0": "первый", "1": "второй"}
     assert len(client.messages.calls) == 3
 
 
@@ -162,7 +173,7 @@ async def test_rules_are_cached_and_material_is_not() -> None:
     """Правила одинаковы для всей книги — за них платят один раз."""
     client = Client([answer(["первый"])])
 
-    await provider(client).translate([request("first")])
+    await provider(client).translate([request("Pressure relief")])
     payload = client.messages.calls[0]
 
     assert payload["system"][0]["cache_control"] == {"type": "ephemeral"}
@@ -170,7 +181,7 @@ async def test_rules_are_cached_and_material_is_not() -> None:
     assert payload["output_config"]["format"]["type"] == "json_schema"
     # Материал уходит пользовательским сообщением, а не в правила: иначе
     # кэш обнулялся бы на каждой пачке.
-    assert "first" not in json.dumps(payload["system"], ensure_ascii=False)
+    assert "Pressure relief" not in json.dumps(payload["system"], ensure_ascii=False)
 
 
 async def test_fallbacks_go_through_beta_endpoint() -> None:
@@ -217,7 +228,7 @@ async def test_usage_of_a_truncated_attempt_is_not_lost() -> None:
     head = answer(["первый"])
     head.usage = spent(10)
 
-    tail = answer(["второй"])
+    tail = answer(["второй"], start=1)
     tail.usage = spent(20)
 
     result = await provider(Client([first, head, tail])).translate(
@@ -231,7 +242,7 @@ async def test_missing_usage_does_not_break_the_translation() -> None:
     """Отсутствие счётчика — не повод потерять уже оплаченный перевод."""
     result = await provider(Client([answer(["первый"])])).translate([request("first")])
 
-    assert result.texts == ["первый"]
+    assert result.items == {"0": "первый"}
     assert result.usage.input_tokens == 0
 
 
@@ -267,7 +278,7 @@ def test_message_carries_context_and_terms() -> None:
     segment = body["segments"][0]
 
     assert body["source_language"] == "en"
-    assert segment["id"] == 0
+    assert segment["id"] == "0"
     assert segment["kind"] == "warning"
     assert segment["section_heading"] == "Safety"
     assert segment["context_before"] == ["Before start."]
@@ -298,3 +309,72 @@ def test_do_not_translate_is_marked() -> None:
     segment = json.loads(build_user_message([request("Connect USB.", terms=[term])]))["segments"][0]
 
     assert segment["terms"][0]["do_not_translate"] is True
+
+
+async def test_answer_comes_back_under_the_code_of_the_block() -> None:
+    payload = {
+        "translations": [
+            {"id": "CH03-B0002/0", "text": "второй"},
+            {"id": "CH03-B0001/0", "text": "первый"},
+        ]
+    }
+    client = Client([Message([Block(json.dumps(payload, ensure_ascii=False))])])
+    requests = [request("first"), request("second")]
+    requests[0].key = "CH03-B0001/0"
+    requests[1].key = "CH03-B0002/0"
+
+    result = await provider(client).translate(requests)
+
+    assert result.items == {"CH03-B0001/0": "первый", "CH03-B0002/0": "второй"}
+    sent = json.loads(client.messages.calls[0]["messages"][0]["content"])
+    assert [item["id"] for item in sent["segments"]] == ["CH03-B0001/0", "CH03-B0002/0"]
+
+
+async def test_unknown_or_repeated_code_rejects_the_answer_and_splits_the_batch() -> None:
+    wrong = {"translations": [{"id": "A/0", "text": "а"}, {"id": "X/0", "text": "чужой"}]}
+    repeated = {"translations": [{"id": "A/0", "text": "а"}, {"id": "A/0", "text": "а2"}]}
+
+    for bad in (wrong, repeated):
+        client = Client(
+            [
+                Message([Block(json.dumps(bad, ensure_ascii=False))]),
+                Message([Block(json.dumps({"translations": [{"id": "A/0", "text": "а"}]}))]),
+                Message([Block(json.dumps({"translations": [{"id": "B/0", "text": "б"}]}))]),
+            ]
+        )
+        requests = [request("a"), request("b")]
+        requests[0].key = "A/0"
+        requests[1].key = "B/0"
+
+        result = await provider(client).translate(requests)
+
+        assert result.items == {"A/0": "а", "B/0": "б"}
+        assert len(client.messages.calls) == 3
+
+
+async def test_single_segment_with_a_wrong_code_is_an_error_that_keeps_the_cost() -> None:
+    bad = {"translations": [{"id": "X/0", "text": "чужой"}]}
+    client = Client([Message([Block(json.dumps(bad))])])
+    single = request("a")
+    single.key = "A/0"
+
+    with pytest.raises(ProviderError, match="неизвестного сегмента"):
+        await provider(client).translate([single])
+
+
+async def test_first_use_rule_goes_only_to_the_first_occurrence() -> None:
+    term = Term(
+        source="PLC",
+        target="ПЛК",
+        mandatory=True,
+        note=None,
+        first_use_rule=FirstUseRule.EXPAND,
+    )
+    first = request("The PLC starts.", terms=[term])
+    first.first_use = ("PLC",)
+    later = request("The PLC stops.", terms=[term])
+
+    sent = json.loads(build_user_message([first, later]))
+
+    assert sent["segments"][0]["terms"][0]["first_use"] == "expand"
+    assert "first_use" not in sent["segments"][1]["terms"][0]

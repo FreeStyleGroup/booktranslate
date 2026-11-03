@@ -11,25 +11,39 @@
 обратный обошёлся бы в полную стоимость каждого запроса.
 
 **Ответ разбирается по схеме, а не по разметке.** Модель возвращает JSON,
-форма которого задана в самом запросе, и каждый перевод несёт номер сегмента.
+форма которого задана в самом запросе, и каждый перевод несёт код части блока.
 Полагаться на порядок строк в свободном тексте нельзя: пропущенная строка
 сдвинет всю пачку, и сорок абзацев книги встанут не на свои места — молча,
-потому что текст останется связным.
+потому что текст останется связным. Лишний, повторный или потерянный код —
+отказ всей пачки, а не её части: такому ответу верить нельзя ни в чём.
 
 **Упёршийся в потолок ответ не склеивается.** Если модель не уместила пачку
-в `max_tokens`, пачка делится пополам и переводится заново. Отдать
-обрезанный последний абзац как готовый — тот самый случай, когда ошибку
+в `max_tokens` или перепутала коды, пачка делится пополам и переводится заново.
+Отдать обрезанный последний абзац как готовый — тот самый случай, когда ошибку
 находит читатель.
+
+**Версия промпта записывается в каждый прогон.** Смысл правил меняется вместе с
+качеством перевода, и через полгода надо уметь сказать, какие главы переведены
+по прежним правилам. Поменял текст `SYSTEM_PROMPT` — подними `PROMPT_VERSION`.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from app.services.providers.base import ProviderError, Translated, TranslationRequest, Usage
+from app.models.memory import FirstUseRule
+from app.services.providers.base import (
+    ProviderError,
+    Translated,
+    TranslationRequest,
+    Usage,
+    keys_of,
+)
 
-# Схема ответа. Номер обязателен: по нему перевод возвращается на своё место,
-# а не по порядку строк.
+PROMPT_VERSION = "2026.11.1"
+
+# Схема ответа. Код обязателен: по нему перевод возвращается на своё место, а не
+# по порядку строк.
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -38,7 +52,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "id": {"type": "integer"},
+                    "id": {"type": "string"},
                     "text": {"type": "string"},
                 },
                 "required": ["id", "text"],
@@ -60,12 +74,17 @@ SYSTEM_PROMPT = """\
 даны для понимания — переводить их не нужно и включать в ответ тоже.
 2. Термины, приложенные к сегменту, обязательны к употреблению именно в \
 указанной форме. Если термин помечен как непереводимый, он переносится в \
-перевод дословно, включая регистр.
+перевод дословно, включая регистр. Поле first_use у термина означает, что в \
+главе он встречается впервые: expand — раскрой сокращение и дай его в скобках, \
+original — после перевода дай в скобках исходную форму. Дальше по главе термин \
+идёт без этого.
 3. Числа, единицы измерения, обозначения, артикулы, коды стандартов и \
 формулы переносятся без изменений. Разделитель дробной части приводится к \
 принятому в языке перевода, само число не меняется никогда.
-4. Подстановки и разметка внутри текста ({0}, %s, <b>) сохраняются как есть \
-и на своих местах по смыслу.
+4. Заменители вида ⟦1⟧ обозначают формулу, код или подстановку, которых \
+модель не видит и которые вернутся на место сами. Каждый заменитель из текста \
+сегмента обязан быть в переводе ровно один раз и без изменений; другого места \
+по смыслу он занять может, а новых заменителей появиться не может.
 5. Ничего не добавляй от себя: ни пояснений, ни примечаний переводчика, ни \
 раскрытия сокращений, которого нет в исходнике.
 6. Ничего не выбрасывай. Если фраза в исходнике неполна или оборвана, \
@@ -75,7 +94,13 @@ SYSTEM_PROMPT = """\
 свою резкость.
 
 Ответ — JSON по заданной схеме: для каждого присланного сегмента ровно один \
-перевод с его номером."""
+перевод с его идентификатором id, без лишних и без пропущенных."""
+
+
+_TRUNCATED = (
+    "Перевод не уместился в ответ модели: увеличьте ANTHROPIC_MAX_TOKENS или уменьшите "
+    "размер сегмента"
+)
 
 
 @dataclass(slots=True)
@@ -109,30 +134,35 @@ class ClaudeProvider:
     def name(self) -> str:
         """Имя модели, а не «claude».
 
-        В `translation_source` сегмента должно остаться то, по чему через
-        полгода видно, чем именно переведён этот том, — и что перепроверять
-        после смены модели.
+        В прогоне должно остаться то, по чему через полгода видно, чем
+        именно переведён этот том, — и что перепроверять после смены модели.
         """
         return self._settings.model
 
     async def translate(self, requests: list[TranslationRequest]) -> Translated:
         if not requests:
-            return Translated(texts=[])
+            return Translated(items={})
 
+        keys = keys_of(requests)
         message = await self._ask(requests)
         stop = getattr(message, "stop_reason", None)
         usage = _usage_of(message)
 
         if stop == "refusal":
-            raise ProviderError(self._refusal_message(message))
+            raise ProviderError(self._refusal_message(message), spent=usage)
 
         if stop == "max_tokens":
-            return await self._split(requests, usage)
+            return await self._split(requests, usage, why=_TRUNCATED)
 
-        return Translated(texts=self._parse(_text_of(message), len(requests)), usage=usage)
+        try:
+            return Translated(items=self._parse(_text_of(message), keys), usage=usage)
+        except ProviderError as error:
+            return await self._split(requests, usage, why=str(error))
 
-    async def _split(self, requests: list[TranslationRequest], spent: Usage) -> Translated:
-        """Пачка не уместилась в ответ — перевести половинами.
+    async def _split(
+        self, requests: list[TranslationRequest], spent: Usage, *, why: str
+    ) -> Translated:
+        """Пачка не удалась целиком — перевести половинами.
 
         Расход неудачной попытки не выбрасывается, а прибавляется к итогу:
         обрезанный ответ оплачен так же, как удачный, и отчёт, в котором его
@@ -143,18 +173,29 @@ class ClaudeProvider:
         перевод выглядит законченным.
         """
         if len(requests) == 1:
-            raise ProviderError(
-                "Перевод не уместился в ответ модели: увеличьте "
-                "ANTHROPIC_MAX_TOKENS или уменьшите размер сегмента"
-            )
+            raise ProviderError(why, spent=spent)
 
         middle = len(requests) // 2
 
-        head = await self.translate(requests[:middle])
-        tail = await self.translate(requests[middle:])
+        # Куски нумеруются заново внутри половины, поэтому коды надо закрепить
+        # до деления: номер по порядку у половины был бы уже другим.
+        keyed = [
+            replace(request, key=key)
+            for request, key in zip(requests, keys_of(requests), strict=True)
+        ]
+
+        try:
+            head = await self.translate(keyed[:middle])
+        except ProviderError as error:
+            raise ProviderError(str(error), spent=spent + error.spent) from error
+
+        try:
+            tail = await self.translate(keyed[middle:])
+        except ProviderError as error:
+            raise ProviderError(str(error), spent=spent + head.usage + error.spent) from error
 
         return Translated(
-            texts=head.texts + tail.texts,
+            items={**head.items, **tail.items},
             usage=spent + head.usage + tail.usage,
         )
 
@@ -196,8 +237,8 @@ class ClaudeProvider:
         )
 
     @staticmethod
-    def _parse(raw: str, expected: int) -> list[str]:
-        """Разобрать ответ и вернуть переводы в порядке запроса."""
+    def _parse(raw: str, keys: list[str]) -> dict[str, str]:
+        """Разобрать ответ и проверить, что коды совпали с запрошенными."""
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as error:
@@ -207,25 +248,34 @@ class ClaudeProvider:
         if not isinstance(items, list):
             raise ProviderError("В ответе модели нет списка переводов")
 
-        by_number: dict[int, str] = {}
+        wanted = set(keys)
+        answers: dict[str, str] = {}
+
         for item in items:
             if not isinstance(item, dict):
                 continue
 
-            number = item.get("id")
+            key = item.get("id")
             text = item.get("text")
 
-            if isinstance(number, int) and isinstance(text, str):
-                by_number[number] = text
+            if not isinstance(key, str) or not isinstance(text, str):
+                continue
 
-        missing = [number for number in range(expected) if number not in by_number]
+            if key not in wanted:
+                raise ProviderError(f"Модель вернула перевод неизвестного сегмента: {key}")
+
+            if key in answers:
+                raise ProviderError(f"Модель вернула сегмент дважды: {key}")
+
+            answers[key] = text
+
+        missing = [key for key in keys if key not in answers]
         if missing:
             raise ProviderError(
-                "Модель вернула перевод не для всех сегментов; нет номеров: "
-                + ", ".join(str(number) for number in missing)
+                "Модель вернула перевод не для всех сегментов; нет: " + ", ".join(missing)
             )
 
-        return [by_number[number] for number in range(expected)]
+        return answers
 
 
 def build_user_message(requests: list[TranslationRequest]) -> str:
@@ -241,15 +291,17 @@ def build_user_message(requests: list[TranslationRequest]) -> str:
     document: dict[str, Any] = {
         "source_language": first.source_language,
         "target_language": first.target_language,
-        "segments": [_segment(number, request) for number, request in enumerate(requests)],
+        "segments": [
+            _segment(key, request) for key, request in zip(keys_of(requests), requests, strict=True)
+        ],
     }
 
     return json.dumps(document, ensure_ascii=False, indent=1)
 
 
-def _segment(number: int, request: TranslationRequest) -> dict[str, Any]:
+def _segment(key: str, request: TranslationRequest) -> dict[str, Any]:
     item: dict[str, Any] = {
-        "id": number,
+        "id": key,
         "kind": request.kind,
         "text": request.source_text,
     }
@@ -274,6 +326,12 @@ def _segment(number: int, request: TranslationRequest) -> dict[str, Any]:
                 # моделью.
                 **({"note": term.note} if term.note else {}),
                 **({"do_not_translate": True} if term.kind.value == "do_not_translate" else {}),
+                **(
+                    {"first_use": term.first_use_rule.value}
+                    if term.source in request.first_use
+                    and term.first_use_rule is not FirstUseRule.NONE
+                    else {}
+                ),
             }
             for term in request.terms
         ]

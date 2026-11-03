@@ -20,14 +20,6 @@ from typing import Protocol
 from app.services.glossary import Term
 
 
-class ProviderError(Exception):
-    """Провайдер не смог перевести пачку.
-
-    Отдельный тип, а не общая ошибка: сбой модели — это не ошибка данных и
-    не ошибка пользователя, и обходиться с ним надо иначе.
-    """
-
-
 @dataclass(frozen=True, slots=True)
 class Neighbourhood:
     """Окружение сегмента в документе.
@@ -57,6 +49,10 @@ class TranslationRequest:
     source_language: str
     target_language: str
 
+    # Код части блока, например `CH03-B0042/0`. Ответ обязан вернуть именно его:
+    # по коду перевод встаёт на своё место, а не по порядку строк.
+    key: str = ""
+
     # Термины, встретившиеся именно в этом сегменте. В запрос уходят только
     # они, а не весь словарь: словарь на тысячу строк в каждом запросе — это
     # оплаченный контекст, который к тексту отношения не имеет.
@@ -69,6 +65,15 @@ class TranslationRequest:
     # Соседние сегменты и заголовок раздела. Переводу не подлежат — они
     # нужны модели, чтобы понять, к чему относится «он» и о чём вообще речь.
     context: Neighbourhood = EMPTY_CONTEXT
+
+    # Термины, которые встречаются в главе здесь впервые: к ним применяется
+    # правило первого употребления.
+    first_use: tuple[str, ...] = ()
+
+
+def keys_of(requests: list[TranslationRequest]) -> list[str]:
+    """Коды запросов пачки. Запрос без кода получает номер по порядку."""
+    return [request.key or str(number) for number, request in enumerate(requests)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,15 +106,33 @@ class Usage:
 
 @dataclass(frozen=True, slots=True)
 class Translated:
-    """Ответ провайдера: переводы и цена вопроса.
+    """Ответ провайдера: переводы по кодам запросов и цена вопроса.
+
+    Словарь, а не список: сопоставлять ответ с запросами по порядку значило бы
+    однажды молча поставить сорок абзацев книги не на свои места.
 
     Расход возвращается вместе с переводом, а не собирается провайдером у
     себя: провайдер один на процесс и обслуживает несколько переводов
     сразу, и счётчик внутри него смешал бы чужие книги.
     """
 
-    texts: list[str]
+    items: dict[str, str]
     usage: Usage = Usage()
+
+
+class ProviderError(Exception):
+    """Провайдер не смог перевести пачку.
+
+    Отдельный тип, а не общая ошибка: сбой модели — это не ошибка данных и
+    не ошибка пользователя, и обходиться с ним надо иначе.
+
+    `spent` — во что обошлась неудачная попытка: отказ и обрезанный ответ
+    оплачены так же, как удачный, и отчёт без них занижал бы стоимость книги.
+    """
+
+    def __init__(self, message: str, *, spent: Usage | None = None) -> None:
+        super().__init__(message)
+        self.spent = spent or Usage()
 
 
 class TranslationProvider(Protocol):
@@ -117,7 +140,7 @@ class TranslationProvider(Protocol):
 
     @property
     def name(self) -> str:
-        """Имя для записи в `translation_source` сегмента.
+        """Имя модели для записи в прогон.
 
         По нему через полгода можно сказать, какой моделью переведён
         конкретный том, — и понять, что перепроверять после её смены.
@@ -125,7 +148,7 @@ class TranslationProvider(Protocol):
         ...
 
     async def translate(self, requests: list[TranslationRequest]) -> Translated:
-        """Перевести пачку. Порядок ответов совпадает с порядком запросов."""
+        """Перевести пачку и вернуть перевод на каждый код запроса."""
         ...
 
 
@@ -144,7 +167,12 @@ class StubProvider:
     async def translate(self, requests: list[TranslationRequest]) -> Translated:
         # Расход нулевой, и это не заглушка ради заглушки: заглушка ничего
         # не тратит, и показывать иное было бы враньём в отчёте.
-        return Translated(texts=[self._one(request) for request in requests])
+        return Translated(
+            items={
+                key: self._one(request)
+                for key, request in zip(keys_of(requests), requests, strict=True)
+            }
+        )
 
     @staticmethod
     def _one(request: TranslationRequest) -> str:
