@@ -25,6 +25,8 @@ export type JoinTexts = {
   signIn: string;
 };
 
+// Метод нужен на случай нажатия до загрузки скриптов: без него браузер отправит форму методом GET,
+// и пароль окажется в адресе, истории и журналах сервера.
 export function JoinForm({
   token,
   preview,
@@ -131,7 +133,7 @@ export function JoinForm({
   }
 
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form className="form" method="post" onSubmit={submit} noValidate>
       <label className="field">
         <span>{texts.form.name}</span>
         <input
