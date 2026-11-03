@@ -6,7 +6,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.release import BookReleaseStatus, ReleaseStatus
+from app.models.issue import IssueSeverity
+from app.models.job import JobState
+from app.models.release import ArtifactFormat, BookReleaseStatus, PageStatus, ReleaseStatus
 from app.schemas.chapter_translation import ChangePublic
 
 
@@ -109,6 +111,7 @@ class BookReleaseCreate(BaseModel):
 class BookReleasePublic(BaseModel):
     id: uuid.UUID
     book_id: uuid.UUID
+    title: str
     code: str
     version: str
     status: BookReleaseStatus
@@ -118,3 +121,70 @@ class BookReleasePublic(BaseModel):
     created_at: datetime
     # Ложь, если такой состав уже был собран и вернулась прежняя запись.
     created: bool = True
+
+
+class ArtifactPublic(BaseModel):
+    id: uuid.UUID
+    format: ArtifactFormat
+    checksum: str
+    size: int
+    renderer_version: str
+    manifest_hash: str
+    page_count: int | None
+    superseded_at: datetime | None
+    created_at: datetime
+
+
+class ReleaseFilesPublic(BaseModel):
+    artifacts: list[ArtifactPublic]
+    previous: list[ArtifactPublic]
+    job_state: JobState | None
+    job_error: str | None
+
+
+class PageAuditPublic(BaseModel):
+    page_no: int
+    status: PageStatus
+    issue_id: uuid.UUID | None
+    checked_at: datetime | None
+
+
+class PageIssueCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    severity: IssueSeverity = IssueSeverity.MAJOR
+    description: str = Field(min_length=1, max_length=10_000)
+
+
+class PageIssueResult(BaseModel):
+    page: PageAuditPublic
+    issue_id: uuid.UUID
+    issue_code: str
+
+
+class GateCheckPublic(BaseModel):
+    code: str
+    title: str
+    passed: bool
+
+
+class GateBlockerPublic(BaseModel):
+    check: str
+    code: str
+    message: str
+    count: int | None
+    chapter_id: uuid.UUID | None
+    issue_id: uuid.UUID | None
+    page_no: int | None
+
+
+class GatePublic(BaseModel):
+    release_id: uuid.UUID
+    code: str
+    status: BookReleaseStatus
+    ready: bool
+    checks: list[GateCheckPublic]
+    blockers: list[GateBlockerPublic]
+    passed_at: datetime | None
+    # Снимок проверки на момент PASS.
+    snapshot: dict[str, Any] | None

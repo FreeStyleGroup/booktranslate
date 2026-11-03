@@ -9,6 +9,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# Для сборки PDF: Pango и шрифты с кириллицей. Шрифты из пакетов, а не из сети: что в образе, то и
+# в файле, и вёрстка не меняется от запуска к запуску.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+        fonts-liberation fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Зависимости ставятся до копирования кода: слой с ними переиспользуется,
 # пока не изменится pyproject, и правка одного файла не тянет полную
 # переустановку пакетов.

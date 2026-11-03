@@ -192,6 +192,10 @@ class Settings(BaseSettings):
     # ходить в сеть и тратить деньги, а рабочая среда задаёт это явно.
     translation_provider: str = "stub"
 
+    # Чем собирать PDF. «stub» — настоящий файл с пустыми страницами: для тестов и машин без Pango.
+    # В рабочей среде запрещён: см. validate_runtime.
+    pdf_engine: str = "weasyprint"
+
     # Ключ можно не задавать: клиент модели сам возьмёт его из окружения
     # (ANTHROPIC_API_KEY) или из профиля, настроенного на машине.
     anthropic_api_key: str = ""
@@ -262,6 +266,10 @@ class Settings(BaseSettings):
         """
         if self.environment == "development":
             return
+
+        # Пустой PDF, ушедший читателю, хуже отказа: заглушка живёт только в разработке.
+        if self.pdf_engine != "weasyprint":
+            raise RuntimeError("PDF_ENGINE вне разработки может быть только weasyprint")
 
         if self.jwt_secret == "dev-secret-change-me":
             raise RuntimeError(

@@ -53,6 +53,8 @@ ROOT_PASSWORD = "root-password-for-tests"
 # проверяется отдельно, на приложении со своими настройками
 # (tests/test_throttle.py).
 get_settings().rate_limit_per_minute = 100_000
+# Настоящий движок проверяется отдельно: ему нужен Pango, а логике выпуска хватает любого PDF.
+get_settings().pdf_engine = "stub"
 get_settings().auth_rate_limit_per_minute = 100_000
 
 # Окно гонки при ротации refresh-токена в тестах закрыто: проверка

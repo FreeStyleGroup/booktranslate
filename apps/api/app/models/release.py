@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     Enum,
@@ -156,3 +157,93 @@ class BookReleaseChapter(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         postgresql.UUID(as_uuid=True), _deferred("chapter_releases.id"), nullable=False, index=True
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ArtifactFormat(str, enum.Enum):
+    DOCX = "docx"
+    PDF = "pdf"
+
+
+class PageStatus(str, enum.Enum):
+    UNREVIEWED = "unreviewed"
+    PASS = "pass"
+    ISSUE = "issue"
+    STALE = "stale"  # файл пересобран: этот аудит был про другой файл
+
+
+class ExportArtifact(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
+    """Файл выпуска. Новая сборка заводит новый файл, прежний остаётся устаревшим."""
+
+    __tablename__ = "export_artifacts"
+    __table_args__ = (
+        Index(
+            "export_artifact_current",
+            "release_id",
+            "format",
+            unique=True,
+            postgresql_where=text("superseded_at IS NULL"),
+        ),
+    )
+
+    release_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("book_releases.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    format: Mapped[ArtifactFormat] = mapped_column(
+        Enum(ArtifactFormat, name="artifact_format", native_enum=True), nullable=False
+    )
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    renderer_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    # На каждую страницу: какие блоки на ней стоят. По этому страница находит своё замечание.
+    page_map: Mapped[list[list[str]] | None] = mapped_column(postgresql.JSONB)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PageAudit(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
+    """Результат просмотра одной страницы конкретного файла PDF."""
+
+    __tablename__ = "page_audits"
+    __table_args__ = (UniqueConstraint("artifact_id", "page_no", name="page_audit_once"),)
+
+    artifact_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("export_artifacts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    page_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[PageStatus] = mapped_column(
+        Enum(PageStatus, name="page_status", native_enum=True),
+        nullable=False,
+        default=PageStatus.UNREVIEWED,
+    )
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), _deferred("issues.id")
+    )
+
+
+class ReleasePass(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
+    """PASS как событие: кто, когда, снимок проверки и суммы файлов. Запись неизменяема."""
+
+    __tablename__ = "release_passes"
+
+    release_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("book_releases.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    gate_snapshot: Mapped[dict[str, Any]] = mapped_column(postgresql.JSONB, nullable=False)
+    artifacts: Mapped[list[dict[str, Any]]] = mapped_column(postgresql.JSONB, nullable=False)

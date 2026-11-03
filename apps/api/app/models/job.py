@@ -38,6 +38,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.chapter import Chapter
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
+from app.models.release import BookRelease
 
 
 class JobKind(str, enum.Enum):
@@ -49,6 +50,7 @@ class JobKind(str, enum.Enum):
 
     CHAPTER = "chapter"  # прогон перевода главы
     QA = "qa"  # прогон проверки главы
+    RENDER = "render"  # сборка файлов выпуска книги: у такого задания нет главы
 
 
 class JobState(str, enum.Enum):
@@ -75,10 +77,20 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
         ),
-        # Задание выполняет ровно один прогон — того вида, какой у него указан.
+        Index(
+            "translation_jobs_live_release",
+            "book_release_id",
+            unique=True,
+            postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
+        ),
+        # Задание выполняет ровно одну работу — того вида, какой у него указан.
         CheckConstraint(
-            "(kind = 'CHAPTER' AND run_id IS NOT NULL AND qa_run_id IS NULL) "
-            "OR (kind = 'QA' AND qa_run_id IS NOT NULL AND run_id IS NULL)",
+            "(kind = 'CHAPTER' AND chapter_id IS NOT NULL AND run_id IS NOT NULL "
+            "AND qa_run_id IS NULL AND book_release_id IS NULL) "
+            "OR (kind = 'QA' AND chapter_id IS NOT NULL AND qa_run_id IS NOT NULL "
+            "AND run_id IS NULL AND book_release_id IS NULL) "
+            "OR (kind = 'RENDER' AND book_release_id IS NOT NULL AND chapter_id IS NULL "
+            "AND run_id IS NULL AND qa_run_id IS NULL)",
             name="translation_job_has_one_run",
         ),
         # Рабочий забирает задания по состоянию и порядку поступления.
@@ -91,16 +103,20 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         default=JobKind.CHAPTER,
     )
 
-    chapter_id: Mapped[uuid.UUID] = mapped_column(
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("chapters.id", ondelete="CASCADE"),
-        nullable=False,
         index=True,
     )
     # Глава подгружается вместе с заданием: задание показывают человеку, а ему
     # задание без названия ни о чём не говорит. Одним соединением, а не отдельным
     # запросом на строку списка.
-    chapter: Mapped[Chapter] = relationship(lazy="joined")
+    chapter: Mapped[Chapter | None] = relationship(lazy="joined")
+
+    book_release_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("book_releases.id", ondelete="CASCADE")
+    )
+    book_release: Mapped[BookRelease | None] = relationship(lazy="joined")
 
     # Прогон, который это задание выполняет. Состояние прогона — состояние
     # этого задания: второй его копии в прогоне нет и разойтись нечему.
@@ -155,8 +171,16 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     @property
     def title(self) -> str:
         """Что переводится — так, как это назовёт человек."""
+        if self.chapter is None:
+            return self.book_release.code if self.book_release is not None else ""
+
         return " · ".join(part for part in (self.chapter.code, self.chapter.title) if part)
 
     @property
     def book_id(self) -> uuid.UUID:
-        return self.chapter.book_id
+        if self.chapter is not None:
+            return self.chapter.book_id
+
+        assert self.book_release is not None
+
+        return self.book_release.book_id

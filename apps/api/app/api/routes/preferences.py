@@ -99,6 +99,7 @@ def _workspace(settings: WorkspaceSettings | None) -> WorkspaceSettingsPublic:
         subjects=[SubjectPublic(id=subject.id, title=subject.title) for subject in SUBJECTS],
         share_glossary=settings is not None and settings.share_glossary,
         two_person_review=settings is not None and settings.two_person_review,
+        minor_blocks_release=settings is not None and settings.minor_blocks_release,
         semantic_scope=settings.semantic_scope if settings is not None else QAScope.RISKY,
         memory_publish_on=(
             settings.memory_publish_on if settings is not None else MemoryPublish.VERIFIED

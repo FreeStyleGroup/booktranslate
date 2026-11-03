@@ -20,7 +20,8 @@ class TranslationJobPublic(BaseModel):
 
     id: uuid.UUID
     kind: JobKind
-    chapter_id: uuid.UUID
+    chapter_id: uuid.UUID | None
+    book_release_id: uuid.UUID | None
     book_id: uuid.UUID
     run_id: uuid.UUID | None
     qa_run_id: uuid.UUID | None
