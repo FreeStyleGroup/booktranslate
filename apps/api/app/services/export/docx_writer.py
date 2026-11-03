@@ -105,6 +105,36 @@ class DocxRenderer:
         return Rendered(content=buffer, media_type=self.media_type, suffix=self.suffix)
 
 
+def without_comments(content: bytes) -> bytes:
+    """Убрать комментарии из готового файла: читателю они не предназначены.
+
+    По месту собранный файл несёт всё из исходного, и комментарии автора в том числе. Отметки
+    снимаются из текста, а сама часть выпадает при сохранении: пишутся только части со связью.
+    """
+    document = docx.Document(io.BytesIO(content))
+    part = document.part
+    commented = [
+        name
+        for name, rel in part.rels.items()
+        if "comments" in rel.reltype.rsplit("/", 1)[-1].lower()
+    ]
+    if not commented:
+        return content
+
+    root = document.element
+    for tag in ("w:commentRangeStart", "w:commentRangeEnd"):
+        for node in list(root.iter(qn(tag))):
+            node.getparent().remove(node)
+    for node in list(root.iter(qn("w:commentReference"))):
+        run = node.getparent()
+        run.getparent().remove(run)
+
+    for name in commented:
+        del part.rels[name]
+
+    return _save(document)
+
+
 def _by_place(blocks: list[TranslatedBlock]) -> dict[tuple[int, int | None, int | None], str]:
     """Переводы по месту в обходе: номер блока, строка и колонка таблицы."""
     result: dict[tuple[int, int | None, int | None], str] = {}

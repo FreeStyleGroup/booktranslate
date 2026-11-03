@@ -56,11 +56,12 @@ class Export:
     # Сколько блоков ушло в файл исходным текстом. Ноль означает полный
     # перевод; всё прочее клиент обязан показать.
     untranslated: int
+    # Пометка в имени, чтобы перевод не затёр оригинал. У выпуска она не нужна: у него свой код.
+    ending: str = "-перевод"
 
     @property
     def filename(self) -> str:
-        """Имя файла: исходное плюс пометка, чтобы перевод не затёр оригинал."""
-        return f"{self.stem}-перевод{self.rendered.suffix}"
+        return f"{self.stem}{self.ending}{self.rendered.suffix}"
 
 
 class ExportService(TenantService):
@@ -76,6 +77,7 @@ class ExportService(TenantService):
         *,
         export_format: ExportFormat,
         allow_untranslated: bool = False,
+        codes: bool = False,
     ) -> Export:
         self._context.require(*EXPORT_ROLES)
 
@@ -97,6 +99,7 @@ class ExportService(TenantService):
             stem=chapter.code or f"глава-{chapter.ordinal}",
             export_format=export_format,
             allow_untranslated=allow_untranslated,
+            codes=codes,
         )
 
     async def book(
@@ -105,6 +108,7 @@ class ExportService(TenantService):
         *,
         export_format: ExportFormat,
         allow_untranslated: bool = False,
+        codes: bool = False,
     ) -> Export:
         self._context.require(*EXPORT_ROLES)
 
@@ -129,6 +133,7 @@ class ExportService(TenantService):
             stem=Path(document.original_filename or book.title).stem,
             export_format=export_format,
             allow_untranslated=allow_untranslated,
+            codes=codes,
         )
 
     async def _build(
@@ -139,13 +144,14 @@ class ExportService(TenantService):
         stem: str,
         export_format: ExportFormat,
         allow_untranslated: bool,
+        codes: bool = False,
     ) -> Export:
         try:
             renderer = renderer_for(export_format, document.source_format)
         except ExportError as error:
             raise UnsupportedFormatError(str(error)) from error
 
-        blocks = await self._blocks(chapters)
+        blocks = await self._blocks(chapters, codes=codes)
         if not blocks:
             raise ConflictError("В главе нет блоков: сначала извлеките мастер")
 
@@ -159,10 +165,18 @@ class ExportService(TenantService):
 
         rendered = await self._render(renderer, blocks, document)
 
-        return Export(stem=stem, rendered=rendered, untranslated=untranslated)
+        return Export(
+            stem=stem,
+            rendered=rendered,
+            untranslated=untranslated,
+            ending="-рабочая" if codes else "-перевод",
+        )
 
-    async def _blocks(self, chapters: Sequence[Chapter]) -> list[TranslatedBlock]:
+    async def _blocks(
+        self, chapters: Sequence[Chapter], *, codes: bool = False
+    ) -> list[TranslatedBlock]:
         order = {chapter.id: chapter.ordinal for chapter in chapters}
+        names = {chapter.id: chapter.code for chapter in chapters}
         rows = await self._session.execute(
             select(Block, TranslationRevision.text)
             .outerjoin(TranslationRevision, TranslationRevision.id == Block.current_revision_id)
@@ -177,7 +191,9 @@ class ExportService(TenantService):
 
         return [
             TranslatedBlock(
-                text=text if text is not None else block.source_text,
+                # Коды только в рабочей выгрузке: читательская собирается из выпуска и без них.
+                text=(f"[{names[block.chapter_id]}-{block.code}] " if codes else "")
+                + (text if text is not None else block.source_text),
                 kind=block.kind,
                 location=block.source_location,
                 translated=text is not None,

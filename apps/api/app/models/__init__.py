@@ -59,6 +59,13 @@ from app.models.regression import (
     RegressionRun,
     RegressionStatus,
 )
+from app.models.release import (
+    BookRelease,
+    BookReleaseChapter,
+    BookReleaseStatus,
+    ChapterRelease,
+    ReleaseStatus,
+)
 from app.models.review import (
     EditReason,
     ReviewCoverage,
@@ -126,7 +133,12 @@ __all__ = [
     "RegressionItem",
     "RegressionRun",
     "RegressionStatus",
+    "BookRelease",
+    "BookReleaseChapter",
+    "BookReleaseStatus",
+    "ChapterRelease",
     "EditReason",
+    "ReleaseStatus",
     "ReviewCoverage",
     "ReviewKind",
     "ReviewResult",

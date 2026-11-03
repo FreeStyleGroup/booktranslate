@@ -193,11 +193,15 @@ async def export_chapter(
     allow_untranslated: Annotated[
         bool, Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом")
     ] = False,
+    codes: Annotated[bool, Query(description="Рабочая выгрузка: у каждого блока его код")] = False,
 ) -> Response:
     """Забрать черновой перевод главы файлом."""
     return _file(
         await ExportService(session, context, storage).chapter(
-            chapter_id, export_format=export_format, allow_untranslated=allow_untranslated
+            chapter_id,
+            export_format=export_format,
+            allow_untranslated=allow_untranslated,
+            codes=codes,
         )
     )
 
@@ -214,6 +218,7 @@ async def export_book(
     allow_untranslated: Annotated[
         bool, Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом")
     ] = False,
+    codes: Annotated[bool, Query(description="Рабочая выгрузка: у каждого блока его код")] = False,
 ) -> Response:
     """Забрать черновой перевод книги файлом.
 
@@ -222,7 +227,10 @@ async def export_book(
     """
     return _file(
         await ExportService(session, context, storage).book(
-            book_id, export_format=export_format, allow_untranslated=allow_untranslated
+            book_id,
+            export_format=export_format,
+            allow_untranslated=allow_untranslated,
+            codes=codes,
         )
     )
 

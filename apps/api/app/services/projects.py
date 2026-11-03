@@ -16,6 +16,7 @@ from app.models.issue import Issue
 from app.models.job import LIVE, TranslationJob
 from app.models.organization import Role
 from app.models.project import Project
+from app.models.release import ChapterRelease
 from app.services.base import TenantService
 from app.services.errors import ConflictError, NotFoundError
 from app.services.slug import slugify
@@ -119,6 +120,18 @@ class ProjectService(TenantService):
             raise ConflictError(
                 "В книгах проекта есть зарегистрированные ошибки: проект не удаляется"
             )
+
+        released = await self._session.scalar(
+            select(ChapterRelease.id)
+            .join(BookEdition, BookEdition.id == ChapterRelease.book_id)
+            .where(
+                ChapterRelease.organization_id == self.organization_id,
+                BookEdition.project_id == project.id,
+            )
+            .limit(1)
+        )
+        if released is not None:
+            raise ConflictError("В книгах проекта есть выпуски: проект не удаляется")
 
         storage_keys = list(
             await self._session.scalars(
