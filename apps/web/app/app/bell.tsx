@@ -226,22 +226,15 @@ export function Bell({ active }: { active: boolean }) {
 /** Одно задание: книга, что с ней и когда. */
 function Item({ job, fresh, onGo }: { job: TranslationJob; fresh: boolean; onGo: () => void }) {
   const percent =
-    job.segments_total === 0
+    job.items_total === 0
       ? 0
-      : Math.min(100, Math.round((job.segments_done * 100) / job.segments_total));
+      : Math.min(100, Math.round((job.items_done * 100) / job.items_total));
 
   return (
     <li className={fresh ? "bell__item is-new" : "bell__item"}>
       <span className={`bell__mark bell__mark--${job.state}`} aria-hidden="true" />
       <div className="bell__text">
-        <Link
-          href={
-            job.book_id !== null && job.chapter_id !== null
-              ? `/app/books/${job.book_id}/chapters/${job.chapter_id}`
-              : `/app/documents/${job.document_id}`
-          }
-          onClick={onGo}
-        >
+        <Link href={`/app/books/${job.book_id}/chapters/${job.chapter_id}`} onClick={onGo}>
           {job.title}
         </Link>
         <span className="bell__line">{describe(job, percent)}</span>
@@ -255,9 +248,9 @@ function describe(job: TranslationJob, percent: number): string {
     case "waiting":
       return job.attempts > 0 ? `в очереди · заход ${job.attempts + 1}` : "в очереди";
     case "running":
-      return `переводится · ${percent}% · ${thousands(job.segments_done)} из ${thousands(job.segments_total)}`;
+      return `переводится · ${percent}% · ${thousands(job.items_done)} из ${thousands(job.items_total)}`;
     case "done":
-      return `переведена · ${thousands(job.segments_done)} ${plural(job.segments_done, "сегмент", "сегмента", "сегментов")} · ${when(job.finished_at ?? job.updated_at)}`;
+      return `переведена · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
     case "failed":
       return `сорвалась · ${when(job.finished_at ?? job.updated_at)} · ${job.error ?? "причина не записана"}`;
     case "cancelled":

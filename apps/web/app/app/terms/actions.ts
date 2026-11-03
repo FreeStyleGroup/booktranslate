@@ -5,11 +5,7 @@
    Решения уходят пачкой, а не по одному, и это не оптимизация: двести
    кандидатов — одна работа человека, и разваливать её на двести запросов
    значит получить наполовину решённый словарь, если связь оборвётся
-   посередине. API применяет пачку одной транзакцией.
-
-   Владельцев кандидатов два: глава — по тексту её мастера — и документ
-   прежнего контура. Правила у них общие, разные только адрес и то, какие
-   страницы обновить после записи. */
+   посередине. API применяет пачку одной транзакцией. */
 
 import { revalidatePath } from "next/cache";
 
@@ -60,26 +56,12 @@ async function credentials(): Promise<{
   return { token, organizationId: await organizationId() };
 }
 
-/** Пройти по документу и собрать кандидатов в словарь.
- *
- * Повторный проход не сбрасывает работу: принятое и отклонённое остаётся,
- * у нерешённого обновляются частота и пример.
- */
-export async function extractTerms(documentId: string, minFrequency: number): Promise<Result> {
-  if (!UUID.test(documentId)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  const result = await extract(`/documents/${documentId}/terminology/extract`, minFrequency);
-  revalidatePath("/app/terms");
-
-  return result;
-}
-
 /** Пройти по тексту текущего мастера главы.
  *
  * Проход записывается вместе с версией мастера: по этой записи гейт
  * терминологии знает, что кандидаты собраны по нынешнему тексту главы.
+ * Повторный проход не сбрасывает работу: принятое и отклонённое остаётся,
+ * у нерешённого обновляются частота и пример.
  */
 export async function extractChapterTerms(
   bookId: string,
@@ -92,20 +74,6 @@ export async function extractChapterTerms(
 
   const result = await extract(`/chapters/${chapterId}/terminology/extract`, minFrequency);
   revalidateChapter(bookId, chapterId);
-
-  return result;
-}
-
-export async function decideTerms(documentId: string, decisions: Decision[]): Promise<Result> {
-  if (!UUID.test(documentId)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  const result = await send(`/documents/${documentId}/terminology/decisions`, decisions);
-
-  revalidatePath("/app/terms");
-  revalidatePath(`/app/documents/${documentId}`);
-  revalidatePath("/app");
 
   return result;
 }

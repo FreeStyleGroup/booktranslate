@@ -215,7 +215,7 @@ export function TermsBoard({
                   <span className="tile__note">
                     {thousands(candidate.frequency)}{" "}
                     {plural(candidate.frequency, "раз", "раза", "раз")} ·{" "}
-                    {candidate.first_block_code ?? `сегмент ${candidate.first_position + 1}`}
+                    {candidate.first_block_code ?? `блок ${candidate.first_position + 1}`}
                   </span>
                   {candidate.expansion !== null && (
                     <span className="tm-row__exp">{candidate.expansion}</span>

@@ -1,4 +1,4 @@
-/* Работа с книгами: проекты, документы, карточка документа.
+/* Работа с книгами: проекты, файлы, карточки.
 
    Отдельным файлом от `cabinet.css`: тот описывает раму кабинета —
    боковое меню, шапку, плитки, — а здесь живут только экраны работы.
@@ -537,28 +537,6 @@
   border: 1px solid var(--line-soft);
 }
 
-.wk-kinds {
-  display: grid;
-  gap: 12px;
-}
-
-.wk-kind {
-  display: grid;
-  grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-}
-
-.wk-kind span {
-  color: var(--ink-soft);
-}
-
-.wk-kind b {
-  font-variant-numeric: tabular-nums;
-  font-size: 14px;
-}
-
 .wk-money {
   display: grid;
   gap: 10px;
@@ -578,113 +556,17 @@
   color: var(--ink);
 }
 
-.wk-money__row--total {
-  padding-top: 10px;
-  border-top: 1px solid var(--line-soft);
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.wk-price {
-  margin: 16px 0 0;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: var(--brand-tint);
-  font-size: 15px;
-}
-
-.wk-price b {
-  font-size: 19px;
-  letter-spacing: -0.02em;
-  color: var(--brand-dark);
-}
-
-/* ── Разбор: как файл лёг в сегменты ── */
+/* ── Подписи строк ── */
 
 .wk-seg {
   display: grid;
   gap: 2px;
 }
 
-.wk-seg__row {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 150px) minmax(0, 1fr);
-  align-items: baseline;
-  gap: 14px;
-  padding: 9px 0;
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-.wk-seg__row + .wk-seg__row {
-  border-top: 1px solid var(--line-soft);
-}
-
-.wk-seg__no {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-faint);
-  text-align: right;
-}
-
-.wk-seg__kind {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  color: var(--ink-faint);
-}
-
-.wk-seg__kind i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-}
-
-.wk-seg__text {
-  color: var(--ink-soft);
-  overflow-wrap: anywhere;
-}
-
-/* После перевода к строке добавляется вторая колонка. Исходник тускнеет:
-   смотреть теперь надо на перевод, а исходник рядом для сверки. */
-.wk-seg--pair .wk-seg__row {
-  grid-template-columns: 44px minmax(0, 120px) minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.wk-seg--pair .wk-seg__text {
-  color: var(--ink-faint);
-}
-
-.wk-seg__dst {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
 .wk-seg__foot {
   margin: 16px 0 0;
   line-height: 1.6;
   max-width: 70ch;
-}
-
-/* ── Ход перевода ── */
-
-.tr-bar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  margin: 6px 0 2px;
-}
-
-.tr-bar b {
-  font-variant-numeric: tabular-nums;
-  font-size: 15px;
 }
 
 /* ── Кнопки действий ── */
@@ -696,89 +578,6 @@
 .wk-danger:hover {
   border-color: var(--danger);
   color: var(--danger);
-}
-
-.wk-warn {
-  margin: 14px 0 0;
-  max-width: 70ch;
-  line-height: 1.6;
-}
-
-/* ── Выгрузка ── */
-
-/* Итог переведённой книги — над плитками форматов, во всю ширину
-   карточки: это её главный текст, а не подпись. */
-.ex-lead {
-  margin: 0 0 16px;
-  line-height: 1.6;
-  color: var(--ink-soft);
-}
-
-/* Форматы — плитками с подписью, а не выпадающим списком: выбор между
-   тремя вещами, и цена каждой должна быть видна до нажатия, а не после
-   раскрытия списка. */
-.ex-formats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
-.ex-format {
-  display: grid;
-  gap: 5px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: var(--paper);
-  cursor: pointer;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease),
-    box-shadow 0.15s var(--ease);
-}
-
-.ex-format:hover {
-  border-color: var(--brand);
-}
-
-.ex-format.is-active {
-  border-color: var(--brand);
-  background: var(--brand-tint);
-  box-shadow: inset 0 0 0 1px var(--brand);
-}
-
-/* Радиокнопка спрятана размером, а не display:none — иначе до неё не
-   добраться с клавиатуры, а выбранная плитка и так подсвечена рамкой. */
-.ex-format input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.ex-format:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.ex-format b {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.ex-format span {
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-}
-
-.ex-draft {
-  align-items: flex-start;
-}
-
-.ex-saved {
-  margin: 0 0 14px;
-  overflow-wrap: anywhere;
 }
 
 /* ── Узкие экраны ── */
@@ -809,33 +608,6 @@
 
   .wk-row__when {
     display: none;
-  }
-
-  .wk-kind {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  /* Полоса в две колонки заняла бы место подписи; на узком экране
-     достаточно названия и числа. */
-  .wk-kind .bar {
-    display: none;
-  }
-
-  .wk-seg__row,
-  .wk-seg--pair .wk-seg__row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .wk-seg__no {
-    display: none;
-  }
-
-  /* Перевод под исходником, с отбивкой: рядом они на 375 точках не стоят,
-     а без отбивки читаются как один абзац. */
-  .wk-seg--pair .wk-seg__dst {
-    padding-top: 4px;
-    border-top: 1px dashed var(--line-soft);
   }
 }
 

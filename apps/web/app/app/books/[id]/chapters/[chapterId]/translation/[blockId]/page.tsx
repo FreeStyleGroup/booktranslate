@@ -170,7 +170,13 @@ export default async function BlockHistoryPage({
 
             <p className="bk-block-text">{revision.text}</p>
 
-            {revision.changes.length > 0 && (
+            {/* Модель может вернуть тот же текст: сравнивать в нём нечего, и это надо сказать. */}
+            {revision.changes.length > 0 &&
+              !revision.changes.some((item) => item.op !== "equal") && (
+                <p className="tile__note">Текст совпадает с редакцией {revision.compared_with}.</p>
+              )}
+
+            {revision.changes.some((item) => item.op !== "equal") && (
               <details className="bk-raw" open={!revision.current}>
                 <summary>Что изменилось относительно редакции {revision.compared_with}</summary>
                 <Changes items={revision.changes} />

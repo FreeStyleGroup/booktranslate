@@ -1,4 +1,4 @@
-/* Данные работы: проекты, документы, сегменты.
+/* Данные работы: проекты, книги, главы, редакции.
 
    Типы описаны здесь, а не рядом с каждой страницей: один и тот же
    документ показывают список, карточка и обзор, и три описания одного
@@ -99,7 +99,14 @@ export type BookSource = {
  * названия тоже расходятся (перевод, подзаголовок, серия), и решение
  * принимает человек.
  */
-export type BookKit = { sources: BookSource[]; mismatch: string | null };
+export type BookKit = {
+  sources: BookSource[];
+  mismatch: string | null;
+  /** Во что собирается черновая выгрузка книги: реестр сборщиков живёт в API. */
+  export_formats: ExportFormat[];
+  blocks: number;
+  translated: number;
+};
 
 /** Утверждены ли границы главы. */
 export type BoundaryStatus = "draft" | "approved";
@@ -320,15 +327,6 @@ export type FoundBlock = {
   position: number | null;
 };
 
-export type DocumentStatus =
-  | "uploaded"
-  | "parsing"
-  | "parsed"
-  | "translating"
-  | "review"
-  | "done"
-  | "failed";
-
 /** Во что собирается перевод: формат оригинала, если он переписывается по
  *  месту, и текстовые — для любого исходника. Список приходит от API:
  *  реестр сборщиков живёт там, и второй список здесь разошёлся бы с ним. */
@@ -344,8 +342,6 @@ export type Document = {
   title: string;
   original_filename: string | null;
   source_format: string;
-  export_formats: ExportFormat[];
-  status: DocumentStatus;
   size_bytes: number | null;
   content_hash: string | null;
   error: string | null;
@@ -358,37 +354,22 @@ export type Document = {
   updated_at: string;
 };
 
-export type DocumentProfile = {
-  segments: number;
+/** Смета главы: из чего она состоит и во что обойдётся. */
+export type ChapterEstimate = {
+  blocks: number;
   characters: number;
   words: number;
-  longest_segment_chars: number;
+  longest_block_chars: number;
   by_kind: Record<string, number>;
-  by_status: Record<string, number>;
   untranslated: number;
+  protected: number;
   unique_untranslated: number;
   repeated: number;
+  book_matches: number;
   memory_matches: number;
-  terms_total: number;
-  undecided_terms: number;
   billable_texts: number;
   billable_characters: number;
   estimate: { input_tokens: number; output_tokens: number; usd: number | null } | null;
-};
-
-export type Finding = { check: string; message: string };
-
-export type Segment = {
-  id: string;
-  position: number;
-  kind: string;
-  status: string;
-  source_text: string;
-  target_text: string | null;
-  source_location: Record<string, unknown> | null;
-  quality: { findings?: Finding[] } | null;
-  quality_score: number | null;
-  translation_source: string | null;
 };
 
 export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
@@ -396,11 +377,10 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 /** Задание на перевод книги — работа, которая идёт без человека. */
 export type TranslationJob = {
   id: string;
-  kind: "document" | "chapter";
-  document_id: string | null;
-  chapter_id: string | null;
-  book_id: string | null;
-  run_id: string | null;
+  kind: "chapter";
+  chapter_id: string;
+  book_id: string;
+  run_id: string;
   // Название книги — с заданием: список заданий читают люди.
   title: string;
   state: JobState;
@@ -409,8 +389,8 @@ export type TranslationJob = {
   error: string | null;
   // Факты запуска: сколько было непереведённого, когда взялись, и сколько
   // перевели с тех пор. Не состояние документа — оно считается отдельно.
-  segments_total: number;
-  segments_done: number;
+  items_total: number;
+  items_done: number;
   started_at: string | null;
   finished_at: string | null;
   notified_at: string | null;
@@ -531,20 +511,6 @@ export type RevisionHistory = {
   items: BlockRevision[];
 };
 
-/** Состояние книги для очереди замечаний и полосы выполнения. */
-export type ReviewProgress = {
-  total: number;
-  translated: number;
-  flagged: number;
-  edited: number;
-  approved: number;
-  untouched: number;
-  is_complete: boolean;
-  // Чего ждёт очередь по видам проверок. Считается по всей книге, а не по
-  // выданной странице: по этому числу судят об оставшейся работе.
-  by_check: Record<string, number>;
-};
-
 export type Role = "owner" | "admin" | "manager" | "translator" | "reviewer" | "viewer";
 
 export type Member = {
@@ -573,13 +539,6 @@ export type Team = {
   invitations: Invitation[];
   // Роль смотрящего: по ней решается, показывать ли управление.
   my_role: Role;
-};
-
-export type SegmentPage = {
-  total: number;
-  limit: number;
-  offset: number;
-  items: Segment[];
 };
 
 export type GlossaryKind = "term" | "abbreviation" | "do_not_translate" | "notation" | "proper_name";
@@ -827,16 +786,16 @@ export type CatalogEntry = {
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
 
-/** Сегмент в выдаче поиска — с книгой, в которой он стоит. */
-export type SegmentHit = {
+/** Блок в выдаче поиска — с книгой и главой, где он стоит. */
+export type BlockHit = {
   id: string;
-  document_id: string;
-  document_title: string;
-  position: number;
+  book_id: string;
+  book_title: string;
+  chapter_id: string;
+  full_code: string;
   kind: string;
-  status: string;
   source_text: string;
-  target_text: string | null;
+  translation: string | null;
 };
 
 /** Общий поиск: четыре группы, в каждой общее число и первые несколько. */
@@ -845,7 +804,7 @@ export type SearchResult = {
   documents: { total: number; items: Document[] };
   terms: { total: number; items: GlossaryTerm[] };
   entries: { total: number; items: CatalogEntry[] };
-  segments: { total: number; items: SegmentHit[] };
+  blocks: { total: number; items: BlockHit[] };
 };
 
 /** Чем закончился запрос справок. */

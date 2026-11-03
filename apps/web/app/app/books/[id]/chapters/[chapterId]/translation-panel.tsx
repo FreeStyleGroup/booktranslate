@@ -13,7 +13,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
-import type { ChapterTranslation, TranslationRun } from "../../../../../lib/work";
+import type {
+  ChapterEstimate,
+  ChapterTranslation,
+  TranslationRun,
+} from "../../../../../lib/work";
 import { JOB_LABEL, plural, thousands, when } from "../../../../labels";
 import { ReportError, useToast } from "../../../../ui/toast";
 import { cancelRun, startTranslation, type Result } from "../../../actions";
@@ -65,12 +69,14 @@ export function TranslationPanel({
   bookId,
   chapterId,
   state,
+  estimate,
   canTranslate,
   canBypass,
 }: {
   bookId: string;
   chapterId: string;
   state: ChapterTranslation;
+  estimate: ChapterEstimate | null;
   canTranslate: boolean;
   canBypass: boolean;
 }) {
@@ -127,8 +133,8 @@ export function TranslationPanel({
         )}
       </div>
 
-      <div className="wk-progress" aria-label={`Переведено ${percent}%`}>
-        <span style={{ width: `${percent}%` }} />
+      <div className="bar" role="img" aria-label={`Переведено ${percent}%`}>
+        <i style={{ width: `${percent}%` }} />
       </div>
       <p className="tile__note">
         Переведено {thousands(state.translated)} из {thousands(state.total)}{" "}
@@ -141,6 +147,20 @@ export function TranslationPanel({
         <p className="tile__note">
           Обработано {thousands(live.blocks_done)} из {thousands(live.blocks_total)}. Можно закрыть
           вкладку: перевод идёт на сервере, готовое сохраняется после каждой пачки.
+        </p>
+      )}
+
+      {estimate !== null && estimate.untranslated > 0 && live === null && (
+        <p className="tile__note">
+          Смета: к оплате {thousands(estimate.billable_texts)}{" "}
+          {plural(estimate.billable_texts, "текст", "текста", "текстов")}
+          {estimate.estimate !== null && estimate.estimate.usd !== null
+            ? `, около $${estimate.estimate.usd.toFixed(2)}`
+            : ""}
+          {" · "}
+          повторов {thousands(estimate.repeated)}, готовый перевод есть у{" "}
+          {thousands(estimate.book_matches + estimate.memory_matches)}, защищённых{" "}
+          {thousands(estimate.protected)}. Это оценка сверху, а не счёт.
         </p>
       )}
 
@@ -194,7 +214,14 @@ export function TranslationPanel({
         </details>
       )}
 
-      {latest !== null && <RunFacts run={latest} />}
+      {latest !== null && (
+        <>
+          <p className="tile__note">
+            Последний прогон: {latest.kind === "retranslate" ? "перевод заново" : "черновой перевод"}
+          </p>
+          <RunFacts run={latest} />
+        </>
+      )}
 
       <div className="wk-actions">
         {canTranslate && live === null && state.pending > 0 && (

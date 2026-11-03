@@ -5,11 +5,8 @@ import type { ReactNode } from "react";
 
 import { load, type SearchResult } from "../../lib/work";
 import {
-  DOCUMENT_CHIP,
-  DOCUMENT_LABEL,
   GLOSSARY_KIND,
   KIND_ONE,
-  SEGMENT_LABEL,
   plural,
   thousands,
 } from "../labels";
@@ -28,8 +25,7 @@ export const metadata: Metadata = {
    группы идут по очереди — от короткого к длинному. В каждой показано
    несколько первых, а общее число ведёт в свой раздел с тем же отбором.
 
-   Сегмент ведёт в очередь замечаний своей книги: своего адреса у сегмента
-   нет, а в очереди он находится по номеру. */
+   Блок ведёт на свою страницу в переводе главы: там его история редакций. */
 
 const MIN_QUERY = 2;
 
@@ -66,7 +62,7 @@ export default async function SearchPage({
         <div>
           <h1>Поиск</h1>
           <p className="tile__note">
-            Книги, словарь, справки и текст сегментов — по подстроке, без учёта регистра.
+            Файлы, словарь, справки и текст книг — по подстроке, без учёта регистра.
           </p>
         </div>
       </header>
@@ -102,8 +98,8 @@ export default async function SearchPage({
 }
 
 function Results({ result }: { result: SearchResult }) {
-  const { query, documents, terms, entries, segments } = result;
-  const total = documents.total + terms.total + entries.total + segments.total;
+  const { query, documents, terms, entries, blocks } = result;
+  const total = documents.total + terms.total + entries.total + blocks.total;
 
   if (total === 0) {
     return (
@@ -126,20 +122,23 @@ function Results({ result }: { result: SearchResult }) {
 
       {documents.total > 0 && (
         <Group
-          title="Книги"
+          title="Исходные файлы"
           total={documents.total}
           shown={documents.items.length}
           more="/app/documents"
         >
           {documents.items.map((item) => (
-            <Link className="sr-row" key={item.id} href={`/app/documents/${item.id}`}>
+            <Link
+              className="sr-row"
+              key={item.id}
+              href={item.book_id === null ? "/app/documents" : `/app/books/${item.book_id}`}
+            >
               <span className="sr-row__main">
                 <b>
                   <Mark text={item.title} query={query} />
                 </b>
                 <span className="tile__note">{item.original_filename ?? item.source_format}</span>
               </span>
-              <span className={DOCUMENT_CHIP[item.status]}>{DOCUMENT_LABEL[item.status]}</span>
             </Link>
           ))}
         </Group>
@@ -200,24 +199,27 @@ function Results({ result }: { result: SearchResult }) {
         </Group>
       )}
 
-      {segments.total > 0 && (
-        <Group title="Текст книг" total={segments.total} shown={segments.items.length} more={null}>
-          {segments.items.map((item) => (
-            <Link className="sr-row" key={item.id} href={`/app/queue?document=${item.document_id}`}>
+      {blocks.total > 0 && (
+        <Group title="Текст книг" total={blocks.total} shown={blocks.items.length} more={null}>
+          {blocks.items.map((item) => (
+            <Link
+              className="sr-row"
+              key={item.id}
+              href={`/app/books/${item.book_id}/chapters/${item.chapter_id}/translation/${item.id}`}
+            >
               <span className="sr-row__main">
                 <span className="tile__note">
-                  {item.document_title} · №{item.position + 1} · {KIND_ONE[item.kind] ?? item.kind}
+                  {item.book_title} · {item.full_code} · {KIND_ONE[item.kind] ?? item.kind}
                 </span>
                 <span className="sr-row__text">
                   <Mark text={item.source_text} query={query} />
                 </span>
-                {item.target_text !== null && item.target_text !== "" && (
+                {item.translation !== null && item.translation !== "" && (
                   <span className="sr-row__text sr-row__text--target">
-                    <Mark text={item.target_text} query={query} />
+                    <Mark text={item.translation} query={query} />
                   </span>
                 )}
               </span>
-              <span className="tile__note">{SEGMENT_LABEL[item.status] ?? item.status}</span>
             </Link>
           ))}
         </Group>
@@ -258,7 +260,7 @@ function Group({
       )}
       {shown < total && more === null && (
         <p className="tile__note sr-more">
-          Остальные — в очереди замечаний своей книги: уточните запрос, чтобы их стало меньше.
+          Уточните запрос: остальные совпадения здесь не показаны.
         </p>
       )}
     </section>

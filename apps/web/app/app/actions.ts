@@ -1,6 +1,6 @@
 "use server";
 
-/* Действия кабинета: завести проект, разобрать документ, удалить его.
+/* Действия кабинета: завести проект, удалить файл.
 
    Серверными действиями, а не запросами из браузера: токен лежит в
    httpOnly-печенье, браузер его не видит, и обращаться с ним к API должен
@@ -128,108 +128,6 @@ export async function deleteProject(id: string): Promise<Result> {
   return { done: true };
 }
 
-/** Разобрать документ на сегменты.
- *
- * `force` — осознанный повтор: разбор заново удаляет существующие сегменты
- * вместе с переводом, поэтому кнопка для него отдельная, а не «попробовать
- * ещё раз».
- */
-export async function parseDocument(_previous: Result, formData: FormData): Promise<Result> {
-  const id = String(formData.get("id") ?? "");
-  const force = formData.get("force") === "yes";
-
-  if (!UUID.test(id)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  try {
-    const { token, organizationId: organization } = await credentials();
-
-    const document = await apiFetch<{ status: string; error: string | null }>(
-      `/documents/${id}/parse${force ? "?force=true" : ""}`,
-      { method: "POST", token, organizationId: organization },
-    );
-
-    // Разбор отвечает документом, а не отказом: сломанный файл — это
-    // ответ 200 со статусом «failed» и причиной в поле. Молча показать
-    // такой ответ как удачу значит отправить человека ждать перевода
-    // книги, которая не разобралась.
-    if (document.status === "failed") {
-      return { error: document.error ?? "Файл не разобрался" };
-    }
-
-    if (document.error !== null) {
-      return { error: document.error };
-    }
-  } catch (error) {
-    return failure(error);
-  }
-
-  revalidatePath(`/app/documents/${id}`);
-  revalidatePath("/app/documents");
-  revalidatePath("/app");
-
-  return { done: true };
-}
-
-export type JobResult = { error?: string; job?: TranslationJob };
-
-/** Поставить книгу в очередь на перевод.
- *
- * Не «перевести»: перевод идёт часами, и ответа о нём не дождалась бы ни
- * одна вкладка. Работу делает отдельный процесс, а человек может закрыть
- * браузер — по готовности придёт уведомление.
- */
-export async function queueDocument(documentId: string): Promise<JobResult> {
-  if (!UUID.test(documentId)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  try {
-    const { token, organizationId: organization } = await credentials();
-
-    const job = await apiFetch<TranslationJob>(`/documents/${documentId}/queue`, {
-      method: "POST",
-      token,
-      organizationId: organization,
-    });
-
-    revalidatePath(`/app/documents/${documentId}`);
-    revalidatePath("/app");
-
-    return { job };
-  } catch (error) {
-    return failure(error);
-  }
-}
-
-/** Как идут дела у книги — последнее её задание.
- *
- * Отдельным действием, а не полем страницы: пока перевод идёт, витрина
- * спрашивает об этом раз в несколько секунд, и перерисовывать ради числа
- * всю страницу незачем.
- */
-export async function documentJob(
-  documentId: string,
-): Promise<{ error?: string; job?: TranslationJob | null }> {
-  if (!UUID.test(documentId)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  try {
-    const { token, organizationId: organization } = await credentials();
-
-    const jobs = await apiFetch<TranslationJob[]>(
-      `/jobs?document_id=${documentId}&limit=1`,
-      { token, organizationId: organization },
-    );
-
-    return { job: jobs[0] ?? null };
-  } catch (error) {
-    return failure(error);
-  }
-}
-
 /** Последние задания пространства — для колокольчика в шапке.
  *
  * Тем же действием с любой страницы кабинета: колокольчик живёт в
@@ -245,33 +143,6 @@ export async function recentJobs(): Promise<{ error?: string; jobs?: Translation
     });
 
     return { jobs };
-  } catch (error) {
-    return failure(error);
-  }
-}
-
-/** Остановить перевод.
- *
- * Сделанное остаётся сделанным: переведённое записано после каждой пачки, и
- * за него уже заплачено. Отменяется только продолжение.
- */
-export async function cancelJob(jobId: string, documentId: string): Promise<JobResult> {
-  if (!UUID.test(jobId) || !UUID.test(documentId)) {
-    return { error: "Запрос повреждён — обновите страницу" };
-  }
-
-  try {
-    const { token, organizationId: organization } = await credentials();
-
-    const job = await apiFetch<TranslationJob>(`/jobs/${jobId}/cancel`, {
-      method: "POST",
-      token,
-      organizationId: organization,
-    });
-
-    revalidatePath(`/app/documents/${documentId}`);
-
-    return { job };
   } catch (error) {
     return failure(error);
   }

@@ -31,18 +31,18 @@ type Tokens = {
 };
 
 type Money = { tokens: Tokens; usd: number | null };
-type ModelSpend = { model: string; documents: number; money: Money };
+type ModelSpend = { model: string; books: number; money: Money };
 
 type UsageReport = {
   total: Money;
-  documents: number;
+  books: number;
   by_month: { month: string; money: Money; by_model: ModelSpend[] }[];
   by_model: ModelSpend[];
-  by_document: {
-    document_id: string;
+  by_book: {
+    book_id: string;
     title: string;
     project_name: string;
-    translated_by: string | null;
+    models: string[];
     money: Money;
   }[];
 };
@@ -77,7 +77,7 @@ export default async function UsagePage() {
   const data = report.data;
   const models = data.by_model.map((item) => item.model);
 
-  if (data.documents === 0) {
+  if (data.books === 0) {
     return (
       <>
         <Head />
@@ -89,8 +89,8 @@ export default async function UsagePage() {
             переводилась моделью, считать нечего — и показывать нули вместо
             этого незачем.
           </p>
-          <Link className="btn btn--primary" href="/app/documents">
-            К документам
+          <Link className="btn btn--primary" href="/app/books">
+            К книгам
           </Link>
         </section>
       </>
@@ -137,8 +137,8 @@ export default async function UsagePage() {
           mark="📤"
         />
         <Fact
-          value={thousands(data.documents)}
-          label={plural(data.documents, "книга", "книги", "книг")}
+          value={thousands(data.books)}
+          label={plural(data.books, "книга", "книги", "книг")}
           mark="📚"
         />
       </div>
@@ -147,16 +147,14 @@ export default async function UsagePage() {
         <section className="tile">
           <div className="tile__head">
             <h3>Когда тратили</h3>
-            <span className="tile__note">по месяцу загрузки книги</span>
+            <span className="tile__note">по месяцу запуска прогона</span>
           </div>
 
           <Months months={months} />
 
           <p className="tile__note wk-seg__foot">
-            Столбец разложен по моделям — по нему видно, от чего изменился
-            счёт: перевели больше или сменили модель. Месяц — тот, когда
-            книгу загрузили: отдельной записи «когда потратили» в базе нет,
-            а дата загрузки не меняется никогда.
+            Столбец разложен по моделям — по нему видно, почему вырос счёт: перевели больше или
+            сменили модель.
           </p>
         </section>
 
@@ -177,8 +175,7 @@ export default async function UsagePage() {
                   {item.model}
                 </span>
                 <span className="tile__note">
-                  {thousands(item.documents)}{" "}
-                  {plural(item.documents, "книга", "книги", "книг")}
+                  {thousands(item.books)} {plural(item.books, "книга", "книги", "книг")}
                 </span>
                 <b>{usd(item.money.usd)}</b>
               </div>
@@ -202,11 +199,11 @@ export default async function UsagePage() {
             <span role="columnheader">Оценка</span>
           </div>
 
-          {data.by_document.map((spend) => (
+          {data.by_book.map((spend) => (
             <Link
               className="us-row"
-              key={spend.document_id}
-              href={`/app/documents/${spend.document_id}`}
+              key={spend.book_id}
+              href={`/app/books/${spend.book_id}`}
               role="row"
             >
               <span className="us-row__name" role="cell">
@@ -214,17 +211,10 @@ export default async function UsagePage() {
                 <span className="tile__note">{spend.project_name}</span>
               </span>
               <span className="us-row__model" role="cell">
-                {spend.translated_by === null ? (
-                  <span className="tile__note">без модели</span>
-                ) : (
-                  <>
-                    <i
-                      style={{ background: colorFor(models, spend.translated_by) }}
-                      aria-hidden="true"
-                    />
-                    {spend.translated_by}
-                  </>
+                {spend.models[0] !== undefined && (
+                  <i style={{ background: colorFor(models, spend.models[0]) }} aria-hidden="true" />
                 )}
+                {spend.models.join(", ")}
               </span>
               <span role="cell">{thousands(spend.money.tokens.input_tokens)}</span>
               <span role="cell">{thousands(spend.money.tokens.output_tokens)}</span>
@@ -234,13 +224,6 @@ export default async function UsagePage() {
             </Link>
           ))}
         </div>
-
-        <p className="tile__note wk-seg__foot">
-          «Без модели» — книга, переведённая целиком памятью переводов и
-          повторами: модель не вызывалась, и расхода нет. Это не то же самое,
-          что прочерк в оценке, — тот означает модель вне прейскуранта, чья
-          цена неизвестна.
-        </p>
       </section>
 
       {data.total.tokens.cached_input_tokens > 0 && (

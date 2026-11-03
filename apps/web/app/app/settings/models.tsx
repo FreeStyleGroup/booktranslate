@@ -31,7 +31,7 @@ export function Models({ settings }: { settings: WorkspaceSettings }) {
 
       <p className="tile__note st-lead">
         Смена модели меняет и счёт, и качество. Уже переведённое не
-        пересчитывается — у каждого сегмента записано, чем его переводили.
+        пересчитывается — у каждой редакции записано, чем его переводили.
       </p>
 
       {!current.provider_ready && (
