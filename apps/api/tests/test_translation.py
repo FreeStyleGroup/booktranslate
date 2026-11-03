@@ -430,7 +430,7 @@ class FailingProvider(StubProvider):
 
         answer = await super().translate(requests)
 
-        return Translated(texts=answer.texts, usage=Usage(input_tokens=10, output_tokens=5))
+        return Translated(items=answer.items, usage=Usage(input_tokens=10, output_tokens=5))
 
 
 @requires_database

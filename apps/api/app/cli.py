@@ -36,6 +36,7 @@ from app.services.providers import (
     Usage,
     get_lookup,
     get_provider,
+    keys_of,
 )
 
 # Материал для пробного перевода. Две короткие строки с числом, единицей и
@@ -131,8 +132,8 @@ async def check_provider(with_lookup: bool) -> bool:
         print(f"  СБОЙ СВЯЗИ: {type(error).__name__}: {error}")
         return False
 
-    for source, translated in zip([text for text, _ in PROBE], answer.texts, strict=True):
-        print(f"  {source}\n  → {translated}")
+    for (source, _), key in zip(PROBE, keys_of(requests), strict=True):
+        print(f"  {source}\n  → {answer.items[key]}")
 
     _report_usage(settings.anthropic_model, answer.usage)
 
