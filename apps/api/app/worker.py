@@ -36,15 +36,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
 from app.models.document import Document
-from app.models.job import JobState, TranslationJob
+from app.models.job import JobKind, JobState, TranslationJob
 from app.models.organization import Membership, Role, User
+from app.models.translation import TranslationRun
 from app.services.context import RequestContext
 from app.services.errors import DomainError
 from app.services.jobs import JobQueue
-from app.services.notify import NotificationService, ready_message
-from app.services.providers import get_provider
+from app.services.notify import (
+    Message,
+    NotificationService,
+    chapter_ready_message,
+    ready_message,
+)
+from app.services.providers import STUB, get_provider, provider_info
 from app.services.review import ReviewService
 from app.services.translation import TranslationService
+from app.services.translation_runner import TranslationRunner
 from app.services.workspace import model_for
 
 logger = logging.getLogger("app.worker")
@@ -109,6 +116,77 @@ async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | 
     return RequestContext(user=owner, organization_id=job.organization_id, role=Role.OWNER)
 
 
+async def run_chapter_job(
+    session: AsyncSession,
+    queue: JobQueue,
+    job: TranslationJob,
+    context: RequestContext,
+    stop: asyncio.Event,
+) -> Outcome:
+    """Выполнить прогон перевода главы — до конца или до причины остановиться."""
+    run = await session.get(TranslationRun, job.run_id) if job.run_id is not None else None
+
+    if run is None:
+        return Outcome(JobState.FAILED, done=job.segments_done, error="Прогон перевода не найден")
+
+    # Прогон записал, чем переводит. Настройки сменились, пока он ждал, — значит,
+    # запись разошлась бы с тем, чем на самом деле переведено, а это та самая
+    # история, ради которой она заведена.
+    info = provider_info(run.model)
+
+    if (info.provider, info.prompt_version) != (run.provider, run.prompt_version):
+        return Outcome(
+            JobState.FAILED,
+            done=job.segments_done,
+            error=(
+                "Настройки перевода изменились после постановки в очередь. Переведённое "
+                "сохранено — запустите перевод заново."
+            ),
+        )
+
+    runner = TranslationRunner(
+        session, context, get_provider(None if run.provider == STUB else run.model)
+    )
+    batch = get_settings().worker_batch
+    done = job.segments_done
+    run_id = run.id
+
+    while True:
+        if stop.is_set():
+            return Outcome(JobState.WAITING, done=done)
+
+        try:
+            step = await runner.advance(run_id, limit=batch)
+        except DomainError as error:
+            await session.rollback()
+            await session.refresh(job)
+
+            return Outcome(JobState.FAILED, done=done, error=str(error))
+        except Exception as error:  # noqa: BLE001 — причина уходит в задание
+            logger.exception("Задание %s: порция сорвалась", job.id)
+            await session.rollback()
+            await session.refresh(job)
+
+            return Outcome(JobState.FAILED, done=done, error=str(error), retry=True)
+
+        done += step.processed
+
+        if await queue.heartbeat(job, done=done) is JobState.CANCELLED:
+            logger.info("Задание %s остановлено человеком на %d блоках", job.id, done)
+
+            return Outcome(JobState.CANCELLED, done=done)
+
+        if step.remaining == 0:
+            return Outcome(JobState.DONE, done=done)
+
+        if step.processed == 0:
+            return Outcome(
+                JobState.FAILED,
+                done=done,
+                error=f"Перевод не двигается: осталось блоков {step.remaining}, не взято ни одного",
+            )
+
+
 async def run_job(
     session: AsyncSession,
     queue: JobQueue,
@@ -117,8 +195,15 @@ async def run_job(
     stop: asyncio.Event,
 ) -> Outcome:
     """Перевести книгу задания до конца — или до причины остановиться."""
+    if job.kind is JobKind.CHAPTER:
+        return await run_chapter_job(session, queue, job, context, stop)
+
+    if job.document_id is None:
+        return Outcome(JobState.FAILED, done=job.segments_done, error="У задания нет документа")
+
     # Модель — та, что выбрало пространство книги, а не умолчание процесса:
     # рабочий один на всех, а платят за него по-разному.
+    document_id = job.document_id
     service = TranslationService(
         session, context, get_provider(await model_for(session, job.organization_id))
     )
@@ -133,7 +218,7 @@ async def run_job(
             return Outcome(JobState.WAITING, done=done)
 
         try:
-            chunk = await service.translate(job.document_id, limit=batch)
+            chunk = await service.translate(document_id, limit=batch)
         except DomainError as error:
             # Доменный отказ — это правило, а не сбой: нет прав, не
             # закончена терминология, документ занят. Повтор даст тот же
@@ -167,19 +252,49 @@ async def run_job(
             )
 
 
+async def _ready_message(
+    session: AsyncSession, job: TranslationJob, context: RequestContext
+) -> Message | None:
+    if job.kind is JobKind.CHAPTER:
+        run = await session.get(TranslationRun, job.run_id) if job.run_id is not None else None
+
+        if run is None:
+            return None
+
+        return chapter_ready_message(
+            title=job.title,
+            book_id=run.book_id,
+            chapter_id=run.chapter_id,
+            translated=run.from_model + run.from_memory + run.copied,
+            rejected=len(run.rejections),
+        )
+
+    document = await session.get(Document, job.document_id)
+
+    if document is None:
+        return None
+
+    progress = await ReviewService(session, context).progress(document.id)
+
+    return ready_message(
+        title=document.title,
+        document_id=document.id,
+        translated=progress.translated,
+        flagged=progress.flagged,
+    )
+
+
 async def announce(session: AsyncSession, job: TranslationJob, context: RequestContext) -> None:
-    """Сообщить, что книга готова.
+    """Сообщить, что работа готова.
 
     Несработавшее уведомление не делает перевод несделанным: книга
     переведена и записана, а непосланное письмо — это непосланное письмо.
     Поэтому отказ канала попадает в журнал, а задание остаётся выполненным.
     """
-    document = await session.get(Document, job.document_id)
+    message = await _ready_message(session, job, context)
 
-    if document is None:
+    if message is None:
         return
-
-    progress = await ReviewService(session, context).progress(job.document_id)
 
     requester = (
         await session.get(User, job.requested_by_id) if job.requested_by_id is not None else None
@@ -187,12 +302,7 @@ async def announce(session: AsyncSession, job: TranslationJob, context: RequestC
 
     deliveries = await NotificationService(session).notify(
         job.organization_id,
-        ready_message(
-            title=document.title,
-            document_id=document.id,
-            translated=progress.translated,
-            flagged=progress.flagged,
-        ),
+        message,
         requested_by_email=requester.email if requester is not None else None,
     )
 
@@ -233,7 +343,7 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
     if job is None:
         return False
 
-    logger.info("Задание %s: книга %s, заход %d", job.id, job.document_id, job.attempts)
+    logger.info("Задание %s: %s, заход %d", job.id, job.title, job.attempts)
 
     context = await actor(session, job)
 
