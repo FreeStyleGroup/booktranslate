@@ -759,6 +759,76 @@
   color: var(--ink-soft);
 }
 
+/* ---------- контроль выпуска ---------- */
+
+.bk-checklist {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-checklist li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.bk-checklist .is-ok > span:first-child {
+  color: var(--ok);
+}
+
+.bk-checklist .is-bad > span:first-child {
+  color: var(--danger);
+}
+
+.bk-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.bk-pages a {
+  min-width: 30px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font: 12px var(--mono);
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.bk-pages a.is-pass {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.bk-pages a.is-issue {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.bk-pages a.is-current {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.bk-page {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin: 16px 0 0;
+}
+
+.bk-page img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
 /* ---------- режим редактуры ---------- */
 
 .bk-review__code {

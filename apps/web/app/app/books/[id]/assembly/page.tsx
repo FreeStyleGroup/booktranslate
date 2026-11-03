@@ -135,6 +135,14 @@ export default async function AssemblyPage({
                   {item.chapters.map((row) => row.release_code).join(", ")} · сумма{" "}
                   {shortHash(item.manifest_hash)} · {when(item.created_at)}
                 </p>
+                <div className="wk-actions">
+                  <Link
+                    className="btn btn--primary btn--small"
+                    href={`/app/books/${id}/releases/${item.id}`}
+                  >
+                    Контроль выпуска
+                  </Link>
+                </div>
                 <ExportLinks
                   path={`/api/book-releases/${item.id}/export`}
                   formats={kit.data?.export_formats ?? ["docx", "markdown", "text"]}

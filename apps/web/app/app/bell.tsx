@@ -234,7 +234,14 @@ function Item({ job, fresh, onGo }: { job: TranslationJob; fresh: boolean; onGo:
     <li className={fresh ? "bell__item is-new" : "bell__item"}>
       <span className={`bell__mark bell__mark--${job.state}`} aria-hidden="true" />
       <div className="bell__text">
-        <Link href={`/app/books/${job.book_id}/chapters/${job.chapter_id}`} onClick={onGo}>
+        <Link
+          href={
+            job.chapter_id !== null
+              ? `/app/books/${job.book_id}/chapters/${job.chapter_id}`
+              : `/app/books/${job.book_id}/releases/${job.book_release_id}`
+          }
+          onClick={onGo}
+        >
           {job.title}
         </Link>
         <span className="bell__line">{describe(job, percent)}</span>
@@ -243,14 +250,24 @@ function Item({ job, fresh, onGo }: { job: TranslationJob; fresh: boolean; onGo:
   );
 }
 
+const DOING: Record<TranslationJob["kind"], string> = {
+  chapter: "переводится",
+  qa: "проверяется",
+  render: "собирается",
+};
+
+const DONE: Record<"chapter" | "qa", string> = { chapter: "переведена", qa: "проверена" };
+
 function describe(job: TranslationJob, percent: number): string {
   switch (job.state) {
     case "waiting":
       return job.attempts > 0 ? `в очереди · заход ${job.attempts + 1}` : "в очереди";
     case "running":
-      return `${job.kind === "qa" ? "проверяется" : "переводится"} · ${percent}% · ${thousands(job.items_done)} из ${thousands(job.items_total)}`;
+      return `${DOING[job.kind]} · ${percent}% · ${thousands(job.items_done)} из ${thousands(job.items_total)}`;
     case "done":
-      return `${job.kind === "qa" ? "проверена" : "переведена"} · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
+      return job.kind === "render"
+        ? "файлы собраны"
+        : `${DONE[job.kind]} · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
     case "failed":
       return `сорвалась · ${when(job.finished_at ?? job.updated_at)} · ${job.error ?? "причина не записана"}`;
     case "cancelled":
