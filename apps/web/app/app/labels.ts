@@ -1,5 +1,6 @@
 import type {
   EditReason,
+  FigureStatus,
   IssueCategory,
   IssueEventKind,
   IssueSeverity,
@@ -493,6 +494,20 @@ export function languageName(code: string): string {
 export function languagePair(source: string, target: string): string {
   return `${languageName(source)} → ${languageName(target)}`;
 }
+
+export const FIGURE_STATUS_LABEL: Record<FigureStatus, string> = {
+  draft: "ждёт решения",
+  approved: "перевод утверждён",
+  kept_original: "оставлен как в книге",
+  no_text: "надписей нет",
+};
+
+export const FIGURE_STATUS_CHIP: Record<FigureStatus, string> = {
+  draft: "chip chip--warn",
+  approved: "chip chip--ok",
+  kept_original: "chip chip--info",
+  no_text: "chip chip--info",
+};
 
 export const REVIEW_KIND_LABEL: Record<ReviewKind, string> = {
   technical: "Техническая редактура",

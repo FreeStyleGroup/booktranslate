@@ -759,6 +759,36 @@
   color: var(--ink-soft);
 }
 
+/* ---------- рисунки ---------- */
+
+.bk-figure {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.bk-regions {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.bk-region {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.bk-region__box {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
 /* ---------- контроль выпуска ---------- */
 
 .bk-checklist {
@@ -875,5 +905,9 @@
   .bk-review__side,
   .bk-review__side.is-three {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bk-region__box {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

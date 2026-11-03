@@ -14,6 +14,7 @@ import {
   type BookStructure,
   type ChapterChecks,
   type ChapterEstimate,
+  type ChapterFigures,
   type ChapterMaster,
   type ChapterRelease,
   type ChapterReviews,
@@ -102,7 +103,7 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, reviews, releaseGate, releases, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, reviews, releaseGate, releases, figures, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
@@ -115,6 +116,7 @@ export default async function ChapterPage({
     load<ChapterReviews>(`/chapters/${chapterId}/reviews`, here),
     load<ReleaseGate>(`/chapters/${chapterId}/release-gate`, here),
     load<ChapterRelease[]>(`/chapters/${chapterId}/releases`, here),
+    load<ChapterFigures>(`/chapters/${chapterId}/figures`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -244,6 +246,28 @@ export default async function ChapterPage({
           canTranslate={canManage}
           canBypass={canBypass}
         />
+      )}
+
+      {figures.data !== undefined && figures.data.images.length > 0 && (
+        <section className="tile">
+          <div className="tile__head">
+            <h3>Рисунки</h3>
+            <span className={figures.data.undecided === 0 ? "chip chip--ok" : "chip chip--warn"}>
+              {figures.data.undecided === 0
+                ? "решение по всем"
+                : `без решения: ${thousands(figures.data.undecided)}`}
+            </span>
+          </div>
+          <p className="tile__note">
+            Надписи читаются и переводятся отдельно от текста. Без решения по каждому рисунку глава не
+            выпускается.
+          </p>
+          <div className="wk-actions">
+            <Link className="btn btn--ghost" href={`${here}/figures`}>
+              Открыть рисунки
+            </Link>
+          </div>
+        </section>
       )}
 
       {reviews.data !== undefined &&
