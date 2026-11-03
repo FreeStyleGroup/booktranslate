@@ -16,11 +16,14 @@ export function ExportLinks({
   path,
   formats,
   draft,
+  working = false,
 }: {
   path: string;
   formats: ExportFormat[];
   /** Есть непереведённое: оно уйдёт исходным текстом, и сказать об этом надо до нажатия. */
   draft: boolean;
+  /** Рабочая выгрузка: у каждого блока его код. Читательская версия идёт из выпуска, без них. */
+  working?: boolean;
 }) {
   return (
     <>
@@ -29,7 +32,7 @@ export function ExportLinks({
           <a
             key={format}
             className="btn btn--ghost btn--small"
-            href={`${path}?format=${format}${draft ? "&draft=1" : ""}`}
+            href={`${path}?format=${format}${draft ? "&draft=1" : ""}${working ? "&codes=1" : ""}`}
             download
           >
             {LABEL[format]}

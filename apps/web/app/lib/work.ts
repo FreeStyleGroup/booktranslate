@@ -793,6 +793,72 @@ export type CatalogEntry = {
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
 
+/* Финальные версии глав и выпуски книги. */
+
+export type ReleaseGate = {
+  ready: boolean;
+  blockers: { code: string; message: string; count: number | null }[];
+};
+
+export type ChapterRelease = {
+  id: string;
+  book_id: string;
+  chapter_id: string;
+  code: string;
+  version: string;
+  status: "draft" | "approved";
+  manifest_hash: string;
+  blocks: number;
+  objects: number;
+  creator: string | null;
+  approver: string | null;
+  approved_at: string | null;
+  created_at: string;
+  // Рабочий текст ушёл вперёд от этой версии.
+  working_differs: boolean;
+};
+
+export type WorkingChange = {
+  block_id: string;
+  code: string;
+  final_text: string | null;
+  working_text: string | null;
+  changes: RevisionChange[];
+};
+
+export type Assembly = {
+  ready: boolean;
+  items: {
+    chapter_id: string;
+    chapter_code: string | null;
+    title: string | null;
+    ordinal: number;
+    chosen_id: string | null;
+    available: { id: string; code: string; version: string }[];
+    working_differs: boolean;
+  }[];
+  problems: {
+    code: string;
+    severity: "blocker" | "warning";
+    message: string;
+    chapter_id: string | null;
+  }[];
+  toc: { chapter_code: string | null; level: number; text: string }[];
+};
+
+export type BookRelease = {
+  id: string;
+  book_id: string;
+  code: string;
+  version: string;
+  status: "built" | "passed";
+  manifest_hash: string;
+  chapters: { position: number; release_id: string; release_code: string; title: string | null }[];
+  toc: { chapter_code: string | null; level: number; text: string }[];
+  created_at: string;
+  created: boolean;
+};
+
 /* Редактура и финальная сверка. */
 
 export type ReviewKind = "technical" | "literary" | "final_compare";

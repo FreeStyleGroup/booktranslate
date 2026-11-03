@@ -15,9 +15,11 @@ import {
   type ChapterChecks,
   type ChapterEstimate,
   type ChapterMaster,
+  type ChapterRelease,
   type ChapterReviews,
   type ChapterTranslation,
   type IssueStats,
+  type ReleaseGate,
   type TerminologyGate,
 } from "../../../../../lib/work";
 import {
@@ -41,6 +43,7 @@ import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
 import { ChecksPanel } from "./checks-panel";
+import { ReleasePanel } from "./release-panel";
 import { ReviewsPanel } from "./reviews-panel";
 import { TranslationPanel } from "./translation-panel";
 import { IssuesTile } from "../../../../issues/issues-tile";
@@ -78,6 +81,7 @@ const CHECKING = new Set(["owner", "admin", "manager", "translator", "reviewer"]
 const REVIEWING = new Set(["owner", "admin", "manager", "reviewer"]);
 // Литературную правку вносит и переводчик: технические сущности стережёт защита, а не роль.
 const EDITING_STYLE = new Set(["owner", "admin", "manager", "reviewer", "translator"]);
+const RELEASING = new Set(["owner", "admin", "manager"]);
 
 const TEXT_TAB = "text";
 const TABS = [TEXT_TAB, ...OBJECT_TABS.map((tab) => tab.type)];
@@ -98,7 +102,7 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, reviews, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, issueStats, checks, reviews, releaseGate, releases, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
@@ -109,6 +113,8 @@ export default async function ChapterPage({
     load<IssueStats>(`/issues/stats?chapter_id=${chapterId}`, here),
     load<ChapterChecks>(`/chapters/${chapterId}/qa`, here),
     load<ChapterReviews>(`/chapters/${chapterId}/reviews`, here),
+    load<ReleaseGate>(`/chapters/${chapterId}/release-gate`, here),
+    load<ChapterRelease[]>(`/chapters/${chapterId}/releases`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -136,6 +142,7 @@ export default async function ChapterPage({
   const canCheck = membership !== undefined && CHECKING.has(membership.role);
   const canReview = membership !== undefined && REVIEWING.has(membership.role);
   const canEditStyle = membership !== undefined && EDITING_STYLE.has(membership.role);
+  const canRelease = membership !== undefined && RELEASING.has(membership.role);
 
   const current = versions.data[0];
   const requested = query.get("version");
@@ -248,6 +255,20 @@ export default async function ChapterPage({
             state={reviews.data}
             canReview={canReview}
             canEditStyle={canEditStyle}
+          />
+        )}
+
+      {releaseGate.data !== undefined &&
+        releases.data !== undefined &&
+        translation.data !== undefined &&
+        translation.data.translated > 0 && (
+          <ReleasePanel
+            bookId={id}
+            chapterId={chapterId}
+            gate={releaseGate.data}
+            releases={releases.data}
+            canCreate={canRelease}
+            canApprove={canReview}
           />
         )}
 

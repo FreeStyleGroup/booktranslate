@@ -721,6 +721,44 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* ---------- финальные версии и выпуски ---------- */
+
+.bk-releases {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-releases > li {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.bk-releases__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.bk-check-inline {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.bk-toc [data-level="2"] {
+  padding-left: 18px;
+  color: var(--ink-soft);
+}
+
 /* ---------- режим редактуры ---------- */
 
 .bk-review__code {
