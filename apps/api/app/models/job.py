@@ -27,8 +27,20 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.chapter import Chapter
 from app.models.document import Document
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
+
+
+class JobKind(str, enum.Enum):
+    """Что за работа стоит в очереди.
+
+    Очередь одна на всё долгое: перевод, а дальше проверки, регрессия, сборка и
+    вёрстка. Рабочий выбирает обработчик по этому полю.
+    """
+
+    DOCUMENT = "document"  # перевод файла прежним контуром
+    CHAPTER = "chapter"  # прогон перевода главы
 
 
 class JobState(str, enum.Enum):
@@ -58,21 +70,50 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
         ),
+        # Одна глава — один живой прогон: два одновременных перевода одной главы
+        # заплатили бы дважды и подрались за текущую редакцию.
+        Index(
+            "translation_jobs_live_chapter",
+            "chapter_id",
+            unique=True,
+            postgresql_where=text("state IN ('WAITING', 'RUNNING') AND chapter_id IS NOT NULL"),
+        ),
         # Рабочий забирает задания по состоянию и порядку поступления.
         Index("translation_jobs_queue", "state", "created_at"),
     )
 
-    document_id: Mapped[uuid.UUID] = mapped_column(
+    kind: Mapped[JobKind] = mapped_column(
+        Enum(JobKind, name="job_kind", native_enum=True),
+        nullable=False,
+        default=JobKind.DOCUMENT,
+    )
+
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("documents.id", ondelete="CASCADE"),
-        nullable=False,
         index=True,
     )
 
     # Книга подгружается вместе с заданием: задание показывают человеку, а
     # человеку задание без названия книги ни о чём не говорит. Одним
     # соединением, а не отдельным запросом на строку списка.
-    document: Mapped[Document] = relationship(lazy="joined")
+    document: Mapped[Document | None] = relationship(lazy="joined")
+
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("chapters.id", ondelete="CASCADE"),
+        index=True,
+    )
+    chapter: Mapped[Chapter | None] = relationship(lazy="joined")
+
+    # Прогон, который это задание выполняет. Состояние прогона — состояние
+    # этого задания: второй его копии в прогоне нет и разойтись нечему.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("translation_runs.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+    )
 
     state: Mapped[JobState] = mapped_column(
         Enum(JobState, name="job_state", native_enum=True),
@@ -111,3 +152,15 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # по ней видно, сколько задание пролежало готовым до того, как о нём
     # сообщили, — и она же не даёт отправить второй раз.
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def title(self) -> str:
+        """Что переводится — так, как это назовёт человек."""
+        if self.chapter is not None:
+            return " · ".join(part for part in (self.chapter.code, self.chapter.title) if part)
+
+        return self.document.title if self.document is not None else ""
+
+    @property
+    def book_id(self) -> uuid.UUID | None:
+        return self.chapter.book_id if self.chapter is not None else None

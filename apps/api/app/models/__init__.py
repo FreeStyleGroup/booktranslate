@@ -22,7 +22,7 @@ from app.models.glossary_version import (
     GlossaryVersionTerm,
     TermChangeKind,
 )
-from app.models.job import JobState, TranslationJob
+from app.models.job import JobKind, JobState, TranslationJob
 from app.models.master import ChapterMaster
 from app.models.memory import (
     FirstUseRule,
@@ -40,6 +40,14 @@ from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
 from app.models.terminology import TermCandidate, TermCandidateStatus, TerminologyPass
+from app.models.translation import (
+    ObjectVerification,
+    RevisionOrigin,
+    RevisionStage,
+    RunKind,
+    TranslationRevision,
+    TranslationRun,
+)
 from app.models.workspace import WorkspaceSettings
 
 __all__ = [
@@ -70,16 +78,21 @@ __all__ = [
     "GlossaryVersionStatus",
     "GlossaryVersionTerm",
     "Invitation",
+    "JobKind",
     "JobState",
     "Membership",
     "NotificationSettings",
     "ObjectReference",
     "ObjectType",
+    "ObjectVerification",
     "Organization",
     "Project",
     "ReferenceKind",
     "RefreshSession",
+    "RevisionOrigin",
+    "RevisionStage",
     "Role",
+    "RunKind",
     "Segment",
     "SegmentChunk",
     "SegmentStatus",
@@ -92,6 +105,8 @@ __all__ = [
     "TermChangeKind",
     "TerminologyPass",
     "TranslationJob",
+    "TranslationRevision",
+    "TranslationRun",
     "TranslationUnit",
     "User",
     "UserStatus",
