@@ -63,6 +63,7 @@ export type WorkspaceSettings = {
   share_glossary: boolean;
   two_person_review: boolean;
   semantic_scope: "risky" | "all";
+  memory_publish_on: "verified" | "closed";
 };
 
 export type ModelResult = {
@@ -119,6 +120,7 @@ export async function saveReview(_previous: ModelResult, formData: FormData): Pr
       body: {
         two_person_review: formData.get("two_person_review") === "yes",
         semantic_scope: formData.get("semantic_scope") === "all" ? "all" : "risky",
+        memory_publish_on: formData.get("memory_publish_on") === "closed" ? "closed" : "verified",
       },
     });
 

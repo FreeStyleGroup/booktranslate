@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { load, type IssueDetail, type IssueEvent } from "../../../lib/work";
+import { load, type IssueDetail, type IssueEvent, type RegressionRun } from "../../../lib/work";
 import {
   ISSUE_CATEGORY_LABEL,
   ISSUE_EVENT_LABEL,
@@ -22,7 +22,9 @@ import "../../books/books.css";
 import "../issues.css";
 import { CopyId } from "../../ui/copy-id";
 import { AttachFile } from "../attach-file";
+import { EditText } from "../edit-text";
 import { IssueActions } from "../issue-actions";
+import { RegressionPanel } from "../regression-panel";
 
 export const metadata: Metadata = {
   title: "Замечание — BookTranslate",
@@ -80,9 +82,10 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
   }
 
   const here = `/app/issues/${id}`;
-  const [found, team] = await Promise.all([
+  const [found, team, regression] = await Promise.all([
     load<IssueDetail>(`/issues/${id}`, here),
     load<Team>("/team", here),
+    load<RegressionRun | null>(`/issues/${id}/regression`, here),
   ]);
 
   if (found.error !== undefined) {
@@ -204,6 +207,18 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
       </section>
 
       <IssueActions issue={issue} members={team.data?.members ?? []} />
+
+      {issue.actions.includes("edit") && (
+        <EditText issueId={issue.id} code={issue.code} items={issue.editable} />
+      )}
+
+      {regression.data !== undefined && regression.data !== null && (
+        <RegressionPanel
+          issue={issue}
+          run={regression.data}
+          canAct={issue.actions.includes("comment")}
+        />
+      )}
 
       {issue.context.length > 0 && (
         <section className="tile">

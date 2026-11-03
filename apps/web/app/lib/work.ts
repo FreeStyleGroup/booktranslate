@@ -947,6 +947,51 @@ export type IssueCandidate = {
   text: string;
 };
 
+export type IssueEditable = {
+  block_id: string;
+  block_code: string;
+  revision_id: string;
+  revision_no: number;
+  text: string;
+};
+
+export type RegressionKind =
+  | "same_source_repeat"
+  | "term_usage"
+  | "object_reference"
+  | "cross_reference"
+  | "adjacent_context"
+  | "table_caption"
+  | "figure_caption";
+
+export type RegressionDecision = "pending" | "not_affected" | "propagated" | "issue_created";
+
+export type RegressionItem = {
+  id: string;
+  kind: RegressionKind;
+  block_id: string | null;
+  object_id: string | null;
+  code: string;
+  required: boolean;
+  safe: boolean;
+  source_text: string | null;
+  current_text: string | null;
+  proposed_text: string | null;
+  final_candidate: boolean;
+  decision: RegressionDecision;
+  note: string | null;
+  child_issue_id: string | null;
+  child_code: string | null;
+};
+
+export type RegressionRun = {
+  id: string;
+  status: "open" | "completed" | "superseded";
+  fix_revision_id: string;
+  pending: number;
+  items: RegressionItem[];
+};
+
 export type IssueBrief = { id: string; code: string; status: IssueStatus };
 
 export type IssueDetail = IssueRow & {
@@ -971,6 +1016,7 @@ export type IssueDetail = IssueRow & {
     created_at: string;
   }[];
   candidates: IssueCandidate[];
+  editable: IssueEditable[];
   children: IssueBrief[];
   parent: IssueBrief | null;
   /** Что этому человеку можно сделать сейчас: кнопки рисуются по этому списку. */

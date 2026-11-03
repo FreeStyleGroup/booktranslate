@@ -146,6 +146,93 @@ export async function fixIssue(
   }
 }
 
+/** Исправить текст: новая редакция. Другая текущая редакция вернётся конфликтом. */
+export async function editIssue(
+  issueId: string,
+  blockId: string,
+  baseRevisionId: string,
+  text: string,
+  note: string,
+): Promise<IssueResult> {
+  if (!UUID.test(issueId) || !UUID.test(blockId) || !UUID.test(baseRevisionId)) {
+    return { error: DAMAGED };
+  }
+
+  try {
+    const clean = note.trim();
+
+    await send(`/issues/${issueId}/revision`, {
+      block_id: blockId,
+      base_revision_id: baseRevisionId,
+      text,
+      note: clean === "" ? null : clean,
+    });
+    refresh(issueId);
+
+    return { done: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Применить исправление к выбранным повторам. */
+export async function applyRegression(
+  runId: string,
+  issueId: string,
+  itemIds: string[],
+  overwriteFinal: boolean,
+  note: string,
+): Promise<IssueResult> {
+  if (!UUID.test(runId) || !UUID.test(issueId) || itemIds.some((id) => !UUID.test(id))) {
+    return { error: DAMAGED };
+  }
+
+  try {
+    const clean = note.trim();
+
+    await send(`/regression-runs/${runId}/apply`, {
+      item_ids: itemIds,
+      overwrite_final: overwriteFinal === true,
+      note: clean === "" ? null : clean,
+    });
+    refresh(issueId);
+
+    return { done: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Решение по одному затронутому месту. */
+export async function decideRegression(
+  itemId: string,
+  issueId: string,
+  payload: {
+    affected: boolean;
+    note: string | null;
+    category: IssueCategory | null;
+    severity: IssueSeverity | null;
+  },
+): Promise<IssueResult> {
+  if (!UUID.test(itemId) || !UUID.test(issueId)) {
+    return { error: DAMAGED };
+  }
+
+  try {
+    await send(`/regression-items/${itemId}/decision`, {
+      affected: payload.affected === true,
+      note: payload.note,
+      category: payload.category,
+      severity: payload.severity,
+    });
+    refresh(issueId);
+
+    return { done: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 export async function restoreIssue(issueId: string): Promise<IssueResult> {
   if (!UUID.test(issueId)) {
     return { error: DAMAGED };
