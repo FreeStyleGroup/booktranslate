@@ -22,6 +22,15 @@ from app.models.glossary_version import (
     GlossaryVersionTerm,
     TermChangeKind,
 )
+from app.models.issue import (
+    Issue,
+    IssueAttachment,
+    IssueCategory,
+    IssueEvent,
+    IssueEventKind,
+    IssueSeverity,
+    IssueStatus,
+)
 from app.models.job import JobKind, JobState, TranslationJob
 from app.models.master import ChapterMaster
 from app.models.memory import (
@@ -76,6 +85,13 @@ __all__ = [
     "GlossaryVersionStatus",
     "GlossaryVersionTerm",
     "Invitation",
+    "Issue",
+    "IssueAttachment",
+    "IssueCategory",
+    "IssueEvent",
+    "IssueEventKind",
+    "IssueSeverity",
+    "IssueStatus",
     "JobKind",
     "JobState",
     "Membership",

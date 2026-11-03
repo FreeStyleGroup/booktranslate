@@ -2,9 +2,10 @@
 
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.block import BlockKind
+from app.models.issue import IssueSeverity, IssueStatus
 from app.schemas.catalog import CatalogEntryPublic
 from app.schemas.document import DocumentPublic
 from app.schemas.glossary import GlossaryTermPublic
@@ -43,8 +44,23 @@ class BlockHits(BaseModel):
     items: list[BlockHitPublic]
 
 
+class IssueHitPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    status: IssueStatus
+    severity: IssueSeverity
+    description: str
+
+
+class IssueHits(BaseModel):
+    total: int
+    items: list[IssueHitPublic]
+
+
 class SearchResult(BaseModel):
-    """Четыре группы на один запрос. Общее число в каждой — по всей базе,
+    """Пять групп на один запрос. Общее число в каждой — по всей базе,
     показано — первые несколько."""
 
     query: str
@@ -52,3 +68,4 @@ class SearchResult(BaseModel):
     terms: TermHits
     entries: EntryHits
     blocks: BlockHits
+    issues: IssueHits

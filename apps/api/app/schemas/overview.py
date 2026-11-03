@@ -51,6 +51,8 @@ class OverviewPublic(BaseModel):
 
     live_runs: int
     undecided_terms: int
+    open_issues: int
+    open_critical: int
 
     glossary_terms: int
     catalog_entries: int

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.models.book import BookEdition
 from app.models.chapter import Chapter
 from app.models.document import Document
+from app.models.issue import Issue
 from app.models.job import LIVE, TranslationJob
 from app.models.organization import Role
 from app.models.project import Project
@@ -102,6 +103,21 @@ class ProjectService(TenantService):
         if live is not None:
             raise ConflictError(
                 "В проекте идёт перевод: остановите задание на карточке книги, потом удаляйте"
+            )
+
+        # Записи реестра не удаляются: они — история решений, и каскад унёс бы её молча.
+        registered = await self._session.scalar(
+            select(Issue.id)
+            .join(BookEdition, BookEdition.id == Issue.book_id)
+            .where(
+                Issue.organization_id == self.organization_id,
+                BookEdition.project_id == project.id,
+            )
+            .limit(1)
+        )
+        if registered is not None:
+            raise ConflictError(
+                "В книгах проекта есть зарегистрированные ошибки: проект не удаляется"
             )
 
         storage_keys = list(

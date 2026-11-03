@@ -35,6 +35,8 @@ class WorkspaceSettingsPublic(BaseModel):
     subjects: list[SubjectPublic]
     # Разрешено ли площадке брать термины загруженных словарей в общий.
     share_glossary: bool
+    # Критичное замечание решает не тот, кто его нашёл или исправил.
+    two_person_review: bool
 
 
 class WorkspaceSettingsUpdate(BaseModel):
@@ -48,3 +50,4 @@ class WorkspaceSettingsUpdate(BaseModel):
     translation_model: str | None = Field(default=None, max_length=120)
     subject: str | None = Field(default=None, max_length=60)
     share_glossary: bool | None = None
+    two_person_review: bool | None = None

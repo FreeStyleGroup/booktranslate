@@ -1,6 +1,6 @@
 """Общий поиск по кабинету: файлы, словарь, каталог справок, текст книг.
 
-Один запрос — четыре ответа. Человек, набравший «клапан» в шапке, не знает
+Один запрос — пять ответов. Человек, набравший «клапан» в шапке, не знает
 заранее, где это слово лежит: в названии книги, в словаре, в справке или
 в тексте на странице сорок. Спрашивать его об этом до поиска значит не
 найти вовсе; вместо этого ищется везде, а группы показываются по очереди.
@@ -25,6 +25,7 @@ from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
 from app.models.chapter import Chapter
 from app.models.document import Document
+from app.models.issue import Issue
 from app.models.memory import GlossaryTerm
 from app.models.translation import TranslationRevision
 from app.services.base import TenantService
@@ -56,6 +57,7 @@ class Found:
     terms: Group[GlossaryTerm]
     entries: Group[CatalogEntry]
     blocks: Group[BlockHit]
+    issues: Group[Issue]
 
 
 class Finder(TenantService):
@@ -67,7 +69,20 @@ class Finder(TenantService):
             terms=await self._terms(pattern, per_group),
             entries=await self._entries(pattern, per_group),
             blocks=await self._blocks(pattern, per_group),
+            issues=await self._issues(pattern, per_group),
         )
+
+    async def _issues(self, pattern: str, limit: int) -> Group[Issue]:
+        """Замечания: по коду и описанию. Код приходит из переписки, и найтись он обязан."""
+        statement = self.scoped(Issue).where(
+            or_(
+                Issue.code.ilike(pattern, escape=ESCAPE),
+                Issue.description.ilike(pattern, escape=ESCAPE),
+            )
+        )
+        rows = await self._session.scalars(statement.order_by(Issue.code).limit(limit))
+
+        return Group(total=await self._count(statement), items=list(rows))
 
     async def _documents(self, pattern: str, limit: int) -> Group[Document]:
         statement = self.scoped(Document).where(
