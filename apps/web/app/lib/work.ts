@@ -377,7 +377,7 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 /** Задание на перевод книги — работа, которая идёт без человека. */
 export type TranslationJob = {
   id: string;
-  kind: "chapter" | "qa" | "render";
+  kind: "chapter" | "qa" | "render" | "figures";
   chapter_id: string | null;
   book_release_id: string | null;
   book_id: string;
@@ -793,6 +793,49 @@ export type CatalogEntry = {
 
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
+
+/* Перевод надписей на рисунках. */
+
+export type FigureStatus = "draft" | "approved" | "kept_original" | "no_text";
+
+export type FigureRegion = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  source_text: string;
+  target_text: string | null;
+  confidence: number;
+  origin: string | null;
+  overflow: boolean;
+};
+
+export type FigureTranslation = {
+  id: string;
+  version: number;
+  status: FigureStatus;
+  regions: FigureRegion[];
+  needs_human: boolean;
+  note: string | null;
+  has_asset: boolean;
+  decided_at: string | null;
+};
+
+export type FigureImage = {
+  object_id: string;
+  code: string;
+  index: number;
+  media_type: string;
+  current: FigureTranslation | null;
+};
+
+export type ChapterFigures = {
+  images: FigureImage[];
+  undecided: number;
+  job_state: JobState | null;
+  job_error: string | null;
+};
 
 /* Финальные версии глав и выпуски книги. */
 

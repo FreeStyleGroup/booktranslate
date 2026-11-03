@@ -254,6 +254,7 @@ const DOING: Record<TranslationJob["kind"], string> = {
   chapter: "переводится",
   qa: "проверяется",
   render: "собирается",
+  figures: "читаются надписи",
 };
 
 const DONE: Record<"chapter" | "qa", string> = { chapter: "переведена", qa: "проверена" };
@@ -267,7 +268,9 @@ function describe(job: TranslationJob, percent: number): string {
     case "done":
       return job.kind === "render"
         ? "файлы собраны"
-        : `${DONE[job.kind]} · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
+        : job.kind === "figures"
+          ? "надписи прочитаны"
+          : `${DONE[job.kind]} · ${thousands(job.items_done)} ${plural(job.items_done, "блок", "блока", "блоков")} · ${when(job.finished_at ?? job.updated_at)}`;
     case "failed":
       return `сорвалась · ${when(job.finished_at ?? job.updated_at)} · ${job.error ?? "причина не записана"}`;
     case "cancelled":
