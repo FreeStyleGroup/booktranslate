@@ -219,6 +219,69 @@ def run_checks(
     return findings
 
 
+def protected_changes(
+    source_text: str,
+    base_text: str,
+    new_text: str,
+    *,
+    glossary: Glossary,
+    protected: Sequence[str] = (),
+) -> list[str]:
+    """Что литературная правка изменила из того, что менять ей нельзя.
+
+    Сравнивается с прежней редакцией, а не с исходником: правка отвечает только за то, что сломала
+    сама. Если число было неверным и раньше, это забота проверок, а не этой защиты.
+    """
+    changes: list[str] = []
+
+    base_numbers, new_numbers = _numbers(base_text), _numbers(new_text)
+    lost = sorted((base_numbers - new_numbers).elements())
+    added = sorted((new_numbers - base_numbers).elements())
+
+    if lost:
+        changes.append("пропали числа " + ", ".join(lost))
+    if added:
+        changes.append("появились числа " + ", ".join(added))
+
+    signs = _signed(base_text) - _signed(new_text)
+    if signs:
+        changes.append("изменился знак числа")
+
+    for name, pattern, finder in (
+        ("подстановки", _PLACEHOLDER, _PLACEHOLDER.findall),
+        ("имена из кода", _IDENTIFIER, _IDENTIFIER.findall),
+    ):
+        gone = Counter(finder(base_text)) - Counter(finder(new_text))
+        if pattern is not None and gone:
+            changes.append(f"пропали {name}: " + ", ".join(sorted(gone)))
+
+    for name, reference in _REFERENCE:
+        target = {_reference_label(label) for label in reference.findall(new_text)}
+        gone_refs = [
+            label for label in reference.findall(base_text) if _reference_label(label) not in target
+        ]
+        if gone_refs:
+            changes.append(f"пропала ссылка на {name}: " + ", ".join(gone_refs))
+
+    gone_spans = [item for item in protected if item in base_text and item not in new_text]
+    if gone_spans:
+        changes.append("пропали защищённые фрагменты: " + ", ".join(gone_spans))
+
+    if "⟦" in new_text:
+        changes.append("в тексте остался заменитель объекта")
+
+    before = {term.source for term in glossary.missing_in(source_text, base_text)}
+    terms = [
+        term.target
+        for term in glossary.missing_in(source_text, new_text)
+        if term.source not in before
+    ]
+    if terms:
+        changes.append("пропали обязательные термины: " + ", ".join(terms))
+
+    return changes
+
+
 def _code_findings(source_text: str, target_text: str) -> list[Finding]:
     if source_text == target_text:
         return []

@@ -34,7 +34,7 @@ from app.services.base import TenantService
 from app.services.book_objects import ObjectService, PlacedObject
 from app.services.context import RequestContext
 from app.services.errors import NotFoundError
-from app.services.glossary import Glossary, GlossaryService, Term, normalize_term
+from app.services.glossary import Glossary, GlossaryService, term_is_used
 from app.services.storage import ObjectStorage
 from app.services.terminology_gate import TerminologyGate
 
@@ -161,7 +161,7 @@ class RegressionGraph(TenantService):
         changed = [
             term
             for term in glossary.match(block.source_text)
-            if _uses(term, old_text) != _uses(term, new_text)
+            if term_is_used(term, old_text) != term_is_used(term, new_text)
         ]
 
         found: list[_Found] = []
@@ -325,9 +325,3 @@ class RegressionGraph(TenantService):
             return Glossary([])
 
         return await GlossaryService(self._session, self._context).load_version(version.id)
-
-
-def _uses(term: Term, text: str) -> bool:
-    normal = normalize_term(text)
-
-    return any(normalize_term(form) in normal for form in (term.target, *term.allowed_variants))

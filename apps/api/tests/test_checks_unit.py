@@ -101,6 +101,29 @@ def test_missing_term_is_reported() -> None:
     assert "glossary" in checks_found
 
 
+def test_inflected_term_is_the_same_term() -> None:
+    """Русский склоняет почти каждое вхождение: падеж не должен выглядеть потерей термина."""
+    relief = term("relief valve", "предохранительный клапан")
+
+    for target in (
+        "Откройте предохранительный клапан.",
+        "Насос защищён предохранительным клапаном.",
+        "Проверка предохранительного клапана.",
+    ):
+        assert run("Open the relief valve.", target, terms=[relief]) == [], target
+
+
+def test_other_word_with_a_similar_start_is_not_the_term() -> None:
+    assert "glossary" in run(
+        "Open the relief valve.",
+        "Откройте запорный клапан.",
+        terms=[term("relief valve", "предохранительный клапан")],
+    )
+    assert "glossary" in run(
+        "Open the valve.", "Откройте вентиль.", terms=[term("valve", "клапан")]
+    )
+
+
 def test_unsettled_term_is_quiet() -> None:
     """Спор о словаре не должен выглядеть как ошибка перевода."""
     checks_found = run(

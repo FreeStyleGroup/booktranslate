@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.block import BlockKind
 from app.models.job import JobState
+from app.models.review import EditReason
 from app.models.translation import RevisionOrigin, RevisionStage, RunKind
 from app.schemas.glossary_version import GateItemPublic
 from app.services.translation_runs import MAX_RETRANSLATE, REASON_MAX
@@ -151,6 +152,8 @@ class RevisionPublic(BaseModel):
     glossary_label: str | None
     ignore_terminology: bool
     author: str | None
+    edit_reason: EditReason | None
+    issue_id: uuid.UUID | None
     formal_checked: bool
     semantic_checked: bool
     compared_with: int | None
