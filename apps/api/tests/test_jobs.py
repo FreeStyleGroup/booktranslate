@@ -116,7 +116,7 @@ async def test_one_chapter_one_live_job(db_client: AsyncClient) -> None:
     )
 
     assert second.status_code == 409, second.text
-    assert "уже переводится" in second.json()["detail"]
+    assert "уже идёт работа" in second.json()["detail"]
 
 
 @requires_database
