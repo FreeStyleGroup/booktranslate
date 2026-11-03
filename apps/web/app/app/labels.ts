@@ -1,10 +1,13 @@
 import type {
+  EditReason,
   IssueCategory,
   IssueEventKind,
   IssueSeverity,
   IssueStatus,
   RegressionDecision,
   RegressionKind,
+  ReviewKind,
+  ReviewRun,
 } from "../lib/work";
 
 /** Где книга в конвейере. */
@@ -456,6 +459,37 @@ export function when(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export const REVIEW_KIND_LABEL: Record<ReviewKind, string> = {
+  technical: "Техническая редактура",
+  literary: "Литературная редактура",
+  final_compare: "Финальная сверка",
+};
+
+export const EDIT_REASON_LABEL: Record<EditReason, string> = {
+  style: "Стиль",
+  calque: "Калька",
+  readability: "Читаемость",
+};
+
+export const EDIT_REASON_HINT: Record<EditReason, string> = {
+  style: "Текст верен, но звучит неудачно.",
+  calque: "Конструкция повторяет исходный язык.",
+  readability: "Фраза тяжёлая: её трудно прочитать с первого раза.",
+};
+
+export const EDIT_REASON_ORDER = Object.keys(EDIT_REASON_LABEL) as EditReason[];
+
+/** Сколько посмотрено: вниз, чтобы 99,9% не показывались как 100. */
+export function reviewPercent(run: ReviewRun): number {
+  const total = run.blocks_total + run.objects_total;
+
+  if (total === 0) {
+    return 0;
+  }
+
+  return Math.floor(((run.blocks_done + run.objects_done) * 100) / total);
 }
 
 /** Контрольная сумма для глаза: первые и последние знаки.

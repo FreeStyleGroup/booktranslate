@@ -717,8 +717,55 @@
   justify-content: space-between;
 }
 
+.bk-checks--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ---------- режим редактуры ---------- */
+
+.bk-review__code {
+  flex: none;
+  margin: 0;
+}
+
+.bk-review__pair {
+  margin-block: 14px;
+}
+
+/* Колонок столько, сколько разделов: у места без замечаний их два. */
+.bk-review__side {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.bk-review__side.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bk-review__list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.bk-review__context {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+
 @media (max-width: 760px) {
-  .bk-checks {
+  .bk-checks,
+  .bk-checks--three,
+  .bk-review__side,
+  .bk-review__side.is-three {
     grid-template-columns: minmax(0, 1fr);
   }
 }

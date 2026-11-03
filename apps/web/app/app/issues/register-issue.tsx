@@ -23,11 +23,14 @@ export function RegisterIssue({
   blockId = null,
   objectId = null,
   category = "translation",
+  onRegistered,
 }: {
   blockId?: string | null;
   objectId?: string | null;
   /** С какого разряда начать: у таблицы и формулы он почти всегда свой. */
   category?: IssueCategory;
+  /** Что делать после регистрации. Без этого откроется карточка замечания. */
+  onRegistered?: () => void;
 }) {
   const [severity, setSeverity] = useState<IssueSeverity>("major");
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +57,12 @@ export function RegisterIssue({
       }
 
       toast.ok("Ошибка зарегистрирована");
+
+      if (onRegistered !== undefined) {
+        onRegistered();
+        return;
+      }
+
       router.push(`/app/issues/${result.id}`);
     });
   }
