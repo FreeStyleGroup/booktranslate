@@ -1,4 +1,11 @@
-import type { IssueCategory, IssueEventKind, IssueSeverity, IssueStatus } from "../lib/work";
+import type {
+  IssueCategory,
+  IssueEventKind,
+  IssueSeverity,
+  IssueStatus,
+  RegressionDecision,
+  RegressionKind,
+} from "../lib/work";
 
 /** Где книга в конвейере. */
 export const BOOK_STATUS_LABEL: Record<string, string> = {
@@ -145,6 +152,23 @@ export const QA_CHECK_LABEL: Record<string, string> = {
 export const QA_RULE_LABEL: Record<string, string> = {
   optional_term: "термин необязательный",
   localized_marker: "буква пункта заменена на русскую",
+};
+
+export const REGRESSION_KIND_LABEL: Record<RegressionKind, string> = {
+  same_source_repeat: "тот же исходный текст",
+  term_usage: "тот же термин",
+  object_reference: "упоминание объекта",
+  cross_reference: "ссылка на раздел",
+  adjacent_context: "соседний блок",
+  table_caption: "подпись таблицы",
+  figure_caption: "рисунок",
+};
+
+export const REGRESSION_DECISION_LABEL: Record<RegressionDecision, string> = {
+  pending: "ждёт решения",
+  not_affected: "не затронуто",
+  propagated: "исправление применено",
+  issue_created: "заведено замечание",
 };
 
 export const ISSUE_CATEGORY_LABEL: Record<IssueCategory, string> = {

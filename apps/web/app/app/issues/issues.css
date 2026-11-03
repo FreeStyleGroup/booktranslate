@@ -144,6 +144,28 @@
   overflow-wrap: anywhere;
 }
 
+.is-regression {
+  display: grid;
+  gap: 14px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.is-regression li {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.is-regression__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 /* У поля файла широкий собственный размер: без этого он раздвигает карточку на телефоне. */
 .is-file {
   min-width: 0;

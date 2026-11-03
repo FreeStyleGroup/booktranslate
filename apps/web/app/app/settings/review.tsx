@@ -53,6 +53,18 @@ export function Review({ settings }: { settings: WorkspaceSettings }) {
           </small>
         </label>
 
+        <label className="field">
+          <span>Когда исправление попадает в память переводов</span>
+          <select name="memory_publish_on" defaultValue={current.memory_publish_on}>
+            <option value="verified">После проверки исправления</option>
+            <option value="closed">Только после закрытия замечания</option>
+          </select>
+          <small>
+            Память выдаёт текст без модели и без проверки, поэтому раньше проверки туда ничего не
+            попадает. Если ждать закрытия, память наполняется медленнее.
+          </small>
+        </label>
+
         <div className="wk-actions">
           <button className="btn btn--primary" type="submit" disabled={busy}>
             {busy ? "Сохраняем…" : "Сохранить"}
