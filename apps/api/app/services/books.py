@@ -19,7 +19,9 @@ from dataclasses import dataclass
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.models.block import Block
 from app.models.book import BookEdition, SourceValidationResult
+from app.models.chapter import Chapter
 from app.models.coding import CodeKind
 from app.models.document import Document, SourceRole
 from app.models.organization import Role
@@ -79,6 +81,10 @@ class BookKit:
 
     sources: list[SourceInKit]
     mismatch: str | None
+    # Сколько блоков есть и сколько переведено: по этому экран решает, предлагать ли
+    # выгрузку и предупреждать ли, что в неё уйдёт исходный текст.
+    blocks: int = 0
+    translated: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +246,22 @@ class BookService(TenantService):
             for document in documents
         ]
 
-        return BookKit(sources=sources, mismatch=_mismatch_of(sources))
+        progress = (
+            await self._session.execute(
+                select(func.count(), func.count(Block.current_revision_id)).where(
+                    Block.organization_id == self.organization_id,
+                    Block.active.is_(True),
+                    Block.chapter_id.in_(select(Chapter.id).where(Chapter.book_id == book.id)),
+                )
+            )
+        ).one()
+
+        return BookKit(
+            sources=sources,
+            mismatch=_mismatch_of(sources),
+            blocks=int(progress[0]),
+            translated=int(progress[1]),
+        )
 
     async def attach(
         self, *, book_id: uuid.UUID, document_id: uuid.UUID, role: SourceRole

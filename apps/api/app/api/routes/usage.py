@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from app.api.deps import ContextDep, SessionDep
 from app.schemas.usage import (
-    DocumentSpendPublic,
+    BookSpendPublic,
     ModelSpendPublic,
     MoneyPublic,
     MonthSpendPublic,
@@ -29,7 +29,7 @@ def _money(money: Money) -> MoneyPublic:
 
 
 def _model(spend: ModelSpend) -> ModelSpendPublic:
-    return ModelSpendPublic(model=spend.model, documents=spend.documents, money=_money(spend.money))
+    return ModelSpendPublic(model=spend.model, books=spend.books, money=_money(spend.money))
 
 
 @router.get("/usage", response_model=UsageReportPublic)
@@ -45,7 +45,7 @@ async def usage_report(context: ContextDep, session: SessionDep) -> UsageReportP
 
     return UsageReportPublic(
         total=_money(report.total),
-        documents=report.documents,
+        books=report.books,
         by_month=[
             MonthSpendPublic(
                 month=month.month,
@@ -55,14 +55,14 @@ async def usage_report(context: ContextDep, session: SessionDep) -> UsageReportP
             for month in report.by_month
         ],
         by_model=[_model(item) for item in report.by_model],
-        by_document=[
-            DocumentSpendPublic(
-                document_id=spend.document_id,
+        by_book=[
+            BookSpendPublic(
+                book_id=spend.book_id,
                 title=spend.title,
                 project_name=spend.project_name,
-                translated_by=spend.translated_by,
+                models=spend.models,
                 money=_money(spend.money),
             )
-            for spend in report.by_document
+            for spend in report.by_book
         ],
     )

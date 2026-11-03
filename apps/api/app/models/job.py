@@ -1,4 +1,4 @@
-"""Задание на перевод книги — то, что делается без человека.
+"""Задание на перевод главы — то, что делается без человека.
 
 Книга на четыреста страниц переводится часами, и держать ради этого
 открытой вкладку нельзя: человек ставит книгу в очередь и уходит. Дальше
@@ -12,10 +12,9 @@
 тогда, когда одного Postgres перестанет хватать, и это будет видно по
 числам, а не предполагаться заранее.
 
-Счётчики `segments_total` и `segments_done` — факты запуска, а не копия
-состояния документа. Они отвечают на вопрос «сколько эта работа сделала»,
-и разойтись с документом не могут: кроме самого запуска их никто не
-меняет.
+Счётчики `items_total` и `items_done` — факты запуска, а не копия состояния
+главы. Они отвечают на вопрос «сколько эта работа сделала» и разойтись с главой
+не могут: кроме самого запуска их никто не меняет.
 """
 
 import enum
@@ -28,7 +27,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.chapter import Chapter
-from app.models.document import Document
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
 
 
@@ -39,7 +37,6 @@ class JobKind(str, enum.Enum):
     вёрстка. Рабочий выбирает обработчик по этому полю.
     """
 
-    DOCUMENT = "document"  # перевод файла прежним контуром
     CHAPTER = "chapter"  # прогон перевода главы
 
 
@@ -59,24 +56,13 @@ LIVE = (JobState.WAITING, JobState.RUNNING)
 class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     __tablename__ = "translation_jobs"
     __table_args__ = (
-        # Одна книга — одно живое задание. Без этого двойное нажатие заводит
-        # два задания на одну книгу: перевод они друг у друга не отнимут —
-        # документ запирается отдельно, — но второе будет вечно упираться в
-        # занятый документ и в конце концов ляжет с отказом, которого никто
-        # не просил.
-        Index(
-            "translation_jobs_live_document",
-            "document_id",
-            unique=True,
-            postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
-        ),
         # Одна глава — один живой прогон: два одновременных перевода одной главы
         # заплатили бы дважды и подрались за текущую редакцию.
         Index(
             "translation_jobs_live_chapter",
             "chapter_id",
             unique=True,
-            postgresql_where=text("state IN ('WAITING', 'RUNNING') AND chapter_id IS NOT NULL"),
+            postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
         ),
         # Рабочий забирает задания по состоянию и порядку поступления.
         Index("translation_jobs_queue", "state", "created_at"),
@@ -85,32 +71,26 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     kind: Mapped[JobKind] = mapped_column(
         Enum(JobKind, name="job_kind", native_enum=True),
         nullable=False,
-        default=JobKind.DOCUMENT,
+        default=JobKind.CHAPTER,
     )
 
-    document_id: Mapped[uuid.UUID | None] = mapped_column(
-        postgresql.UUID(as_uuid=True),
-        ForeignKey("documents.id", ondelete="CASCADE"),
-        index=True,
-    )
-
-    # Книга подгружается вместе с заданием: задание показывают человеку, а
-    # человеку задание без названия книги ни о чём не говорит. Одним
-    # соединением, а не отдельным запросом на строку списка.
-    document: Mapped[Document | None] = relationship(lazy="joined")
-
-    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
-    chapter: Mapped[Chapter | None] = relationship(lazy="joined")
+    # Глава подгружается вместе с заданием: задание показывают человеку, а ему
+    # задание без названия ни о чём не говорит. Одним соединением, а не отдельным
+    # запросом на строку списка.
+    chapter: Mapped[Chapter] = relationship(lazy="joined")
 
     # Прогон, который это задание выполняет. Состояние прогона — состояние
     # этого задания: второй его копии в прогоне нет и разойтись нечему.
-    run_id: Mapped[uuid.UUID | None] = mapped_column(
+    run_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("translation_runs.id", ondelete="CASCADE"),
+        nullable=False,
         unique=True,
         index=True,
     )
@@ -142,11 +122,11 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text)
 
-    # Факты запуска: сколько было непереведённого, когда взялись, и сколько
-    # перевели. Повторы и совпадения с памятью считаются переведёнными —
-    # они и есть переведённые, просто бесплатно.
-    segments_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    segments_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Факты запуска: сколько было работы, когда взялись, и сколько сделано.
+    # Повторы и совпадения с памятью считаются сделанными — они и есть сделанные,
+    # просто бесплатно.
+    items_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    items_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Когда ушло уведомление о готовности. Отдельной отметкой, а не флагом:
     # по ней видно, сколько задание пролежало готовым до того, как о нём
@@ -156,11 +136,8 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     @property
     def title(self) -> str:
         """Что переводится — так, как это назовёт человек."""
-        if self.chapter is not None:
-            return " · ".join(part for part in (self.chapter.code, self.chapter.title) if part)
-
-        return self.document.title if self.document is not None else ""
+        return " · ".join(part for part in (self.chapter.code, self.chapter.title) if part)
 
     @property
-    def book_id(self) -> uuid.UUID | None:
-        return self.chapter.book_id if self.chapter is not None else None
+    def book_id(self) -> uuid.UUID:
+        return self.chapter.book_id

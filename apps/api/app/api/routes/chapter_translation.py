@@ -9,16 +9,19 @@
 
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import ContextDep, SessionDep
+from app.api.deps import ContextDep, SessionDep, StorageDep
+from app.core.config import get_settings
 from app.models.block import Block
 from app.schemas.chapter_translation import (
     BlockHistoryPublic,
     ChangePublic,
     ChapterBlockPage,
     ChapterBlockPublic,
+    ChapterEstimatePublic,
     ReadinessPublic,
     RejectionPublic,
     RetranslateRequest,
@@ -28,6 +31,10 @@ from app.schemas.chapter_translation import (
     TranslationStart,
 )
 from app.schemas.glossary_version import GateItemPublic
+from app.services.export import ExportFormat
+from app.services.exporting import Export, ExportService
+from app.services.profiling import EstimateService
+from app.services.providers import provider_name
 from app.services.terminology_gate import GateItem
 from app.services.translation_runner import is_protected
 from app.services.translation_runs import (
@@ -38,6 +45,7 @@ from app.services.translation_runs import (
     RevisionView,
     RunView,
 )
+from app.services.workspace import WorkspaceSettingsService
 
 router = APIRouter(tags=["translation"])
 
@@ -130,6 +138,87 @@ async def adopt_revision(
     adopted = await service.adopt(revision_id)
 
     return _history(*await service.history(adopted.id))
+
+
+@router.get("/chapters/{chapter_id}/translation/estimate", response_model=ChapterEstimatePublic)
+async def chapter_estimate(
+    chapter_id: uuid.UUID, context: ContextDep, session: SessionDep
+) -> ChapterEstimatePublic:
+    """Из чего состоит глава и во что обойдётся её перевод.
+
+    Смета — оценка сверху и помечена как оценка. Она нужна до запуска: узнать цену
+    главы, запустив перевод, можно и так, но платить придётся уже по-настоящему.
+    """
+    estimate = await EstimateService(session, context).build(
+        chapter_id,
+        # Смета — по модели, которую выбрало пространство: иначе считалась бы по
+        # умолчанию площадки и расходилась бы со счётом.
+        model=provider_name(await WorkspaceSettingsService(session, context).model()),
+        context_segments=get_settings().translation_context_segments,
+    )
+
+    return ChapterEstimatePublic.model_validate(estimate)
+
+
+@router.get("/chapters/{chapter_id}/export")
+async def export_chapter(
+    chapter_id: uuid.UUID,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+    export_format: Annotated[
+        ExportFormat, Query(alias="format", description="Формат выгрузки")
+    ] = ExportFormat.DOCX,
+    allow_untranslated: Annotated[
+        bool, Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом")
+    ] = False,
+) -> Response:
+    """Забрать черновой перевод главы файлом."""
+    return _file(
+        await ExportService(session, context, storage).chapter(
+            chapter_id, export_format=export_format, allow_untranslated=allow_untranslated
+        )
+    )
+
+
+@router.get("/books/{book_id}/export")
+async def export_book(
+    book_id: uuid.UUID,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+    export_format: Annotated[
+        ExportFormat, Query(alias="format", description="Формат выгрузки; source — как прислали")
+    ] = ExportFormat.SOURCE,
+    allow_untranslated: Annotated[
+        bool, Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом")
+    ] = False,
+) -> Response:
+    """Забрать черновой перевод книги файлом.
+
+    Недопереведённое без явного разрешения не отдаётся, а с разрешением число блоков
+    без перевода возвращается заголовком `X-Untranslated-Blocks`.
+    """
+    return _file(
+        await ExportService(session, context, storage).book(
+            book_id, export_format=export_format, allow_untranslated=allow_untranslated
+        )
+    )
+
+
+def _file(result: Export) -> Response:
+    # filename* с процентным кодированием: имя собирается из названия, а оно бывает
+    # русским.
+    name = quote(result.filename)
+
+    return Response(
+        content=result.rendered.content,
+        media_type=result.rendered.media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "X-Untranslated-Blocks": str(result.untranslated),
+        },
+    )
 
 
 def _history(block: Block, views: list[RevisionView]) -> BlockHistoryPublic:

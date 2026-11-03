@@ -33,7 +33,6 @@ async def test_upload_accepts_plain_text(db_client: AsyncClient) -> None:
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["source_format"] == "txt"
-    assert body["status"] == "uploaded"
     assert body["size_bytes"] == len(MANUAL)
     assert body["original_filename"] == "manual.txt"
     # Название по умолчанию — имя файла без расширения: так документ можно

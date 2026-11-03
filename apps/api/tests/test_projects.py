@@ -2,6 +2,7 @@
 
 from httpx import AsyncClient
 
+from tests.chapters import open_book
 from tests.conftest import requires_database
 from tests.factories import create_project, register
 
@@ -106,21 +107,16 @@ async def test_project_is_deleted_with_its_books(db_client: AsyncClient) -> None
 
 @requires_database
 async def test_project_with_a_running_translation_is_kept(db_client: AsyncClient) -> None:
-    """Рабочий держит задание и пишет в сегменты — удалять их из-под него нельзя."""
+    """Иначе у рабочего из-под рук исчезает то, что он сейчас переводит."""
     account = await register(db_client)
-    project_id = await create_project(db_client, account)
+    book = await open_book(db_client, account, data=b"Open the valve.\n")
 
-    uploaded = await db_client.post(
-        f"/projects/{project_id}/documents",
-        headers=account.headers,
-        files={"file": ("manual.txt", b"Open the valve.\n", "text/plain")},
+    queued = await db_client.post(
+        f"/chapters/{book.chapter}/translation", headers=account.headers, json={}
     )
-    document_id = uploaded.json()["id"]
-    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
-    queued = await db_client.post(f"/documents/{document_id}/queue", headers=account.headers)
     assert queued.status_code == 201, queued.text
 
-    removed = await db_client.delete(f"/projects/{project_id}", headers=account.headers)
+    removed = await db_client.delete(f"/projects/{book.project_id}", headers=account.headers)
 
     assert removed.status_code == 409
     assert "перевод" in removed.json()["detail"]

@@ -9,6 +9,8 @@ import uuid
 
 from sqlalchemy import select
 
+from app.models.book import BookEdition
+from app.models.chapter import Chapter
 from app.models.document import Document
 from app.models.job import LIVE, TranslationJob
 from app.models.organization import Role
@@ -88,10 +90,11 @@ class ProjectService(TenantService):
 
         live = await self._session.scalar(
             select(TranslationJob.id)
-            .join(Document, Document.id == TranslationJob.document_id)
+            .join(Chapter, Chapter.id == TranslationJob.chapter_id)
+            .join(BookEdition, BookEdition.id == Chapter.book_id)
             .where(
-                Document.organization_id == self.organization_id,
-                Document.project_id == project.id,
+                TranslationJob.organization_id == self.organization_id,
+                BookEdition.project_id == project.id,
                 TranslationJob.state.in_(list(LIVE)),
             )
             .limit(1)

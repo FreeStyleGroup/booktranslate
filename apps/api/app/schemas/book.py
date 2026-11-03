@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.book import BookStatus
 from app.models.document import SourceFormat, SourceRole
+from app.services.export import ExportFormat
 
 # Пределы взяты от колонок: длиннее в базу всё равно не ляжет, а
 # расхождение между проверкой и хранилищем даёт отказ уже после приёма.
@@ -121,6 +122,11 @@ class SourcePublic(BaseModel):
 
 class BookKitPublic(BaseModel):
     sources: list[SourcePublic]
+    # Во что собирается черновая выгрузка книги: кнопки рисуются по этому списку, а не по
+    # второму на той стороне, который разошёлся бы с реестром при первом новом формате.
+    export_formats: list[ExportFormat]
+    blocks: int
+    translated: int
     # Предупреждение о том, что источники похожи на разные издания.
     # Именно предупреждение: запрета здесь нет, решение принимает человек.
     mismatch: str | None

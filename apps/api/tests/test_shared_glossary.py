@@ -8,10 +8,15 @@
 
 from typing import Any
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import worker as worker_module
 from app.services.providers import TranslationRequest
-from tests.conftest import requires_database
+from app.worker import once
+from tests.chapters import STOP, block_rows, uploaded_book, with_masters
+from tests.conftest import RecordingProvider, requires_database
 from tests.factories import Account, admin_headers, create_project, register
 from tests.test_dictionary_import import upload
 from tests.test_team import accept_as_new, invite, token_of
@@ -203,17 +208,23 @@ async def test_accepted_suggestion_becomes_own_confirmed_term(db_client: AsyncCl
 
 @requires_database
 async def test_shared_terms_reach_the_model_as_hints_but_own_decision_wins(
-    db_client: AsyncClient, provider_log: list[TranslationRequest]
+    db_client: AsyncClient,
+    session: AsyncSession,
+    provider_log: list[TranslationRequest],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """В перевод общий словарь идёт подсказкой, а не требованием: сегмент за
-    него не помечается, а своё слово заказчика вытесняет чужое."""
+    """Без утверждённой версии перевод идёт по рабочему словарю, и общий словарь в нём —
+    подсказка, а не требование, а своё слово заказчика вытесняет чужое."""
+    monkeypatch.setattr(
+        worker_module, "get_provider", lambda _model=None: RecordingProvider(provider_log)
+    )
+
     donor = await register(db_client)
     report = await upload(db_client, donor, data=GLOSSARY, share="true")
     await publish_all(db_client, report["upload"]["id"], "engineering")
 
     taker = await register(db_client, email="taker@example.com", organization_name="Другое бюро")
     await set_workspace(db_client, taker, subject="engineering")
-    project_id = await create_project(db_client, taker)
 
     own = await db_client.post(
         "/glossary",
@@ -227,20 +238,16 @@ async def test_shared_terms_reach_the_model_as_hints_but_own_decision_wins(
     )
     assert own.status_code == 201, own.text
 
-    uploaded = await db_client.post(
-        f"/projects/{project_id}/documents",
-        headers=taker.headers,
-        files={"file": ("manual.txt", b"Open the valve and start the pump.\n", "text/plain")},
-    )
-    document_id = uploaded.json()["id"]
+    book = await uploaded_book(db_client, taker, data=b"Open the valve and start the pump.\n")
+    await with_masters(db_client, taker, book)
 
-    await db_client.post(f"/documents/{document_id}/parse", headers=taker.headers)
-    translated = await db_client.post(
-        f"/documents/{document_id}/translate",
+    started = await db_client.post(
+        f"/chapters/{book.chapter}/translation",
         headers=taker.headers,
-        params={"ignore_terminology": "true"},
+        json={"ignore_terminology": True, "reason": "Пробная глава до согласования терминов"},
     )
-    assert translated.status_code == 200, translated.text
+    assert started.status_code == 201, started.text
+    assert await once(session, "test", STOP) is True
 
     terms = {term.source: term for term in provider_log[-1].terms}
     assert terms["valve"].target == "вентиль"
@@ -249,12 +256,9 @@ async def test_shared_terms_reach_the_model_as_hints_but_own_decision_wins(
     assert terms["pump"].mandatory is False
     assert terms["pump"].settled is False
 
-    # Заглушка подставляет термины — и общий тоже, но замечаний за него нет.
-    segments = (
-        await db_client.get(f"/documents/{document_id}/segments", headers=taker.headers)
-    ).json()["items"]
-    assert "вентиль" in segments[0]["target_text"]
-    assert segments[0]["status"] != "flagged"
+    # Заглушка подставляет термины — и общий тоже.
+    rows = await block_rows(db_client, taker, book.chapter)
+    assert "вентиль" in rows[0]["current"]["text"]
 
 
 @requires_database

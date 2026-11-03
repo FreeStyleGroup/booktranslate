@@ -35,8 +35,14 @@ SECOND = "<h1>2 Service</h1><p>Check the relief valve daily.</p><p>The relief va
 STOP = asyncio.Event()
 
 
-async def ready(client: AsyncClient, account: Account) -> tuple[str, list[dict]]:
-    """Книга, в которой главу уже можно переводить."""
+async def ready(
+    client: AsyncClient, account: Account, *, first_use: str | None = None
+) -> tuple[str, list[dict]]:
+    """Книга, в которой главу уже можно переводить.
+
+    `first_use` — правило первого употребления у «relief valve»: оно попадает в
+    утверждаемую версию глоссария, поэтому задаётся до неё.
+    """
     project_id = await create_project(client, account)
     created = await client.post(
         f"/projects/{project_id}/books", headers=account.headers, json={"title": "Pumps"}
@@ -67,6 +73,16 @@ async def ready(client: AsyncClient, account: Account) -> tuple[str, list[dict]]
         approved = await client.post(f"/masters/{master['id']}/approval", headers=account.headers)
         assert approved.status_code == 200, approved.text
         await decide(client, account, chapter["id"], await collect(client, account, chapter["id"]))
+
+    if first_use is not None:
+        terms = await client.get("/glossary?query=relief", headers=account.headers)
+        assert terms.status_code == 200, terms.text
+        ruled = await client.patch(
+            f"/glossary/{terms.json()['items'][0]['id']}",
+            headers=account.headers,
+            json={"first_use_rule": first_use},
+        )
+        assert ruled.status_code == 200, ruled.text
 
     version = await draft(client, account, book_id)
     status, body = await approve(client, account, version["id"])
@@ -281,6 +297,54 @@ async def test_inline_formula_and_code_reach_the_model_as_tokens(
     rows = await blocks(db_client, account, chapter_id)
     row = next(item for item in rows if item["source_text"].startswith("Radius"))
     assert row["current"]["text"] == "[ru] Radius r2 is set by radius(x)."
+
+
+@requires_database
+async def test_neighbours_and_heading_reach_the_model(
+    db_client: AsyncClient, session: AsyncSession, scripted: Callable[..., Scripted]
+) -> None:
+    provider = scripted()
+    account = await register(db_client)
+    _, chapters = await ready(db_client, account)
+
+    await translate(db_client, session, account, chapters[0]["id"])
+
+    sent = [request for call in provider.calls for request in call]
+    request = next(item for item in sent if item.source_text.startswith("The relief valve"))
+
+    assert request.context.heading == "1 Pumps"
+    assert request.context.before == ("1 Pumps",)
+    assert request.context.after[0] == "Check the relief valve daily."
+
+    # Заголовок сам себе не заголовок: иначе модель получит его дважды.
+    title = next(item for item in sent if item.source_text == "1 Pumps")
+    assert title.context.heading is None
+    assert title.context.before == ()
+
+
+@requires_database
+async def test_first_use_goes_to_the_first_occurrence_in_each_chapter(
+    db_client: AsyncClient, session: AsyncSession, scripted: Callable[..., Scripted]
+) -> None:
+    provider = scripted()
+    account = await register(db_client)
+    _, chapters = await ready(db_client, account, first_use="expand")
+
+    await translate(db_client, session, account, chapters[0]["id"])
+
+    first = [request for call in provider.calls for request in call]
+    ruled = [item for item in first if item.first_use]
+    assert [item.source_text for item in ruled] == ["The relief valve protects the pump."]
+    assert ruled[0].first_use == ("relief valve",)
+
+    provider.calls.clear()
+    await translate(db_client, session, account, chapters[1]["id"])
+
+    # Область — глава: во второй главе объяснять снова. Этот текст в книге уже
+    # переведён, но повтором он не закрывается: там термин без объяснения.
+    second = {request.source_text: request.first_use for call in provider.calls for request in call}
+    assert second["Check the relief valve daily."] == ("relief valve",)
+    assert second["The relief valve log."] == ()
 
 
 @requires_database

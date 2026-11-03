@@ -4,29 +4,25 @@ import uuid
 
 from pydantic import BaseModel
 
-from app.models.document import DocumentStatus
 
-
-class DocumentProgress(BaseModel):
+class BookProgress(BaseModel):
     id: uuid.UUID
+    code: str
     title: str
-    status: DocumentStatus
-    segments: int
-    # Принято человеком. Готовность считается по принятому, а не по
-    # переведённому: перевод, который никто не смотрел, готовым не является.
-    done: int
+    blocks: int
+    # Блоков с текущей редакцией перевода.
+    translated: int
     ready_percent: int
 
 
-class FindingPreview(BaseModel):
-    segment_id: uuid.UUID
-    document_id: uuid.UUID
-    document_title: str
-    position: int
-    source_text: str
-    target_text: str | None
-    # Какие проверки не сошлись: числа, термины, подстановки, раскрытие.
-    checks: list[str]
+class AttentionPreview(BaseModel):
+    """Прогон, которому нужен человек."""
+
+    run_id: uuid.UUID
+    book_id: uuid.UUID
+    chapter_id: uuid.UUID
+    title: str
+    problem: str
 
 
 class UsageSummary(BaseModel):
@@ -34,10 +30,9 @@ class UsageSummary(BaseModel):
     output_tokens: int
     cached_input_tokens: int
     cache_write_tokens: int
-    # Оценка, а не счёт: у поставщика свои скидки и тарифы площадок.
-    # `null` — модель не в прейскуранте.
+    # Оценка, а не счёт: у поставщика свои скидки и периоды. `null` — ни одна
+    # из моделей не в прейскуранте.
     estimated_usd: float | None
-    translated_by: str | None
 
 
 class OverviewPublic(BaseModel):
@@ -47,13 +42,14 @@ class OverviewPublic(BaseModel):
     """
 
     projects: int
+    books: int
     documents: int
-    segments: int
 
-    documents_by_status: dict[str, int]
-    segments_by_status: dict[str, int]
+    blocks: int
+    translated: int
+    by_origin: dict[str, int]
 
-    flagged: int
+    live_runs: int
     undecided_terms: int
 
     glossary_terms: int
@@ -62,5 +58,5 @@ class OverviewPublic(BaseModel):
 
     usage: UsageSummary
 
-    recent_documents: list[DocumentProgress]
-    recent_findings: list[FindingPreview]
+    recent_books: list[BookProgress]
+    attention: list[AttentionPreview]

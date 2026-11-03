@@ -81,65 +81,6 @@ async def decide_chapter_terms(
     return _report(report)
 
 
-@router.post(
-    "/documents/{document_id}/terminology/extract", response_model=list[TermCandidatePublic]
-)
-async def extract_terms(
-    document_id: uuid.UUID,
-    context: ContextDep,
-    session: SessionDep,
-    min_frequency: MinFrequency = 2,
-    limit: Limit = 400,
-) -> list[TermCandidatePublic]:
-    """Собрать кандидатов из сегментов документа прежнего контура.
-
-    Порог частоты подбирается под документ — на руководстве в тридцать
-    страниц двойка нормальна, на книге в четыреста её стоит поднять, иначе
-    список будет длиннее, чем человек разберёт.
-    """
-    candidates = await TerminologyService(session, context).extract(
-        document_id, min_frequency=min_frequency, limit=limit
-    )
-
-    return [TermCandidatePublic.model_validate(candidate) for candidate in candidates]
-
-
-@router.get("/documents/{document_id}/terminology", response_model=list[TermCandidatePublic])
-async def list_terms(
-    document_id: uuid.UUID,
-    context: ContextDep,
-    session: SessionDep,
-    status: Annotated[TermCandidateStatus | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
-    offset: Annotated[int, Query(ge=0)] = 0,
-) -> list[TermCandidatePublic]:
-    """Кандидаты документа. Нерешённые идут первыми."""
-    candidates = await TerminologyService(session, context).document_candidates(
-        document_id, status=status, limit=limit, offset=offset
-    )
-
-    return [TermCandidatePublic.model_validate(candidate) for candidate in candidates]
-
-
-@router.post("/documents/{document_id}/terminology/decisions", response_model=TerminologyReport)
-async def decide_terms(
-    document_id: uuid.UUID,
-    payload: TermDecisionBatch,
-    context: ContextDep,
-    session: SessionDep,
-) -> TerminologyReport:
-    """Принять и отклонить кандидатов документа одной операцией.
-
-    Всё в одной транзакции: наполовину решённый словарь хуже нерешённого —
-    по нему уже нельзя понять, где работа закончена.
-    """
-    report = await TerminologyService(session, context).decide(
-        document_id, [_decision(item) for item in payload.decisions]
-    )
-
-    return _report(report)
-
-
 async def _chapter_public(
     service: TerminologyService, chapter_id: uuid.UUID, candidates: list[TermCandidate]
 ) -> list[TermCandidatePublic]:

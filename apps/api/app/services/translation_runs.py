@@ -360,7 +360,7 @@ class ChapterTranslationService(TenantService):
             run_id=run.id,
             state=JobState.WAITING,
             requested_by_id=self._context.user.id,
-            segments_total=total,
+            items_total=total,
         )
 
         audit = AuditService(self._session, self._context)

@@ -20,10 +20,9 @@ class TranslationJobPublic(BaseModel):
 
     id: uuid.UUID
     kind: JobKind
-    document_id: uuid.UUID | None
-    chapter_id: uuid.UUID | None
-    book_id: uuid.UUID | None
-    run_id: uuid.UUID | None
+    chapter_id: uuid.UUID
+    book_id: uuid.UUID
+    run_id: uuid.UUID
     # Название книги — из подгруженной вместе с заданием записи: список
     # заданий читают люди, а не программы, и «книга такая-то переведена»
     # без названия им не о чем.
@@ -34,8 +33,8 @@ class TranslationJobPublic(BaseModel):
     error: str | None
     # Факты запуска: сколько было непереведённого, когда взялись, и сколько
     # перевели с тех пор.
-    segments_total: int
-    segments_done: int
+    items_total: int
+    items_done: int
     started_at: datetime | None
     finished_at: datetime | None
     notified_at: datetime | None

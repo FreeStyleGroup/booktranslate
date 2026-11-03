@@ -9,22 +9,12 @@
 import enum
 import uuid
 
-from sqlalchemy import BigInteger, Enum, ForeignKey, Index, String, Text, text
+from sqlalchemy import BigInteger, Enum, ForeignKey, Index, String, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
-
-
-class DocumentStatus(str, enum.Enum):
-    UPLOADED = "uploaded"  # файл принят, ничего с ним ещё не делали
-    PARSING = "parsing"  # разбираем структуру
-    PARSED = "parsed"  # разобран на сегменты, готов к переводу
-    TRANSLATING = "translating"  # перевод идёт
-    REVIEW = "review"  # переведён, ждёт человека
-    DONE = "done"  # проверен и принят
-    FAILED = "failed"  # сломался; причина — в error
 
 
 class SourceFormat(str, enum.Enum):
@@ -104,13 +94,6 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     source_format: Mapped[SourceFormat] = mapped_column(
         Enum(SourceFormat, name="document_source_format", native_enum=True), nullable=False
     )
-    status: Mapped[DocumentStatus] = mapped_column(
-        Enum(DocumentStatus, name="document_status", native_enum=True),
-        nullable=False,
-        default=DocumentStatus.UPLOADED,
-        index=True,
-    )
-
     # Где лежит исходный файл. Строка, а не путь на диске: сегодня это
     # локальный каталог, завтра — объектное хранилище, и модель об этом
     # знать не должна.
@@ -120,22 +103,3 @@ class Document(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     # Контрольная сумма исходника: по ней видно, что тот же файл загрузили
     # повторно, и не нужно платить за повторный разбор и перевод.
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
-
-    error: Mapped[str | None] = mapped_column(Text)
-
-    # Потрачено на перевод этого документа, нарастающим итогом по всем
-    # запускам. Токены, а не деньги: цены меняются, а потраченное — факт,
-    # и пересчитывать его задним числом по новому прейскуранту значит
-    # подделывать отчёт. Стоимость собирается на лету (app/services/pricing.py).
-    #
-    # Прочитанное из кэша отдельной колонкой: оно стоит примерно десятую
-    # часть обычного ввода, и сложенное с ним потеряло бы ровно то, ради
-    # чего кэш заводили.
-    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    cached_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    cache_write_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-
-    # Чем переведён документ. По нему считается стоимость и понятно, что
-    # перепроверять после смены модели.
-    translated_by: Mapped[str | None] = mapped_column(String(120))

@@ -81,9 +81,9 @@ async def lookup_terms(
     return _report(report, lookup.name)
 
 
-@router.post("/documents/{document_id}/terminology/lookup", response_model=CatalogLookupReport)
+@router.post("/chapters/{chapter_id}/terminology/lookup", response_model=CatalogLookupReport)
 async def lookup_candidates(
-    document_id: uuid.UUID,
+    chapter_id: uuid.UUID,
     payload: DocumentLookupRequest,
     context: ContextDep,
     session: SessionDep,
@@ -96,8 +96,8 @@ async def lookup_candidates(
     из книги уходит в запрос вместе с термином — одно и то же слово в разных
     отраслях значит разное.
     """
-    report = await CatalogService(session, context, lookup).explain_document(
-        document_id,
+    report = await CatalogService(session, context, lookup).explain_chapter(
+        chapter_id,
         candidate_ids=payload.candidate_ids or None,
         limit=payload.limit,
         refresh=payload.refresh,
