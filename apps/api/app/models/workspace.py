@@ -43,3 +43,7 @@ class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
     # Разрешение отдавать термины загруженных словарей в общий словарь
     # площадки. Термины, не текст книг: память переводов не делится никогда.
     share_glossary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Критичное замечание решает не тот, кто его нашёл или исправил. Выключено по умолчанию: в
+    # команде из одного редактора это правило остановило бы работу.
+    two_person_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

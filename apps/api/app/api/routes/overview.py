@@ -32,6 +32,8 @@ async def overview(context: ContextDep, session: SessionDep) -> OverviewPublic:
         by_origin=summary.by_origin,
         live_runs=summary.live_runs,
         undecided_terms=summary.undecided_terms,
+        open_issues=summary.open_issues,
+        open_critical=summary.open_critical,
         glossary_terms=summary.glossary_terms,
         catalog_entries=summary.catalog_entries,
         memory_units=summary.memory_units,

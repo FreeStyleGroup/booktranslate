@@ -22,7 +22,7 @@ from app.schemas.book_object import (
     ObjectPublic,
     VerificationPublic,
 )
-from app.services.book_objects import ObjectService, PlacedObject
+from app.services.book_objects import ObjectService, PlacedObject, own_blocks
 from app.services.errors import ConflictError
 from app.services.translation_runs import ChapterTranslationService, VerificationState
 
@@ -84,7 +84,7 @@ async def object_detail(
     prefix = _prefix(view.chapter)
     placed = view.placed
     translation = ChapterTranslationService(session, context)
-    own = _own_blocks(placed)
+    own = own_blocks(placed)
     texts = await translation.current_texts([block.id for block in own])
     state = await translation.object_state(placed.object, own)
 
@@ -128,7 +128,7 @@ async def verify_object(
         raise ConflictError("Объект выведен из действия: проверять нечего")
 
     state = await ChapterTranslationService(session, context).verify_object(
-        view.placed.object, _own_blocks(view.placed)
+        view.placed.object, own_blocks(view.placed)
     )
 
     return _verification(state)
@@ -211,11 +211,6 @@ def _summary(placed: PlacedObject, prefix: str, *, payload: dict[str, Any]) -> d
         "references": placed.references,
         "payload": payload,
     }
-
-
-def _own_blocks(placed: PlacedObject) -> list[Block]:
-    """Блоки объекта: содержимое и подпись."""
-    return [*placed.content, *([placed.caption] if placed.caption is not None else [])]
 
 
 def _verification(state: VerificationState) -> VerificationPublic:

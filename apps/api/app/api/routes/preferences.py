@@ -97,6 +97,7 @@ def _workspace(settings: WorkspaceSettings | None) -> WorkspaceSettingsPublic:
         subject=None if settings is None else settings.subject,
         subjects=[SubjectPublic(id=subject.id, title=subject.title) for subject in SUBJECTS],
         share_glossary=settings is not None and settings.share_glossary,
+        two_person_review=settings is not None and settings.two_person_review,
         models=[
             ModelChoicePublic(
                 id=choice.id,

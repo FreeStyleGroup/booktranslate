@@ -19,6 +19,7 @@ from app.api.routes import (
     glossary,
     glossary_versions,
     health,
+    issues,
     jobs,
     masters,
     memory,
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(overview.router)
     app.include_router(projects.router)
     app.include_router(books.router)
+    app.include_router(issues.router)
     app.include_router(chapters.router)
     app.include_router(masters.router)
     app.include_router(objects.router)

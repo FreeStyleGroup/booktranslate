@@ -20,12 +20,14 @@ from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
 from app.models.chapter import Chapter
 from app.models.document import Document
+from app.models.issue import Issue, IssueSeverity
 from app.models.job import LIVE, JobState, TranslationJob
 from app.models.memory import GlossaryTerm, TranslationUnit
 from app.models.project import Project
 from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.models.translation import TranslationRevision, TranslationRun
 from app.services.base import TenantModel, TenantService
+from app.services.issue_status import OPEN
 from app.services.pricing import estimate_usd
 from app.services.providers.base import Usage
 
@@ -77,6 +79,8 @@ class Overview:
     # Что идёт прямо сейчас и что останавливает работу.
     live_runs: int = 0
     undecided_terms: int = 0
+    open_issues: int = 0
+    open_critical: int = 0
 
     glossary_terms: int = 0
     catalog_entries: int = 0
@@ -103,6 +107,10 @@ class OverviewService(TenantService):
         overview.memory_units = await self._count(TranslationUnit)
         overview.undecided_terms = await self._count(
             TermCandidate, TermCandidate.status == TermCandidateStatus.NEW
+        )
+        overview.open_issues = await self._count(Issue, Issue.status.in_(list(OPEN)))
+        overview.open_critical = await self._count(
+            Issue, Issue.status.in_(list(OPEN)), Issue.severity == IssueSeverity.CRITICAL
         )
         overview.live_runs = await self._count(TranslationJob, TranslationJob.state.in_(LIVE))
 

@@ -12,6 +12,8 @@ from app.schemas.finder import (
     BlockHits,
     DocumentHits,
     EntryHits,
+    IssueHitPublic,
+    IssueHits,
     SearchResult,
     TermHits,
 )
@@ -71,5 +73,9 @@ async def search(
                 )
                 for item in found.blocks.items
             ],
+        ),
+        issues=IssueHits(
+            total=found.issues.total,
+            items=[IssueHitPublic.model_validate(item) for item in found.issues.items],
         ),
     )

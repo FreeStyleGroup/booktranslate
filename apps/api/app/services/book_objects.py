@@ -109,6 +109,11 @@ class StoredImage:
     size: int | None
 
 
+def own_blocks(placed: PlacedObject) -> list[Block]:
+    """Блоки объекта: содержимое и подпись."""
+    return [*placed.content, *([placed.caption] if placed.caption is not None else [])]
+
+
 class ObjectService(TenantService):
     def __init__(
         self, session: AsyncSession, context: RequestContext, storage: ObjectStorage

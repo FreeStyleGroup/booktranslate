@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import Role
 from app.models.workspace import WorkspaceSettings
+from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.errors import InvalidInputError
 from app.services.models import default_model, is_available
@@ -28,7 +29,9 @@ from app.services.subjects import is_subject
 # данными пространства, а не работа с текстом.
 SETTINGS_ROLES = (Role.ADMIN,)
 
-UPDATABLE_FIELDS = frozenset({"translation_model", "subject", "share_glossary"})
+UPDATABLE_FIELDS = frozenset(
+    {"translation_model", "subject", "share_glossary", "two_person_review"}
+)
 
 
 async def model_for(session: AsyncSession, organization_id: uuid.UUID) -> str:
@@ -91,6 +94,16 @@ class WorkspaceSettingsService(TenantService):
             raise InvalidInputError(f"Тематики «{subject}» нет в списке")
 
         settings = await self._ensure()
+        review = changes.get("two_person_review")
+
+        # Правило меняет, кто вправе решать по критичным ошибкам: это само по себе решение.
+        if review is not None and review != settings.two_person_review:
+            AuditService(self._session, self._context).record(
+                kind="workspace.two_person_review",
+                subject_type="workspace_settings",
+                subject_id=None,
+                payload={"enabled": review},
+            )
 
         for name, value in changes.items():
             setattr(settings, name, value)
@@ -104,7 +117,11 @@ class WorkspaceSettingsService(TenantService):
         settings = await self.load()
 
         if settings is None:
-            settings = WorkspaceSettings(organization_id=self.organization_id)
+            settings = WorkspaceSettings(
+                organization_id=self.organization_id,
+                share_glossary=False,
+                two_person_review=False,
+            )
             self._session.add(settings)
 
         return settings
