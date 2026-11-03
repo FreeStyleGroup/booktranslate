@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 
 from app.models.book import BookEdition
+from app.models.figure import FigureTranslation
 from app.models.project import Project
 from app.models.qa import QARun
 from app.models.translation import TranslationRun
@@ -156,9 +157,15 @@ class UsageService(TenantService):
 
     async def _rows(self) -> list[_Row]:
         # Смысловая сверка оплачивается так же, как перевод: отчёт без неё занижал бы счёт.
-        return [*await self._rows_of(TranslationRun), *await self._rows_of(QARun)]
+        return [
+            *await self._rows_of(TranslationRun),
+            *await self._rows_of(QARun),
+            *await self._rows_of(FigureTranslation),
+        ]
 
-    async def _rows_of(self, source: type[TranslationRun] | type[QARun]) -> list[_Row]:
+    async def _rows_of(
+        self, source: type[TranslationRun] | type[QARun] | type[FigureTranslation]
+    ) -> list[_Row]:
         month = func.to_char(source.created_at, "YYYY-MM")
         spent = (
             await self._session.execute(

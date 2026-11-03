@@ -7,9 +7,10 @@
 не идут."""
 
 import asyncio
+import hashlib
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 
@@ -17,6 +18,7 @@ from app.models.block import Block, BlockKind
 from app.models.book import BookEdition
 from app.models.book_object import ObjectType
 from app.models.chapter import Chapter
+from app.models.figure import FigureStatus, FigureTranslation
 from app.models.issue import Issue, IssueEvent
 from app.models.project import Project
 from app.models.release import BookRelease, ChapterRelease, ReleaseStatus
@@ -27,18 +29,20 @@ from app.services.book_objects import ObjectService, PlacedObject
 from app.services.chapter_releases import sha256_text
 from app.services.errors import ConflictError, NotFoundError, UnsupportedFormatError
 from app.services.export import ExportError, ExportFormat, Rendered, TranslatedBlock, renderer_for
-from app.services.export.docx_writer import without_comments
-from app.services.export.pdf import (
+from app.services.export.document import (
     FigureElement,
     FormulaElement,
-    PdfDocument,
+    PublicationDocument,
     TableCell,
     TableElement,
     TextElement,
     TocEntry,
     asset_url,
-    text_layer,
 )
+from app.services.export.docx_builder import DocxBuilder
+from app.services.export.docx_writer import without_comments
+from app.services.export.images import ZIP_SUFFIXES, replace_images
+from app.services.export.pdf import text_layer
 from app.services.export.scan import NOTE_MIN_LENGTH, readable_text, scan
 from app.services.exporting import EXPORT_ROLES, Export, ExportService
 from app.services.object_extraction import picture_key
@@ -51,6 +55,14 @@ class PublicationView:
     blocks: list[TranslatedBlock]
     source_texts: list[str]
     notes: list[str]
+
+
+@dataclass(slots=True)
+class TranslatedFigures:
+    """Утверждённые переводы рисунков: файл, его тип и сумма оригинала."""
+
+    by_place: dict[tuple[uuid.UUID, int], tuple[bytes, str, str]] = field(default_factory=dict)
+    by_source: dict[str, tuple[bytes, str, str]] = field(default_factory=dict)
 
 
 class PublicationService(ExportService):
@@ -112,12 +124,29 @@ class PublicationService(ExportService):
             raise UnsupportedFormatError(str(error)) from error
 
         view = await self.view(releases)
-        rendered = await self._render(renderer, view.blocks, document)
+        translated = await self._translated_figures(releases)
+
+        if isinstance(renderer, DocxBuilder):
+            content = await self._content(releases, chapter, translated)
+            rendered = await asyncio.to_thread(renderer.render_document, content)
+        else:
+            rendered = await self._render(renderer, view.blocks, document)
 
         try:
             if rendered.suffix == ".docx":
                 rendered = Rendered(
                     content=without_comments(rendered.content),
+                    media_type=rendered.media_type,
+                    suffix=rendered.suffix,
+                )
+
+            # Формат оригинала несёт исходные картинки: переведённые встают на их место.
+            if rendered.suffix in ZIP_SUFFIXES and not isinstance(renderer, DocxBuilder):
+                rendered = Rendered(
+                    content=replace_images(
+                        rendered.content,
+                        {key: asset for key, (asset, _, _) in translated.by_source.items()},
+                    ),
                     media_type=rendered.media_type,
                     suffix=rendered.suffix,
                 )
@@ -134,6 +163,34 @@ class PublicationService(ExportService):
             )
 
         return Export(stem=stem, rendered=rendered, untranslated=0, ending="")
+
+    async def _translated_figures(self, releases: Sequence[ChapterRelease]) -> TranslatedFigures:
+        """Переводы рисунков из манифестов: файл сверяется с суммой, записанной при утверждении."""
+        result = TranslatedFigures()
+
+        for release in releases:
+            for entry in release.manifest.get("figures", []):
+                if entry.get("status") != FigureStatus.APPROVED.value:
+                    continue
+
+                row = await self._session.scalar(
+                    self.scoped(FigureTranslation).where(
+                        FigureTranslation.id == uuid.UUID(entry["translation_id"])
+                    )
+                )
+                if row is None or row.asset_key is None or row.media_type is None:
+                    raise ConflictError("Манифест расходится с базой: перевод рисунка не найден")
+
+                parts = [chunk async for chunk in self._storage.stream(row.asset_key)]
+                asset = b"".join(parts)
+                if hashlib.sha256(asset).hexdigest() != entry["asset_sha256"]:
+                    raise ConflictError("Манифест расходится с базой: файл рисунка изменён")
+
+                pair = (asset, row.media_type, entry["source_sha256"])
+                result.by_place[(uuid.UUID(entry["object_id"]), int(entry["image_index"]))] = pair
+                result.by_source[entry["source_sha256"]] = pair
+
+        return result
 
     async def view(self, releases: Sequence[ChapterRelease]) -> PublicationView:
         """Содержание по манифестам. Других источников текста здесь нет."""
@@ -172,7 +229,9 @@ class PublicationService(ExportService):
             notes=await self._notes([release.chapter_id for release in releases]),
         )
 
-    async def pdf_document(self, release: BookRelease) -> tuple[PdfDocument, PublicationView]:
+    async def pdf_document(
+        self, release: BookRelease
+    ) -> tuple[PublicationDocument, PublicationView]:
         """Содержание PDF: те же редакции из того же манифеста, что и у DOCX."""
         ids = [uuid.UUID(row["release_id"]) for row in release.manifest["chapters"]]
         rows = {
@@ -186,13 +245,36 @@ class PublicationService(ExportService):
 
         book = await self._session.get_one(BookEdition, release.book_id)
         project = await self._session.get_one(Project, book.project_id)
-        document = PdfDocument(title=book.title, language=project.target_language)
-        loaded: dict[str, str] = {}
-
-        for chapter_release in ordered:
-            await self._fill(document, chapter_release, loaded)
+        translated = await self._translated_figures(ordered)
+        document = await self._assemble(ordered, book.title, project.target_language, translated)
 
         return document, view
+
+    async def _content(
+        self,
+        releases: Sequence[ChapterRelease],
+        chapter: Chapter,
+        translated: TranslatedFigures,
+    ) -> PublicationDocument:
+        book = await self._session.get_one(BookEdition, chapter.book_id)
+        project = await self._session.get_one(Project, book.project_id)
+
+        return await self._assemble(releases, book.title, project.target_language, translated)
+
+    async def _assemble(
+        self,
+        releases: Sequence[ChapterRelease],
+        title: str,
+        language: str,
+        translated: TranslatedFigures,
+    ) -> PublicationDocument:
+        document = PublicationDocument(title=title, language=language)
+        loaded: dict[str, str] = {}
+
+        for chapter_release in releases:
+            await self._fill(document, chapter_release, loaded, translated)
+
+        return document
 
     async def check_pdf(self, content: bytes, view: PublicationView) -> None:
         text = await asyncio.to_thread(text_layer, content)
@@ -204,7 +286,11 @@ class PublicationService(ExportService):
             )
 
     async def _fill(
-        self, document: PdfDocument, release: ChapterRelease, loaded: dict[str, str]
+        self,
+        document: PublicationDocument,
+        release: ChapterRelease,
+        loaded: dict[str, str],
+        translated: TranslatedFigures,
     ) -> None:
         kept = {
             uuid.UUID(row["id"]): uuid.UUID(row["revision_id"])
@@ -248,7 +334,7 @@ class PublicationService(ExportService):
 
         for block in blocks:
             for item in before.get(block.id, []):
-                await self._place_object(document, item, loaded)
+                await self._place_object(document, item, loaded, translated)
 
             table = tables.get(block.id)
             if table is not None:
@@ -267,10 +353,14 @@ class PublicationService(ExportService):
                 document.toc.append(TocEntry(level=level, text=text, block_id=str(block.id)))
 
         for item in tail:
-            await self._place_object(document, item, loaded)
+            await self._place_object(document, item, loaded, translated)
 
     async def _place_object(
-        self, document: PdfDocument, item: PlacedObject, loaded: dict[str, str]
+        self,
+        document: PublicationDocument,
+        item: PlacedObject,
+        loaded: dict[str, str],
+        translated: TranslatedFigures,
     ) -> None:
         if item.object.type is ObjectType.EQUATION:
             text = str(item.object.payload.get("text") or "").strip()
@@ -281,25 +371,31 @@ class PublicationService(ExportService):
         urls: list[str] = []
         alts: list[str] = []
 
-        for entry in item.object.payload.get("images", []):
+        for index, entry in enumerate(item.object.payload.get("images", [])):
             digest = entry.get("sha256")
             if not digest:
                 continue
 
-            url = loaded.get(digest)
+            swap = translated.by_place.get((item.object.id, index))
+            key = f"translated:{item.object.id}:{index}" if swap is not None else digest
+            url = loaded.get(key)
+
             if url is None:
                 url = asset_url(len(loaded))
-                parts = [
-                    chunk
-                    async for chunk in self._storage.stream(
-                        picture_key(self.organization_id, digest)
+                if swap is not None:
+                    document.images[url] = (swap[0], swap[1])
+                else:
+                    parts = [
+                        chunk
+                        async for chunk in self._storage.stream(
+                            picture_key(self.organization_id, digest)
+                        )
+                    ]
+                    document.images[url] = (
+                        b"".join(parts),
+                        entry.get("media_type") or "application/octet-stream",
                     )
-                ]
-                document.images[url] = (
-                    b"".join(parts),
-                    entry.get("media_type") or "application/octet-stream",
-                )
-                loaded[digest] = url
+                loaded[key] = url
 
             urls.append(url)
             alts.append(str(entry.get("alt") or ""))

@@ -40,6 +40,7 @@ from app.services.book_objects import ObjectService, own_blocks
 from app.services.canonical import canonical_json, revision_set_hash
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, NotFoundError
+from app.services.figures import FigureService
 from app.services.issues import IssueFilter, IssueService
 from app.services.qa import QAService
 from app.services.reviews import ReviewService
@@ -47,7 +48,7 @@ from app.services.storage import ObjectStorage
 from app.services.terminology_gate import TerminologyGate
 from app.services.translation_runs import Change, compare, content_hash
 
-MANIFEST_SCHEMA = 1
+MANIFEST_SCHEMA = 2
 
 # Создаёт и отменяет тот, кто ведёт книгу; утвердить может и проверяющий.
 CREATING_ROLES = (Role.ADMIN, Role.MANAGER)
@@ -166,6 +167,17 @@ class ChapterReleaseService(TenantService):
                 Blocker("regression_pending", f"Не решено мест в регрессии: {pending}", pending)
             )
 
+        figures = FigureService(self._session, self._context, self._storage)
+        undecided = await figures.undecided(chapter.id)
+        if undecided:
+            blockers.append(
+                Blocker(
+                    "figures_undecided",
+                    f"Нет решения по рисункам: {len(undecided)}",
+                    len(undecided),
+                )
+            )
+
         reviews = Reviews(
             technical=await self._completed(chapter.id, ReviewKind.TECHNICAL),
             literary=await self._completed(chapter.id, ReviewKind.LITERARY),
@@ -198,13 +210,18 @@ class ChapterReleaseService(TenantService):
             .order_by(ChapterRelease.version_major.desc(), ChapterRelease.version_minor.desc())
         )
         current = revision_set_hash(await self._pairs(chapter.id))
+        figures = await self._figures(chapter.id)
 
-        return [await self._view(row, current) for row in rows]
+        return [await self._view(row, current, figures) for row in rows]
 
     async def get(self, release_id: uuid.UUID) -> ReleaseView:
         release = await self._release(release_id)
 
-        return await self._view(release, revision_set_hash(await self._pairs(release.chapter_id)))
+        return await self._view(
+            release,
+            revision_set_hash(await self._pairs(release.chapter_id)),
+            await self._figures(release.chapter_id),
+        )
 
     async def create(self, chapter_id: uuid.UUID, *, major: bool = False) -> ReleaseView:
         """Создать версию. Глава блокируется: две сразу получили бы один номер."""
@@ -295,7 +312,9 @@ class ChapterReleaseService(TenantService):
             raise ConflictError(f"{release.code} уже утверждена")
 
         current = revision_set_hash(await self._pairs(release.chapter_id))
-        if current != release.revision_set_hash:
+        if current != release.revision_set_hash or await self._figures(
+            release.chapter_id
+        ) != release.manifest.get("figures", []):
             raise ConflictError(
                 f"Текст главы изменился после создания {release.code}: создайте новую версию"
             )
@@ -419,6 +438,7 @@ class ChapterReleaseService(TenantService):
                 }
                 for block in blocks
             ],
+            "figures": await self._figures(chapter.id),
             "objects": [
                 {
                     "id": str(item.object.id),
@@ -432,12 +452,22 @@ class ChapterReleaseService(TenantService):
             ],
         }
 
-    async def _view(self, release: ChapterRelease, current_hash: str) -> ReleaseView:
+    async def _view(
+        self, release: ChapterRelease, current_hash: str, figures: list[dict[str, Any]]
+    ) -> ReleaseView:
         return ReleaseView(
             release=release,
             creator=await self._email(release.created_by_id),
             approver=await self._email(release.approved_by_id),
-            working_differs=release.revision_set_hash != current_hash,
+            working_differs=(
+                release.revision_set_hash != current_hash
+                or release.manifest.get("figures", []) != figures
+            ),
+        )
+
+    async def _figures(self, chapter_id: uuid.UUID) -> list[dict[str, Any]]:
+        return await FigureService(self._session, self._context, self._storage).decisions(
+            chapter_id
         )
 
     async def _email(self, user_id: uuid.UUID | None) -> str | None:

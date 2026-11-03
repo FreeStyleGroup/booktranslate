@@ -24,7 +24,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,14 @@ import pypdfium2
 
 from app.models.block import BlockKind
 from app.services.export.base import ExportError
+from app.services.export.document import (
+    Element,
+    FigureElement,
+    FormulaElement,
+    PublicationDocument,
+    TableElement,
+    TextElement,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +61,6 @@ STUB_ELEMENTS_PER_PAGE = 3
 STUB_PAGE_SIZE = (595, 842)
 
 _LANGUAGE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
-
-ASSET_SCHEME = "asset:"
 
 _CSS = """
 @page {
@@ -95,60 +101,6 @@ figure img { max-width: 100%; max-height: 210mm; }
 
 
 @dataclass(frozen=True, slots=True)
-class TextElement:
-    block_id: str
-    kind: BlockKind
-    text: str
-    level: int = 1
-
-
-@dataclass(frozen=True, slots=True)
-class TableCell:
-    text: str
-    rowspan: int = 1
-    colspan: int = 1
-    header: bool = False
-    block_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class TableElement:
-    rows: list[list[TableCell]]
-
-
-@dataclass(frozen=True, slots=True)
-class FigureElement:
-    # Адреса изображений из набора `images`, пропавшие в исходнике сюда не попадают.
-    urls: list[str]
-    alts: list[str]
-
-
-@dataclass(frozen=True, slots=True)
-class FormulaElement:
-    text: str
-
-
-@dataclass(frozen=True, slots=True)
-class TocEntry:
-    level: int
-    text: str
-    block_id: str
-
-
-Element = TextElement | TableElement | FigureElement | FormulaElement
-
-
-@dataclass(slots=True)
-class PdfDocument:
-    title: str
-    language: str
-    elements: list[Element] = field(default_factory=list)
-    toc: list[TocEntry] = field(default_factory=list)
-    # Адрес → (байты, тип). Других источников у загрузчика нет.
-    images: dict[str, tuple[bytes, str]] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
 class RenderedPdf:
     content: bytes
     # На каждую страницу: какие блоки на ней стоят. По этому страница находит своё замечание.
@@ -156,11 +108,7 @@ class RenderedPdf:
     renderer: str
 
 
-def asset_url(index: int) -> str:
-    return f"{ASSET_SCHEME}{index}"
-
-
-def build_html(document: PdfDocument) -> str:
+def build_html(document: PublicationDocument) -> str:
     """Разметка книги. Всё из книги экранируется: сырой разметки исходника здесь нет."""
     language = document.language if _LANGUAGE.match(document.language) else "ru"
     title = html.escape(document.title)
@@ -236,7 +184,7 @@ def _table(element: TableElement) -> str:
     return f"<table>{''.join(rows)}</table>"
 
 
-def _render_with_weasyprint(document: PdfDocument) -> RenderedPdf:
+def _render_with_weasyprint(document: PublicationDocument) -> RenderedPdf:
     # Импорт здесь, а не в начале модуля: движку нужны системные библиотеки Pango, а API без них
     # должен работать: PDF собирает только рабочий процесс.
     import weasyprint
@@ -267,7 +215,7 @@ def _render_with_weasyprint(document: PdfDocument) -> RenderedPdf:
     )
 
 
-def _child(document: PdfDocument, folder: str) -> None:
+def _child(document: PublicationDocument, folder: str) -> None:
     """Точка входа отдельного процесса. Результат в файлах: PDF в трубу не положить."""
     if sys.platform != "win32":
         import resource
@@ -291,7 +239,7 @@ def _child(document: PdfDocument, folder: str) -> None:
 
 
 async def render_isolated(
-    document: PdfDocument,
+    document: PublicationDocument,
     *,
     tick: Callable[[], Awaitable[None]] | None = None,
     limit_seconds: float = RENDER_TIMEOUT_SECONDS,
@@ -336,7 +284,7 @@ async def render_isolated(
         )
 
 
-def render_stub(document: PdfDocument) -> RenderedPdf:
+def render_stub(document: PublicationDocument) -> RenderedPdf:
     """Заглушка для тестов и стенда без Pango: настоящий PDF с пустыми страницами."""
     anchored = [
         [element.block_id] for element in document.elements if isinstance(element, TextElement)

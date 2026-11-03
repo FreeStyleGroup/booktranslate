@@ -11,13 +11,15 @@ import pytest
 
 from app.models.block import BlockKind
 from app.services.export.base import ExportError
-from app.services.export.pdf import (
+from app.services.export.document import (
     FigureElement,
-    PdfDocument,
+    PublicationDocument,
     TableCell,
     TableElement,
     TextElement,
     TocEntry,
+)
+from app.services.export.pdf import (
     _render_with_weasyprint,
     page_count,
     page_png,
@@ -52,8 +54,8 @@ def picture() -> bytes:
     return buffer.getvalue()
 
 
-def book() -> PdfDocument:
-    return PdfDocument(
+def book() -> PublicationDocument:
+    return PublicationDocument(
         title="Насосы и клапаны",
         language="ru",
         elements=[

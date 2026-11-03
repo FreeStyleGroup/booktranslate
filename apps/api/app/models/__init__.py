@@ -13,6 +13,7 @@ from app.models.catalog import CatalogEntry
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
 from app.models.document import Document, SourceFormat, SourceRole
+from app.models.figure import FigureStatus, FigureTranslation
 from app.models.glossary_version import (
     GlossaryScope,
     GlossaryVersion,
@@ -148,6 +149,8 @@ __all__ = [
     "BookReleaseStatus",
     "ChapterRelease",
     "EditReason",
+    "FigureStatus",
+    "FigureTranslation",
     "ReleaseStatus",
     "ReviewCoverage",
     "ReviewKind",

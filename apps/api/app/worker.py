@@ -44,12 +44,21 @@ from app.services.artifacts import ArtifactService
 from app.services.context import RequestContext
 from app.services.errors import DomainError
 from app.services.export.base import ExportError
+from app.services.figures import FigureService
 from app.services.jobs import JobQueue
 from app.services.notify import NotificationService, ready_message
-from app.services.providers import STUB, get_provider, get_reviewer, provider_info, semantic_info
+from app.services.providers import (
+    STUB,
+    get_figure_reader,
+    get_provider,
+    get_reviewer,
+    provider_info,
+    semantic_info,
+)
 from app.services.qa_runner import QARunner
 from app.services.storage import get_storage
 from app.services.translation_runner import Advance, TranslationRunner
+from app.services.workspace import model_for
 
 logger = logging.getLogger("app.worker")
 
@@ -127,11 +136,14 @@ async def run_job(
     if job.kind is JobKind.RENDER:
         return await run_render(session, queue, job, context)
 
+    if job.kind is JobKind.FIGURES:
+        return await run_figures(session, queue, job, context)
+
     return await run_translation(session, queue, job, context, stop)
 
 
-class RenderCancelledError(Exception):
-    """Человек отменил сборку, пока она шла."""
+class WorkCancelledError(Exception):
+    """Человек отменил работу, пока она шла."""
 
 
 async def run_render(
@@ -143,13 +155,13 @@ async def run_render(
 
     async def beat() -> None:
         if await queue.heartbeat(job, done=job.items_done) is JobState.CANCELLED:
-            raise RenderCancelledError
+            raise WorkCancelledError
 
     service = ArtifactService(session, context, get_storage())
 
     try:
         done = await service.render(job.book_release_id, tick=beat)
-    except RenderCancelledError:
+    except WorkCancelledError:
         await session.rollback()
 
         return Outcome(JobState.CANCELLED, done=0)
@@ -157,6 +169,39 @@ async def run_render(
         await session.rollback()
 
         return Outcome(JobState.FAILED, done=0, error=str(error))
+
+    return Outcome(JobState.DONE, done=done)
+
+
+async def run_figures(
+    session: AsyncSession, queue: JobQueue, job: TranslationJob, context: RequestContext
+) -> Outcome:
+    """Прочитать и перевести надписи. Каждая картинка фиксируется сразу."""
+    if job.chapter_id is None:
+        return Outcome(JobState.FAILED, done=0, error="Глава не указана")
+
+    async def beat(done: int) -> None:
+        if await queue.heartbeat(job, done=done) is JobState.CANCELLED:
+            raise WorkCancelledError
+
+    model = await model_for(session, job.organization_id)
+    service = FigureService(session, context, get_storage())
+
+    try:
+        done = await service.process(
+            job.chapter_id,
+            reader=get_figure_reader(model),
+            provider=get_provider(model),
+            tick=beat,
+        )
+    except WorkCancelledError:
+        await session.rollback()
+
+        return Outcome(JobState.CANCELLED, done=job.items_done)
+    except (DomainError, ExportError) as error:
+        await session.rollback()
+
+        return Outcome(JobState.FAILED, done=job.items_done, error=str(error))
 
     return Outcome(JobState.DONE, done=done)
 

@@ -51,6 +51,7 @@ class JobKind(str, enum.Enum):
     CHAPTER = "chapter"  # прогон перевода главы
     QA = "qa"  # прогон проверки главы
     RENDER = "render"  # сборка файлов выпуска книги: у такого задания нет главы
+    FIGURES = "figures"  # чтение и перевод надписей на рисунках главы
 
 
 class JobState(str, enum.Enum):
@@ -90,7 +91,9 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
             "OR (kind = 'QA' AND chapter_id IS NOT NULL AND qa_run_id IS NOT NULL "
             "AND run_id IS NULL AND book_release_id IS NULL) "
             "OR (kind = 'RENDER' AND book_release_id IS NOT NULL AND chapter_id IS NULL "
-            "AND run_id IS NULL AND qa_run_id IS NULL)",
+            "AND run_id IS NULL AND qa_run_id IS NULL) "
+            "OR (kind = 'FIGURES' AND chapter_id IS NOT NULL AND run_id IS NULL "
+            "AND qa_run_id IS NULL AND book_release_id IS NULL)",
             name="translation_job_has_one_run",
         ),
         # Рабочий забирает задания по состоянию и порядку поступления.
