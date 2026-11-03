@@ -60,10 +60,15 @@ from app.models.regression import (
     RegressionStatus,
 )
 from app.models.release import (
+    ArtifactFormat,
     BookRelease,
     BookReleaseChapter,
     BookReleaseStatus,
     ChapterRelease,
+    ExportArtifact,
+    PageAudit,
+    PageStatus,
+    ReleasePass,
     ReleaseStatus,
 )
 from app.models.review import (
@@ -133,7 +138,12 @@ __all__ = [
     "RegressionItem",
     "RegressionRun",
     "RegressionStatus",
+    "ArtifactFormat",
     "BookRelease",
+    "ExportArtifact",
+    "PageAudit",
+    "PageStatus",
+    "ReleasePass",
     "BookReleaseChapter",
     "BookReleaseStatus",
     "ChapterRelease",

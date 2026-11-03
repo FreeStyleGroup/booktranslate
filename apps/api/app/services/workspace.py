@@ -36,6 +36,7 @@ UPDATABLE_FIELDS = frozenset(
         "subject",
         "share_glossary",
         "two_person_review",
+        "minor_blocks_release",
         "semantic_scope",
         "memory_publish_on",
     }
@@ -151,6 +152,7 @@ class WorkspaceSettingsService(TenantService):
                 organization_id=self.organization_id,
                 share_glossary=False,
                 two_person_review=False,
+                minor_blocks_release=False,
                 semantic_scope=QAScope.RISKY,
                 memory_publish_on=MemoryPublish.VERIFIED,
             )

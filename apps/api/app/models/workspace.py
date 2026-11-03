@@ -55,6 +55,9 @@ class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
     # команде из одного редактора это правило остановило бы работу.
     two_person_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Держат ли выпуск незакрытые незначительные замечания. Критичные и серьёзные держат всегда.
+    minor_blocks_release: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     # Что отдавать на смысловую сверку: второй проход модели по всей книге удваивает расход.
     semantic_scope: Mapped[QAScope] = mapped_column(
         Enum(QAScope, name="qa_scope", native_enum=True), nullable=False, default=QAScope.RISKY

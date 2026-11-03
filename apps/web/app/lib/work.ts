@@ -377,8 +377,9 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 /** Задание на перевод книги — работа, которая идёт без человека. */
 export type TranslationJob = {
   id: string;
-  kind: "chapter" | "qa";
-  chapter_id: string;
+  kind: "chapter" | "qa" | "render";
+  chapter_id: string | null;
+  book_release_id: string | null;
   book_id: string;
   run_id: string | null;
   qa_run_id: string | null;
@@ -849,6 +850,7 @@ export type Assembly = {
 export type BookRelease = {
   id: string;
   book_id: string;
+  title: string;
   code: string;
   version: string;
   status: "built" | "passed";
@@ -857,6 +859,50 @@ export type BookRelease = {
   toc: { chapter_code: string | null; level: number; text: string }[];
   created_at: string;
   created: boolean;
+};
+
+export type ReleaseArtifact = {
+  id: string;
+  format: "docx" | "pdf";
+  checksum: string;
+  size: number;
+  renderer_version: string;
+  manifest_hash: string;
+  page_count: number | null;
+  superseded_at: string | null;
+  created_at: string;
+};
+
+export type ReleaseFiles = {
+  artifacts: ReleaseArtifact[];
+  previous: ReleaseArtifact[];
+  job_state: JobState | null;
+  job_error: string | null;
+};
+
+export type PageAudit = {
+  page_no: number;
+  status: "unreviewed" | "pass" | "issue" | "stale";
+  issue_id: string | null;
+  checked_at: string | null;
+};
+
+export type ReleaseControl = {
+  release_id: string;
+  code: string;
+  status: "built" | "passed";
+  ready: boolean;
+  checks: { code: string; title: string; passed: boolean }[];
+  blockers: {
+    check: string;
+    code: string;
+    message: string;
+    count: number | null;
+    chapter_id: string | null;
+    issue_id: string | null;
+    page_no: number | null;
+  }[];
+  passed_at: string | null;
 };
 
 /* Редактура и финальная сверка. */

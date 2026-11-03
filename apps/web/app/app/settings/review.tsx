@@ -41,6 +41,22 @@ export function Review({ settings }: { settings: WorkspaceSettings }) {
           </span>
         </label>
 
+        <label className="st-switch">
+          <input
+            type="checkbox"
+            name="minor_blocks_release"
+            value="yes"
+            defaultChecked={current.minor_blocks_release}
+          />
+          <span>
+            Незначительные замечания тоже держат выпуск
+            <small className="st-switch__note">
+              Критичные и серьёзные держат его всегда. С этой настройкой выпуск не пройдёт контроль и
+              при незакрытых незначительных.
+            </small>
+          </span>
+        </label>
+
         <label className="field">
           <span>Что отдавать на смысловую сверку</span>
           <select name="semantic_scope" defaultValue={current.semantic_scope}>

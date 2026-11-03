@@ -7,12 +7,13 @@ import uuid
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Path, Query, Response, status
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
-from app.models.release import BookRelease
+from app.models.release import BookRelease, ExportArtifact
 from app.schemas.chapter_translation import ChangePublic
 from app.schemas.release import (
+    ArtifactPublic,
     AssemblyItemPublic,
     AssemblyProblemPublic,
     AssemblyPublic,
@@ -22,16 +23,25 @@ from app.schemas.release import (
     BookReleasePublic,
     ChapterReleaseCreate,
     ChapterReleasePublic,
+    GateBlockerPublic,
+    GateCheckPublic,
+    GatePublic,
     ManifestPublic,
+    PageAuditPublic,
+    PageIssueCreate,
+    PageIssueResult,
+    ReleaseFilesPublic,
     ReleaseGatePublic,
     TocEntryPublic,
     WorkingChangePublic,
 )
+from app.services.artifacts import MEDIA_TYPES, ArtifactService, ReleaseFiles
 from app.services.assembly import AssemblyService, Plan
 from app.services.chapter_releases import ChapterReleaseService, ReleaseView, hash_manifest
 from app.services.export import ExportFormat
 from app.services.exporting import Export
 from app.services.publication import PublicationService
+from app.services.release_gate import CHECKS, GateResult, ReleaseGateService
 
 router = APIRouter(tags=["releases"])
 
@@ -65,6 +75,7 @@ def _book_release(release: BookRelease, *, created: bool = True) -> BookReleaseP
     return BookReleasePublic(
         id=release.id,
         book_id=release.book_id,
+        title=release.manifest["title"],
         code=release.code,
         version=_version(release.version_major, release.version_minor),
         status=release.status,
@@ -299,3 +310,179 @@ async def export_book_release(
             release_id, export_format=export_format
         )
     )
+
+
+def _artifact(row: ExportArtifact) -> ArtifactPublic:
+    return ArtifactPublic(
+        id=row.id,
+        format=row.format,
+        checksum=row.checksum,
+        size=row.size,
+        renderer_version=row.renderer_version,
+        manifest_hash=row.manifest_hash,
+        page_count=row.page_count,
+        superseded_at=row.superseded_at,
+        created_at=row.created_at,
+    )
+
+
+def _gate(result: GateResult) -> GatePublic:
+    release = result.release
+
+    return GatePublic(
+        release_id=release.id,
+        code=release.code,
+        status=release.status,
+        ready=result.ready,
+        checks=[
+            GateCheckPublic(
+                code=code,
+                title=title,
+                passed=not any(row.check == code for row in result.blockers),
+            )
+            for code, title in CHECKS
+        ],
+        blockers=[
+            GateBlockerPublic(
+                check=row.check,
+                code=row.code,
+                message=row.message,
+                count=row.count,
+                chapter_id=row.chapter_id,
+                issue_id=row.issue_id,
+                page_no=row.page_no,
+            )
+            for row in result.blockers
+        ],
+        passed_at=result.passed.created_at if result.passed is not None else None,
+        snapshot=result.passed.gate_snapshot if result.passed is not None else None,
+    )
+
+
+@router.post(
+    "/book-releases/{release_id}/artifacts",
+    response_model=ReleaseFilesPublic,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def render_release(
+    release_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> ReleaseFilesPublic:
+    """Поставить сборку DOCX и PDF в очередь."""
+    service = ArtifactService(session, context, storage)
+    await service.request_render(release_id)
+
+    return _files(await service.files(release_id))
+
+
+@router.get("/book-releases/{release_id}/artifacts", response_model=ReleaseFilesPublic)
+async def release_files(
+    release_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> ReleaseFilesPublic:
+    return _files(await ArtifactService(session, context, storage).files(release_id))
+
+
+def _files(found: ReleaseFiles) -> ReleaseFilesPublic:
+    job = found.job
+
+    return ReleaseFilesPublic(
+        artifacts=[_artifact(row) for row in found.artifacts],
+        previous=[_artifact(row) for row in found.previous],
+        job_state=job.state if job is not None else None,
+        job_error=job.error if job is not None else None,
+    )
+
+
+@router.get("/artifacts/{artifact_id}/download")
+async def download_artifact(
+    artifact_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> Response:
+    service = ArtifactService(session, context, storage)
+    artifact = await service.artifact(artifact_id)
+    release = await service.release_of(artifact)
+
+    return Response(
+        content=await service.read(artifact),
+        media_type=MEDIA_TYPES[artifact.format],
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(service.filename(release, artifact))}"
+            ),
+            "X-Checksum-Sha256": artifact.checksum,
+        },
+    )
+
+
+@router.get("/artifacts/{artifact_id}/pages", response_model=list[PageAuditPublic])
+async def artifact_pages(
+    artifact_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> list[PageAuditPublic]:
+    rows = await ArtifactService(session, context, storage).pages(artifact_id)
+
+    return [PageAuditPublic.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.get("/artifacts/{artifact_id}/pages/{page_no}/image")
+async def artifact_page_image(
+    artifact_id: uuid.UUID,
+    page_no: Annotated[int, Path(ge=1, le=100_000)],
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> Response:
+    """Страница картинкой: файл выпуска неизменяем, поэтому её можно кешировать."""
+    png = await ArtifactService(session, context, storage).page_image(artifact_id, page_no)
+
+    return Response(
+        content=png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"}
+    )
+
+
+@router.post("/artifacts/{artifact_id}/pages/{page_no}", response_model=PageAuditPublic)
+async def pass_page(
+    artifact_id: uuid.UUID,
+    page_no: Annotated[int, Path(ge=1, le=100_000)],
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> PageAuditPublic:
+    """Страница верна."""
+    row = await ArtifactService(session, context, storage).mark_page(artifact_id, page_no)
+
+    return PageAuditPublic.model_validate(row, from_attributes=True)
+
+
+@router.post("/artifacts/{artifact_id}/pages/{page_no}/issue", response_model=PageIssueResult)
+async def page_issue(
+    artifact_id: uuid.UUID,
+    page_no: Annotated[int, Path(ge=1, le=100_000)],
+    payload: PageIssueCreate,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> PageIssueResult:
+    """Ошибка вёрстки: замечание со снимком страницы."""
+    audit, issue = await ArtifactService(session, context, storage).register_page_issue(
+        artifact_id, page_no, severity=payload.severity, description=payload.description
+    )
+
+    return PageIssueResult(
+        page=PageAuditPublic.model_validate(audit, from_attributes=True),
+        issue_id=issue.id,
+        issue_code=issue.code,
+    )
+
+
+@router.get("/releases/{release_id}/gate", response_model=GatePublic)
+async def release_gate(
+    release_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> GatePublic:
+    """Что мешает выпуску: машиночитаемые причины."""
+    return _gate(await ReleaseGateService(session, context, storage).check(release_id))
+
+
+@router.post("/releases/{release_id}/pass", response_model=GatePublic)
+async def pass_release(
+    release_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> GatePublic:
+    """Выставить PASS. Те же проверки, что на экране: обойти их запросом нельзя."""
+    return _gate(await ReleaseGateService(session, context, storage).pass_release(release_id))

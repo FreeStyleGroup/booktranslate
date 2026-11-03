@@ -40,8 +40,10 @@ from app.models.job import JobKind, JobState, TranslationJob
 from app.models.organization import Membership, Role, User
 from app.models.qa import QAKind, QARun
 from app.models.translation import TranslationRun
+from app.services.artifacts import ArtifactService
 from app.services.context import RequestContext
 from app.services.errors import DomainError
+from app.services.export.base import ExportError
 from app.services.jobs import JobQueue
 from app.services.notify import NotificationService, ready_message
 from app.services.providers import STUB, get_provider, get_reviewer, provider_info, semantic_info
@@ -122,7 +124,41 @@ async def run_job(
     if job.kind is JobKind.QA:
         return await run_qa(session, queue, job, context, stop)
 
+    if job.kind is JobKind.RENDER:
+        return await run_render(session, queue, job, context)
+
     return await run_translation(session, queue, job, context, stop)
+
+
+class RenderCancelledError(Exception):
+    """Человек отменил сборку, пока она шла."""
+
+
+async def run_render(
+    session: AsyncSession, queue: JobQueue, job: TranslationJob, context: RequestContext
+) -> Outcome:
+    """Собрать файлы выпуска. Сборка одним куском: кусками PDF не собрать."""
+    if job.book_release_id is None:
+        return Outcome(JobState.FAILED, done=0, error="Выпуск не указан")
+
+    async def beat() -> None:
+        if await queue.heartbeat(job, done=job.items_done) is JobState.CANCELLED:
+            raise RenderCancelledError
+
+    service = ArtifactService(session, context, get_storage())
+
+    try:
+        done = await service.render(job.book_release_id, tick=beat)
+    except RenderCancelledError:
+        await session.rollback()
+
+        return Outcome(JobState.CANCELLED, done=0)
+    except (DomainError, ExportError) as error:
+        await session.rollback()
+
+        return Outcome(JobState.FAILED, done=0, error=str(error))
+
+    return Outcome(JobState.DONE, done=done)
 
 
 async def run_qa(
