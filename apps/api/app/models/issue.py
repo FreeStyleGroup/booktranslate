@@ -158,6 +158,12 @@ class Issue(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
         ForeignKey("issues.id", deferrable=True, initially="DEFERRED"),
     )
 
+    # Прогон проверки, который это нашёл. У зарегистрированного человеком пусто.
+    qa_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("qa_runs.id", deferrable=True, initially="DEFERRED"),
+    )
+
     number: Mapped[int] = mapped_column(Integer, nullable=False)
     code: Mapped[str] = mapped_column(String(40), nullable=False)
 

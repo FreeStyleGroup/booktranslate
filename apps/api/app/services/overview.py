@@ -12,8 +12,9 @@
 
 import uuid
 from dataclasses import dataclass, field
+from typing import Any
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, Row, func, select
 
 from app.models.block import Block
 from app.models.book import BookEdition
@@ -24,6 +25,7 @@ from app.models.issue import Issue, IssueSeverity
 from app.models.job import LIVE, JobState, TranslationJob
 from app.models.memory import GlossaryTerm, TranslationUnit
 from app.models.project import Project
+from app.models.qa import QARun
 from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.models.translation import TranslationRevision, TranslationRun
 from app.services.base import TenantModel, TenantService
@@ -153,23 +155,27 @@ class OverviewService(TenantService):
         return {origin.value: int(amount) for origin, amount in rows.all()}
 
     async def _usage(self) -> tuple[Usage, float | None]:
-        """Расход по всем прогонам: по моделям, потому что цена у каждой своя."""
-        rows = await self._session.execute(
-            select(
-                TranslationRun.model,
-                func.coalesce(func.sum(TranslationRun.input_tokens), 0),
-                func.coalesce(func.sum(TranslationRun.output_tokens), 0),
-                func.coalesce(func.sum(TranslationRun.cached_input_tokens), 0),
-                func.coalesce(func.sum(TranslationRun.cache_write_tokens), 0),
+        """Расход по всем прогонам: перевод и смысловая сверка, по моделям, потом итог."""
+        rows: list[Row[Any]] = []
+
+        for source in (TranslationRun, QARun):
+            found = await self._session.execute(
+                select(
+                    source.model,
+                    func.coalesce(func.sum(source.input_tokens), 0),
+                    func.coalesce(func.sum(source.output_tokens), 0),
+                    func.coalesce(func.sum(source.cached_input_tokens), 0),
+                    func.coalesce(func.sum(source.cache_write_tokens), 0),
+                )
+                .where(source.organization_id == self.organization_id, source.model.is_not(None))
+                .group_by(source.model)
             )
-            .where(TranslationRun.organization_id == self.organization_id)
-            .group_by(TranslationRun.model)
-        )
+            rows.extend(found.all())
 
         usage = Usage()
         total: float | None = None
 
-        for model, spent_in, spent_out, cached, written in rows.all():
+        for model, spent_in, spent_out, cached, written in rows:
             # 🔥 int(): сумму по целым Postgres возвращает типом numeric, и в Python
             # она приходит Decimal, а прейскурант умножает её на float.
             part = Usage(

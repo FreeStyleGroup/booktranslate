@@ -21,7 +21,17 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -38,6 +48,7 @@ class JobKind(str, enum.Enum):
     """
 
     CHAPTER = "chapter"  # прогон перевода главы
+    QA = "qa"  # прогон проверки главы
 
 
 class JobState(str, enum.Enum):
@@ -64,6 +75,12 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("state IN ('WAITING', 'RUNNING')"),
         ),
+        # Задание выполняет ровно один прогон — того вида, какой у него указан.
+        CheckConstraint(
+            "(kind = 'CHAPTER' AND run_id IS NOT NULL AND qa_run_id IS NULL) "
+            "OR (kind = 'QA' AND qa_run_id IS NOT NULL AND run_id IS NULL)",
+            name="translation_job_has_one_run",
+        ),
         # Рабочий забирает задания по состоянию и порядку поступления.
         Index("translation_jobs_queue", "state", "created_at"),
     )
@@ -87,12 +104,14 @@ class TranslationJob(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
 
     # Прогон, который это задание выполняет. Состояние прогона — состояние
     # этого задания: второй его копии в прогоне нет и разойтись нечему.
-    run_id: Mapped[uuid.UUID] = mapped_column(
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("translation_runs.id", ondelete="CASCADE"),
-        nullable=False,
         unique=True,
         index=True,
+    )
+    qa_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True), ForeignKey("qa_runs.id", ondelete="CASCADE"), unique=True
     )
 
     state: Mapped[JobState] = mapped_column(

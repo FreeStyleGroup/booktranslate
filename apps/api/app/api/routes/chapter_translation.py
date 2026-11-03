@@ -35,6 +35,7 @@ from app.services.export import ExportFormat
 from app.services.exporting import Export, ExportService
 from app.services.profiling import EstimateService
 from app.services.providers import provider_name
+from app.services.qa import QAService
 from app.services.terminology_gate import GateItem
 from app.services.translation_runner import is_protected
 from app.services.translation_runs import (
@@ -46,6 +47,10 @@ from app.services.translation_runs import (
     RunView,
 )
 from app.services.workspace import WorkspaceSettingsService
+
+# Отметки редакции: формально проверено, смысловая сверка выполнена.
+Coverage = dict[uuid.UUID, tuple[bool, bool]]
+NOT_CHECKED = (False, False)
 
 router = APIRouter(tags=["translation"])
 
@@ -118,7 +123,11 @@ async def chapter_blocks(
         chapter_id, limit=limit, offset=offset
     )
 
-    return ChapterBlockPage(total=page.total, items=[_block(row) for row in page.items])
+    covered = await QAService(session, context).coverage_of(
+        [row.current.id for row in page.items if row.current is not None]
+    )
+
+    return ChapterBlockPage(total=page.total, items=[_block(row, covered) for row in page.items])
 
 
 @router.get("/blocks/{block_id}/revisions", response_model=BlockHistoryPublic)
@@ -126,7 +135,9 @@ async def block_revisions(
     block_id: uuid.UUID, context: ContextDep, session: SessionDep
 ) -> BlockHistoryPublic:
     """История редакций блока: новые первыми, с происхождением и сравнением."""
-    return _history(*await ChapterTranslationService(session, context).history(block_id))
+    block, views = await ChapterTranslationService(session, context).history(block_id)
+
+    return await _history_with_checks(session, context, block, views)
 
 
 @router.post("/revisions/{revision_id}/adopt", response_model=BlockHistoryPublic)
@@ -137,7 +148,17 @@ async def adopt_revision(
     service = ChapterTranslationService(session, context)
     adopted = await service.adopt(revision_id)
 
-    return _history(*await service.history(adopted.id))
+    block, views = await service.history(adopted.id)
+
+    return await _history_with_checks(session, context, block, views)
+
+
+async def _history_with_checks(
+    session: SessionDep, context: ContextDep, block: Block, views: list[RevisionView]
+) -> BlockHistoryPublic:
+    covered = await QAService(session, context).coverage_of([view.revision.id for view in views])
+
+    return _history(block, views, covered)
 
 
 @router.get("/chapters/{chapter_id}/translation/estimate", response_model=ChapterEstimatePublic)
@@ -221,14 +242,14 @@ def _file(result: Export) -> Response:
     )
 
 
-def _history(block: Block, views: list[RevisionView]) -> BlockHistoryPublic:
+def _history(block: Block, views: list[RevisionView], covered: Coverage) -> BlockHistoryPublic:
     return BlockHistoryPublic(
         block_id=block.id,
         code=block.code,
         source_text=block.source_text,
         active=block.active,
         protected=is_protected(block.kind, block.source_text),
-        items=[_revision(view) for view in views],
+        items=[_revision(view, covered) for view in views],
     )
 
 
@@ -294,8 +315,11 @@ def _run(view: RunView) -> TranslationRunPublic:
     )
 
 
-def _block(row: BlockRow) -> ChapterBlockPublic:
+def _block(row: BlockRow, covered: Coverage) -> ChapterBlockPublic:
     block = row.block
+    formal, semantic = (
+        covered.get(row.current.id, NOT_CHECKED) if row.current is not None else NOT_CHECKED
+    )
 
     return ChapterBlockPublic(
         id=block.id,
@@ -306,11 +330,14 @@ def _block(row: BlockRow) -> ChapterBlockPublic:
         protected=is_protected(block.kind, block.source_text),
         current=RevisionBrief.model_validate(row.current) if row.current is not None else None,
         variants=row.variants,
+        formal_checked=formal,
+        semantic_checked=semantic,
     )
 
 
-def _revision(view: RevisionView) -> RevisionPublic:
+def _revision(view: RevisionView, covered: Coverage) -> RevisionPublic:
     revision, run = view.revision, view.run
+    formal, semantic = covered.get(revision.id, NOT_CHECKED)
 
     return RevisionPublic(
         id=revision.id,
@@ -331,6 +358,8 @@ def _revision(view: RevisionView) -> RevisionPublic:
         glossary_label=view.glossary_label,
         ignore_terminology=run.ignore_terminology if run is not None else False,
         author=view.author,
+        formal_checked=formal,
+        semantic_checked=semantic,
         compared_with=view.compared_with,
         changes=[ChangePublic(op=item.op, text=item.text) for item in view.changes],
         created_at=revision.created_at,

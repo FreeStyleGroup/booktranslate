@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import Role
+from app.models.qa import QAScope
 from app.models.workspace import WorkspaceSettings
 from app.services.audit import AuditService
 from app.services.base import TenantService
@@ -30,7 +31,7 @@ from app.services.subjects import is_subject
 SETTINGS_ROLES = (Role.ADMIN,)
 
 UPDATABLE_FIELDS = frozenset(
-    {"translation_model", "subject", "share_glossary", "two_person_review"}
+    {"translation_model", "subject", "share_glossary", "two_person_review", "semantic_scope"}
 )
 
 
@@ -47,6 +48,17 @@ async def model_for(session: AsyncSession, organization_id: uuid.UUID) -> str:
     )
 
     return chosen or default_model()
+
+
+async def semantic_scope_for(session: AsyncSession, organization_id: uuid.UUID) -> QAScope:
+    """Что отдавать на смысловую сверку. Без настройки — только рискованное: это дешевле."""
+    chosen = await session.scalar(
+        select(WorkspaceSettings.semantic_scope).where(
+            WorkspaceSettings.organization_id == organization_id
+        )
+    )
+
+    return chosen or QAScope.RISKY
 
 
 async def subject_for(session: AsyncSession, organization_id: uuid.UUID) -> str | None:
@@ -121,6 +133,7 @@ class WorkspaceSettingsService(TenantService):
                 organization_id=self.organization_id,
                 share_glossary=False,
                 two_person_review=False,
+                semantic_scope=QAScope.RISKY,
             )
             self._session.add(settings)
 

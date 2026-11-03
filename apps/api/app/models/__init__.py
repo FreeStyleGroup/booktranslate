@@ -44,6 +44,14 @@ from app.models.memory import (
 from app.models.notification import NotificationSettings
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.project import Project
+from app.models.qa import (
+    FindingDisposition,
+    QAFinding,
+    QAKind,
+    QARun,
+    QAScope,
+    RevisionCheck,
+)
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
@@ -92,6 +100,12 @@ __all__ = [
     "IssueEventKind",
     "IssueSeverity",
     "IssueStatus",
+    "FindingDisposition",
+    "QAFinding",
+    "QAKind",
+    "QARun",
+    "QAScope",
+    "RevisionCheck",
     "JobKind",
     "JobState",
     "Membership",

@@ -207,10 +207,46 @@ class IssueService(TenantService):
         dedupe_key: str | None = None,
         automatic: bool = False,
     ) -> Issue:
-        """Завести замечание на блок или объект.
+        """Завести замечание и зафиксировать его."""
+        issue, created = await self.file(
+            block_id=block_id,
+            object_id=object_id,
+            category=category,
+            severity=severity,
+            description=description,
+            proposed_fix=proposed_fix,
+            parent_issue_id=parent_issue_id,
+            assignee_id=assignee_id,
+            dedupe_key=dedupe_key,
+            automatic=automatic,
+        )
+
+        if created:
+            await self._session.commit()
+            await self._session.refresh(issue)
+
+        return issue
+
+    async def file(
+        self,
+        *,
+        block_id: uuid.UUID | None,
+        object_id: uuid.UUID | None,
+        category: IssueCategory,
+        severity: IssueSeverity,
+        description: str,
+        proposed_fix: str | None = None,
+        parent_issue_id: uuid.UUID | None = None,
+        assignee_id: uuid.UUID | None = None,
+        dedupe_key: str | None = None,
+        automatic: bool = False,
+        qa_run_id: uuid.UUID | None = None,
+    ) -> tuple[Issue, bool]:
+        """Завести замечание на блок или объект; транзакцией управляет вызывающий.
 
         Код, снимки и редакцию подставляет сервер: клиент сообщает только, на что замечание и в
-        чём оно. Повторная находка с тем же отпечатком возвращает прежнюю запись.
+        чём оно. Повторная находка с тем же отпечатком возвращает прежнюю запись, и второе значение
+        ответа говорит, новая ли это запись.
         """
         self._context.require(*REGISTERING_ROLES)
 
@@ -224,7 +260,7 @@ class IssueService(TenantService):
         if dedupe_key is not None:
             known = await self._by_dedupe(dedupe_key)
             if known is not None:
-                return known
+                return known, False
 
         block = await self._block(block_id) if block_id is not None else None
         item = await self._object(object_id) if object_id is not None else None
@@ -257,6 +293,7 @@ class IssueService(TenantService):
             block_id=block.id if block is not None else None,
             object_id=item.id if item is not None else None,
             parent_issue_id=parent_issue_id,
+            qa_run_id=qa_run_id,
             number=number,
             code=code,
             category=category,
@@ -277,22 +314,21 @@ class IssueService(TenantService):
             # Проверка заводит сотню находок одной транзакцией: порядок в реестре не случаен.
             created_at=datetime.now(UTC),
         )
-        self._session.add(issue)
 
         try:
-            await self._session.flush()
+            # Точка сохранения: отказ по отпечатку не должен откатывать пачку вызывающего.
+            async with self._session.begin_nested():
+                self._session.add(issue)
+                await self._session.flush()
         except IntegrityError:
             # Две проверки нашли одно и то же одновременно: ограничение базы пропустило одну.
-            await self._session.rollback()
             if dedupe_key is not None and (known := await self._by_dedupe(dedupe_key)) is not None:
-                return known
+                return known, False
             raise
 
         self._event(issue, IssueEventKind.CREATED, to_status=IssueStatus.NEW)
-        await self._session.commit()
-        await self._session.refresh(issue)
 
-        return issue
+        return issue, True
 
     # ── чтение ──
 
@@ -869,7 +905,10 @@ class IssueService(TenantService):
                 kind=kind,
                 from_status=from_status,
                 to_status=to_status,
-                actor_id=self._context.user.id,
+                # Нашла проверка: запуск заказал человек, но регистрировал не он.
+                actor_id=None
+                if issue.automatic and kind is IssueEventKind.CREATED
+                else self._context.user.id,
                 note=note,
                 related_revision_id=revision_id,
                 payload=payload or {},

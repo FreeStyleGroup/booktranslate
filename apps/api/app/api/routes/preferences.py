@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from app.api.deps import ContextDep, SessionDep
 from app.core.config import get_settings
 from app.models.notification import NotificationSettings
+from app.models.qa import QAScope
 from app.models.workspace import WorkspaceSettings
 from app.schemas.notification import NotificationSettingsPublic, NotificationSettingsUpdate
 from app.schemas.workspace import (
@@ -98,6 +99,7 @@ def _workspace(settings: WorkspaceSettings | None) -> WorkspaceSettingsPublic:
         subjects=[SubjectPublic(id=subject.id, title=subject.title) for subject in SUBJECTS],
         share_glossary=settings is not None and settings.share_glossary,
         two_person_review=settings is not None and settings.two_person_review,
+        semantic_scope=settings.semantic_scope if settings is not None else QAScope.RISKY,
         models=[
             ModelChoicePublic(
                 id=choice.id,

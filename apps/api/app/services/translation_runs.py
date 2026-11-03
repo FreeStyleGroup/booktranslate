@@ -402,7 +402,7 @@ class ChapterTranslationService(TenantService):
             # Одна глава — один живой прогон; ограничение стоит в базе, и два
             # одновременных нажатия проверку выше проходят оба.
             await self._session.rollback()
-            raise ConflictError("Глава уже переводится") from error
+            raise ConflictError("По этой главе уже идёт работа: дождитесь её конца") from error
 
         await self._session.refresh(run)
         await self._session.refresh(job)

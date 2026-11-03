@@ -115,6 +115,9 @@ class ChapterBlockPublic(BaseModel):
     protected: bool
     current: RevisionBrief | None
     variants: int
+    # Два разных индикатора: одна проверка другую не заменяет, и ни одна не значит «готово».
+    formal_checked: bool
+    semantic_checked: bool
 
 
 class ChapterBlockPage(BaseModel):
@@ -148,6 +151,8 @@ class RevisionPublic(BaseModel):
     glossary_label: str | None
     ignore_terminology: bool
     author: str | None
+    formal_checked: bool
+    semantic_checked: bool
     compared_with: int | None
     changes: list[ChangePublic]
     created_at: datetime

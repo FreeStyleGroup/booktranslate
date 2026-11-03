@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from app.models.qa import QAScope
+
 
 class ModelChoicePublic(BaseModel):
     id: str
@@ -37,6 +39,8 @@ class WorkspaceSettingsPublic(BaseModel):
     share_glossary: bool
     # Критичное замечание решает не тот, кто его нашёл или исправил.
     two_person_review: bool
+    # Что отдавать на смысловую сверку.
+    semantic_scope: QAScope
 
 
 class WorkspaceSettingsUpdate(BaseModel):
@@ -51,3 +55,4 @@ class WorkspaceSettingsUpdate(BaseModel):
     subject: str | None = Field(default=None, max_length=60)
     share_glossary: bool | None = None
     two_person_review: bool | None = None
+    semantic_scope: QAScope | None = None

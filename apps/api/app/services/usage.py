@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 
 from app.models.book import BookEdition
 from app.models.project import Project
+from app.models.qa import QARun
 from app.models.translation import TranslationRun
 from app.services.base import TenantService
 from app.services.pricing import estimate_usd
@@ -154,31 +155,33 @@ class UsageService(TenantService):
         )
 
     async def _rows(self) -> list[_Row]:
-        month = func.to_char(TranslationRun.created_at, "YYYY-MM")
+        # Смысловая сверка оплачивается так же, как перевод: отчёт без неё занижал бы счёт.
+        return [*await self._rows_of(TranslationRun), *await self._rows_of(QARun)]
+
+    async def _rows_of(self, source: type[TranslationRun] | type[QARun]) -> list[_Row]:
+        month = func.to_char(source.created_at, "YYYY-MM")
         spent = (
             await self._session.execute(
                 select(
                     BookEdition.id,
                     BookEdition.title,
                     Project.name,
-                    TranslationRun.model,
+                    source.model,
                     month,
-                    func.sum(TranslationRun.input_tokens),
-                    func.sum(TranslationRun.output_tokens),
-                    func.sum(TranslationRun.cached_input_tokens),
-                    func.sum(TranslationRun.cache_write_tokens),
+                    func.sum(source.input_tokens),
+                    func.sum(source.output_tokens),
+                    func.sum(source.cached_input_tokens),
+                    func.sum(source.cache_write_tokens),
                 )
-                .join(BookEdition, BookEdition.id == TranslationRun.book_id)
+                .join(BookEdition, BookEdition.id == source.book_id)
                 .join(Project, Project.id == BookEdition.project_id)
                 .where(
-                    TranslationRun.organization_id == self.organization_id,
+                    source.organization_id == self.organization_id,
                     # Прогоны без единого потраченного токена в отчёт о расходе не
                     # входят: строка с нулями ничего не сообщает, а список делает длиннее.
-                    (TranslationRun.input_tokens + TranslationRun.output_tokens) > 0,
+                    (source.input_tokens + source.output_tokens) > 0,
                 )
-                .group_by(
-                    BookEdition.id, BookEdition.title, Project.name, TranslationRun.model, month
-                )
+                .group_by(BookEdition.id, BookEdition.title, Project.name, source.model, month)
             )
         ).all()
 
@@ -187,7 +190,7 @@ class UsageService(TenantService):
                 book_id=row[0],
                 title=row[1],
                 project_name=row[2],
-                model=row[3],
+                model=row[3] or "",
                 month=row[4],
                 # 🔥 int(): сумму по целым Postgres возвращает типом numeric, и в Python
                 # она приходит Decimal, а прейскурант умножает её на float.
