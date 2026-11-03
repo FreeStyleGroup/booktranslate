@@ -138,6 +138,23 @@ def ready_message(*, title: str, document_id: uuid.UUID, translated: int, flagge
     )
 
 
+def chapter_ready_message(
+    *, title: str, book_id: uuid.UUID, chapter_id: uuid.UUID, translated: int, rejected: int
+) -> Message:
+    """Текст о переведённой главе: сколько готово и что осталось без перевода."""
+    where = f"{get_settings().web_url.rstrip('/')}/app/books/{book_id}/chapters/{chapter_id}"
+    verdict = (
+        ""
+        if rejected == 0
+        else f"Модель не справилась с блоками ({rejected}): они остались без перевода. "
+    )
+
+    return Message(
+        subject=f"Глава «{title}» переведена",
+        body=f"Глава «{title}» переведена: блоков — {translated}.\n{verdict}{where}",
+    )
+
+
 class EmailChannel:
     """Почта — через ящик площадки.
 

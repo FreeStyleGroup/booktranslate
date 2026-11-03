@@ -20,8 +20,11 @@ from app.schemas.book_object import (
     MentionPublic,
     ObjectDetailPublic,
     ObjectPublic,
+    VerificationPublic,
 )
 from app.services.book_objects import ObjectService, PlacedObject
+from app.services.errors import ConflictError
+from app.services.translation_runs import ChapterTranslationService, VerificationState
 
 router = APIRouter(tags=["objects"])
 
@@ -80,14 +83,23 @@ async def object_detail(
     view = await ObjectService(session, context, storage).view(object_id, master_id=master_id)
     prefix = _prefix(view.chapter)
     placed = view.placed
+    translation = ChapterTranslationService(session, context)
+    own = _own_blocks(placed)
+    texts = await translation.current_texts([block.id for block in own])
+    state = await translation.object_state(placed.object, own)
 
     return ObjectDetailPublic(
         **_summary(placed, prefix, payload=placed.object.payload),
         book_id=view.chapter.book_id,
         master_id=view.master.id,
         master_label=view.master.label,
-        content=[_block(block, prefix) for block in placed.content],
-        caption_block=_block(placed.caption, prefix) if placed.caption is not None else None,
+        content=[_block(block, prefix, texts.get(block.id)) for block in placed.content],
+        caption_block=(
+            _block(placed.caption, prefix, texts.get(placed.caption.id))
+            if placed.caption is not None
+            else None
+        ),
+        verification=_verification(state),
         mentions=[
             MentionPublic(
                 block=_block(mention.block, _prefix(mention.chapter)),
@@ -99,6 +111,27 @@ async def object_detail(
         ],
         parent_code=prefix + view.parent.code if view.parent is not None else None,
     )
+
+
+@router.post("/objects/{object_id}/verification", response_model=VerificationPublic)
+async def verify_object(
+    object_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> VerificationPublic:
+    """Отметить объект проверенным технически.
+
+    Отметка относится к содержимому и текущим редакциям: изменилось что-то из
+    этого — она перестаёт действовать сама.
+    """
+    view = await ObjectService(session, context, storage).view(object_id, master_id=None)
+
+    if not view.placed.object.active:
+        raise ConflictError("Объект выведен из действия: проверять нечего")
+
+    state = await ChapterTranslationService(session, context).verify_object(
+        view.placed.object, _own_blocks(view.placed)
+    )
+
+    return _verification(state)
 
 
 @router.get("/objects/{object_id}/images/{index}")
@@ -180,7 +213,21 @@ def _summary(placed: PlacedObject, prefix: str, *, payload: dict[str, Any]) -> d
     }
 
 
-def _block(block: Block, prefix: str) -> BlockRefPublic:
+def _own_blocks(placed: PlacedObject) -> list[Block]:
+    """Блоки объекта: содержимое и подпись."""
+    return [*placed.content, *([placed.caption] if placed.caption is not None else [])]
+
+
+def _verification(state: VerificationState) -> VerificationPublic:
+    return VerificationPublic(
+        verified=state.verified,
+        verified_at=state.verified_at,
+        verified_by=state.verified_by,
+        outdated=state.outdated,
+    )
+
+
+def _block(block: Block, prefix: str, translation: str | None = None) -> BlockRefPublic:
     row = block.source_location.get("row")
     column = block.source_location.get("column")
 
@@ -193,6 +240,7 @@ def _block(block: Block, prefix: str) -> BlockRefPublic:
         active=block.active,
         row=row if isinstance(row, int) else None,
         column=column if isinstance(column, int) else None,
+        translation=translation,
     )
 
 

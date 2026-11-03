@@ -1,6 +1,7 @@
 """Схемы специальных объектов главы."""
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -21,6 +22,8 @@ class BlockRefPublic(BaseModel):
     # Место ячейки в сетке таблицы; у остальных блоков пусто.
     row: int | None
     column: int | None
+    # Текущая редакция перевода — рядом с оригиналом. Пусто, пока не переведён.
+    translation: str | None = None
 
 
 class ObjectPublic(BaseModel):
@@ -57,6 +60,16 @@ class MentionPublic(BaseModel):
     phrase: str
 
 
+class VerificationPublic(BaseModel):
+    """Отметка «проверено технически»: есть ли она и действует ли сейчас."""
+
+    verified: bool
+    verified_at: datetime | None
+    verified_by: str | None
+    # Отметка была, но объект или редакции его блоков с тех пор изменились.
+    outdated: bool
+
+
 class ObjectDetailPublic(ObjectPublic):
     """Объект со всем, что к нему относится, — в одной версии мастера."""
 
@@ -68,6 +81,7 @@ class ObjectDetailPublic(ObjectPublic):
     mentions: list[MentionPublic]
     # Объект, из которого этот получился при новой версии мастера.
     parent_code: str | None
+    verification: VerificationPublic
 
 
 class FoundObjectPublic(BaseModel):

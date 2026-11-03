@@ -3,9 +3,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from app.models.job import JobState
+from app.models.job import JobKind, JobState
 
 
 class TranslationJobPublic(BaseModel):
@@ -19,11 +19,15 @@ class TranslationJobPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    document_id: uuid.UUID
+    kind: JobKind
+    document_id: uuid.UUID | None
+    chapter_id: uuid.UUID | None
+    book_id: uuid.UUID | None
+    run_id: uuid.UUID | None
     # Название книги — из подгруженной вместе с заданием записи: список
     # заданий читают люди, а не программы, и «книга такая-то переведена»
     # без названия им не о чем.
-    document_title: str = Field(validation_alias=AliasPath("document", "title"))
+    title: str
     state: JobState
     requested_by_id: uuid.UUID | None
     attempts: int
