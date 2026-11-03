@@ -11,6 +11,7 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
@@ -118,6 +119,8 @@ class QAService(TenantService):
             output_tokens=0,
             cached_input_tokens=0,
             cache_write_tokens=0,
+            # Время часов, а не начала транзакции: по нему выбирается последний прогон главы.
+            created_at=datetime.now(UTC),
         )
         job = TranslationJob(
             organization_id=self.organization_id,
