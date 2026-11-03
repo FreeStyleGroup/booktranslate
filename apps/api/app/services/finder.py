@@ -1,4 +1,4 @@
-"""Общий поиск по кабинету: книги, словарь, каталог справок, сегменты.
+"""Общий поиск по кабинету: файлы, словарь, каталог справок, текст книг.
 
 Один запрос — четыре ответа. Человек, набравший «клапан» в шапке, не знает
 заранее, где это слово лежит: в названии книги, в словаре, в справке или
@@ -6,13 +6,13 @@
 найти вовсе; вместо этого ищется везде, а группы показываются по очереди.
 
 Поиск по подстроке, без морфологии и без полнотекстового индекса: на
-объёмах бюро — тысячи терминов, десятки тысяч сегментов — `ILIKE` по
+объёмах бюро — тысячи терминов, десятки тысяч блоков — `ILIKE` по
 индексированной организации отвечает за доли секунды, а полнотекстовый
 поиск с русской морфологией — отдельная работа, которую стоит делать,
 когда подстрока перестанет находить.
 
 Из каждой группы берётся немного, а общее число считается отдельно: по
-нему видно, что «ещё сорок сегментов» есть, и куда за ними идти.
+нему видно, что «ещё сорок блоков» есть, и куда за ними идти.
 """
 
 from dataclasses import dataclass, field
@@ -20,10 +20,13 @@ from typing import Any
 
 from sqlalchemy import Select, func, or_, select
 
+from app.models.block import Block
+from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
+from app.models.chapter import Chapter
 from app.models.document import Document
 from app.models.memory import GlossaryTerm
-from app.models.segment import Segment
+from app.models.translation import TranslationRevision
 from app.services.base import TenantService
 from app.services.search import ESCAPE, contains
 
@@ -32,11 +35,13 @@ MIN_QUERY = 2
 
 
 @dataclass(slots=True)
-class SegmentHit:
-    """Сегмент вместе с книгой: без названия книги строка ни о чём."""
+class BlockHit:
+    """Блок вместе с книгой и главой: без них строка ни о чём."""
 
-    segment: Segment
-    document_title: str
+    block: Block
+    chapter: Chapter
+    book_title: str
+    translation: str | None
 
 
 @dataclass(slots=True)
@@ -50,7 +55,7 @@ class Found:
     documents: Group[Document]
     terms: Group[GlossaryTerm]
     entries: Group[CatalogEntry]
-    segments: Group[SegmentHit]
+    blocks: Group[BlockHit]
 
 
 class Finder(TenantService):
@@ -61,7 +66,7 @@ class Finder(TenantService):
             documents=await self._documents(pattern, per_group),
             terms=await self._terms(pattern, per_group),
             entries=await self._entries(pattern, per_group),
-            segments=await self._segments(pattern, per_group),
+            blocks=await self._blocks(pattern, per_group),
         )
 
     async def _documents(self, pattern: str, limit: int) -> Group[Document]:
@@ -116,35 +121,44 @@ class Finder(TenantService):
             ),
         )
 
-    async def _segments(self, pattern: str, limit: int) -> Group[SegmentHit]:
-        """Сегменты — с названием книги одним соединением.
+    async def _blocks(self, pattern: str, limit: int) -> Group[BlockHit]:
+        """Блоки — по исходнику и по текущей редакции, с книгой и главой.
 
-        Свежие книги первыми, внутри книги — по порядку: человек, ищущий
-        фразу, чаще всего ищет её в том, над чем работает сейчас.
+        Свежие книги первыми, внутри главы — по порядку: человек, ищущий фразу, чаще
+        всего ищет её в том, над чем работает сейчас.
         """
         condition = (
-            Segment.organization_id == self.organization_id,
+            Block.organization_id == self.organization_id,
+            Block.active.is_(True),
             or_(
-                Segment.source_text.ilike(pattern, escape=ESCAPE),
-                Segment.target_text.ilike(pattern, escape=ESCAPE),
+                Block.source_text.ilike(pattern, escape=ESCAPE),
+                TranslationRevision.text.ilike(pattern, escape=ESCAPE),
             ),
         )
 
         counted = await self._session.scalar(
-            select(func.count()).select_from(Segment).where(*condition)
+            select(func.count())
+            .select_from(Block)
+            .outerjoin(TranslationRevision, TranslationRevision.id == Block.current_revision_id)
+            .where(*condition)
         )
 
         rows = await self._session.execute(
-            select(Segment, Document.title)
-            .join(Document, Document.id == Segment.document_id)
+            select(Block, Chapter, BookEdition.title, TranslationRevision.text)
+            .join(Chapter, Chapter.id == Block.chapter_id)
+            .join(BookEdition, BookEdition.id == Chapter.book_id)
+            .outerjoin(TranslationRevision, TranslationRevision.id == Block.current_revision_id)
             .where(*condition)
-            .order_by(Document.updated_at.desc(), Segment.position)
+            .order_by(BookEdition.updated_at.desc(), Chapter.ordinal, Block.ordinal)
             .limit(limit)
         )
 
         return Group(
             total=int(counted or 0),
-            items=[SegmentHit(segment=segment, document_title=title) for segment, title in rows],
+            items=[
+                BlockHit(block=block, chapter=chapter, book_title=title, translation=translation)
+                for block, chapter, title, translation in rows
+            ],
         )
 
     async def _count(self, statement: Select[Any]) -> int:

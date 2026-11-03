@@ -8,7 +8,9 @@
 from typing import Any
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.chapters import block_rows, translated_book
 from tests.conftest import requires_database
 from tests.factories import Account, register
 
@@ -138,8 +140,10 @@ async def test_repeated_row_inside_file_does_not_break_import(db_client: AsyncCl
 
 
 @requires_database
-async def test_imported_terms_reach_translation(db_client: AsyncClient) -> None:
-    """Загруженное сразу работает: термин уходит модели и подставляется."""
+async def test_imported_terms_reach_translation(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Загруженное входит в версию глоссария и доезжает до перевода."""
     account = await register(db_client)
     await upload(db_client, account)
 
@@ -148,23 +152,13 @@ async def test_imported_terms_reach_translation(db_client: AsyncClient) -> None:
         headers=account.headers,
         json={"name": "Книга", "source_language": "en", "target_language": "ru"},
     )
-    project_id = project.json()["id"]
 
-    uploaded = await db_client.post(
-        f"/projects/{project_id}/documents",
-        headers=account.headers,
-        files={"file": ("manual.txt", b"Open the valve.\n", "text/plain")},
+    book = await translated_book(
+        db_client, session, account, data=b"Open the valve.\n", project_id=project.json()["id"]
     )
-    document_id = uploaded.json()["id"]
+    rows = await block_rows(db_client, account, book.chapter)
 
-    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
-    await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
-
-    segments = (
-        await db_client.get(f"/documents/{document_id}/segments", headers=account.headers)
-    ).json()["items"]
-
-    assert "клапан" in segments[0]["target_text"]
+    assert "клапан" in rows[0]["current"]["text"]
 
 
 @requires_database

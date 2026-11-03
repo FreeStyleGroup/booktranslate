@@ -217,7 +217,11 @@ class MasterService(TenantService):
 
         for step in steps:
             if isinstance(step, Keep):
-                ordered[step.parsed] = known[step.existing]
+                kept = known[step.existing]
+                ordered[step.parsed] = kept
+                # Текст тот же, а место в файле могло сдвинуться: по нему перевод
+                # вписывается обратно в исходник.
+                kept.source_location = parsed[step.parsed].location
             elif isinstance(step, Retire):
                 known[step.existing].active = False
                 retired += 1

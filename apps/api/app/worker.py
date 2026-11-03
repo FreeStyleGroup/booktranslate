@@ -1,4 +1,4 @@
-"""Фоновый перевод: `python -m app.worker`.
+"""Фоновая работа: `python -m app.worker`.
 
 Отдельный процесс, а не задача внутри API. Разница не в изяществе:
 перевод книги идёт часами, и выкат новой версии API не должен обрывать
@@ -10,7 +10,7 @@
 1. подбирает задания, брошенные убитыми рабочими;
 2. забирает следующее из очереди — `FOR UPDATE SKIP LOCKED`, поэтому
    рабочих может быть сколько угодно и задание достаётся одному;
-3. переводит книгу пачками, отмечаясь живым после каждой;
+3. переводит главу пачками, отмечаясь живым после каждой;
 4. по готовности отправляет уведомление.
 
 🔥 Сделанное фиксируется после каждой пачки. Из этого следует всё
@@ -35,24 +35,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.session import get_sessionmaker
-from app.models.document import Document
-from app.models.job import JobKind, JobState, TranslationJob
+from app.models.job import JobState, TranslationJob
 from app.models.organization import Membership, Role, User
 from app.models.translation import TranslationRun
 from app.services.context import RequestContext
 from app.services.errors import DomainError
 from app.services.jobs import JobQueue
-from app.services.notify import (
-    Message,
-    NotificationService,
-    chapter_ready_message,
-    ready_message,
-)
+from app.services.notify import NotificationService, ready_message
 from app.services.providers import STUB, get_provider, provider_info
-from app.services.review import ReviewService
-from app.services.translation import TranslationService
 from app.services.translation_runner import TranslationRunner
-from app.services.workspace import model_for
 
 logger = logging.getLogger("app.worker")
 
@@ -116,7 +107,7 @@ async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | 
     return RequestContext(user=owner, organization_id=job.organization_id, role=Role.OWNER)
 
 
-async def run_chapter_job(
+async def run_job(
     session: AsyncSession,
     queue: JobQueue,
     job: TranslationJob,
@@ -124,10 +115,10 @@ async def run_chapter_job(
     stop: asyncio.Event,
 ) -> Outcome:
     """Выполнить прогон перевода главы — до конца или до причины остановиться."""
-    run = await session.get(TranslationRun, job.run_id) if job.run_id is not None else None
+    run = await session.get(TranslationRun, job.run_id)
 
     if run is None:
-        return Outcome(JobState.FAILED, done=job.segments_done, error="Прогон перевода не найден")
+        return Outcome(JobState.FAILED, done=job.items_done, error="Прогон перевода не найден")
 
     # Прогон записал, чем переводит. Настройки сменились, пока он ждал, — значит,
     # запись разошлась бы с тем, чем на самом деле переведено, а это та самая
@@ -137,7 +128,7 @@ async def run_chapter_job(
     if (info.provider, info.prompt_version) != (run.provider, run.prompt_version):
         return Outcome(
             JobState.FAILED,
-            done=job.segments_done,
+            done=job.items_done,
             error=(
                 "Настройки перевода изменились после постановки в очередь. Переведённое "
                 "сохранено — запустите перевод заново."
@@ -148,7 +139,7 @@ async def run_chapter_job(
         session, context, get_provider(None if run.provider == STUB else run.model)
     )
     batch = get_settings().worker_batch
-    done = job.segments_done
+    done = job.items_done
     run_id = run.id
 
     while True:
@@ -187,113 +178,16 @@ async def run_chapter_job(
             )
 
 
-async def run_job(
-    session: AsyncSession,
-    queue: JobQueue,
-    job: TranslationJob,
-    context: RequestContext,
-    stop: asyncio.Event,
-) -> Outcome:
-    """Перевести книгу задания до конца — или до причины остановиться."""
-    if job.kind is JobKind.CHAPTER:
-        return await run_chapter_job(session, queue, job, context, stop)
-
-    if job.document_id is None:
-        return Outcome(JobState.FAILED, done=job.segments_done, error="У задания нет документа")
-
-    # Модель — та, что выбрало пространство книги, а не умолчание процесса:
-    # рабочий один на всех, а платят за него по-разному.
-    document_id = job.document_id
-    service = TranslationService(
-        session, context, get_provider(await model_for(session, job.organization_id))
-    )
-    batch = get_settings().worker_batch
-    done = job.segments_done
-
-    while True:
-        if stop.is_set():
-            # Процесс просят завершиться. Задание возвращается в очередь
-            # сразу, а не по истечении порога молчания: так выкат стоит
-            # секунд, а не четверти часа простоя.
-            return Outcome(JobState.WAITING, done=done)
-
-        try:
-            chunk = await service.translate(document_id, limit=batch)
-        except DomainError as error:
-            # Доменный отказ — это правило, а не сбой: нет прав, не
-            # закончена терминология, документ занят. Повтор даст тот же
-            # ответ, и крутить его значит жечь время на заведомо известном.
-            return Outcome(JobState.FAILED, done=done, error=str(error))
-        except Exception as error:  # noqa: BLE001 — причина уходит в задание
-            logger.exception("Задание %s: пачка сорвалась", job.id)
-
-            return Outcome(JobState.FAILED, done=done, error=str(error), retry=True)
-
-        done += chunk.total
-
-        if await queue.heartbeat(job, done=done) is JobState.CANCELLED:
-            logger.info("Задание %s остановлено человеком на %d сегментах", job.id, done)
-
-            return Outcome(JobState.CANCELLED, done=done)
-
-        if chunk.remaining == 0:
-            return Outcome(JobState.DONE, done=done)
-
-        if chunk.total == 0:
-            # Остаток есть, а взять нечего — так быть не должно. Крутить
-            # цикл вхолостую нельзя: он молотил бы базу до скончания века.
-            return Outcome(
-                JobState.FAILED,
-                done=done,
-                error=(
-                    f"Перевод не двигается: непереведённых {chunk.remaining}, "
-                    "а в работу не взято ни одного"
-                ),
-            )
-
-
-async def _ready_message(
-    session: AsyncSession, job: TranslationJob, context: RequestContext
-) -> Message | None:
-    if job.kind is JobKind.CHAPTER:
-        run = await session.get(TranslationRun, job.run_id) if job.run_id is not None else None
-
-        if run is None:
-            return None
-
-        return chapter_ready_message(
-            title=job.title,
-            book_id=run.book_id,
-            chapter_id=run.chapter_id,
-            translated=run.from_model + run.from_memory + run.copied,
-            rejected=len(run.rejections),
-        )
-
-    document = await session.get(Document, job.document_id)
-
-    if document is None:
-        return None
-
-    progress = await ReviewService(session, context).progress(document.id)
-
-    return ready_message(
-        title=document.title,
-        document_id=document.id,
-        translated=progress.translated,
-        flagged=progress.flagged,
-    )
-
-
-async def announce(session: AsyncSession, job: TranslationJob, context: RequestContext) -> None:
+async def announce(session: AsyncSession, job: TranslationJob) -> None:
     """Сообщить, что работа готова.
 
     Несработавшее уведомление не делает перевод несделанным: книга
     переведена и записана, а непосланное письмо — это непосланное письмо.
     Поэтому отказ канала попадает в журнал, а задание остаётся выполненным.
     """
-    message = await _ready_message(session, job, context)
+    run = await session.get(TranslationRun, job.run_id)
 
-    if message is None:
+    if run is None:
         return
 
     requester = (
@@ -302,7 +196,13 @@ async def announce(session: AsyncSession, job: TranslationJob, context: RequestC
 
     deliveries = await NotificationService(session).notify(
         job.organization_id,
-        message,
+        ready_message(
+            title=job.title,
+            book_id=run.book_id,
+            chapter_id=run.chapter_id,
+            translated=run.from_model + run.from_memory + run.copied,
+            rejected=len(run.rejections),
+        ),
         requested_by_email=requester.email if requester is not None else None,
     )
 
@@ -350,7 +250,7 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
     if context is None:
         await queue.fail(
             job,
-            done=job.segments_done,
+            done=job.items_done,
             error="Некому выполнить задание: в пространстве не осталось владельца",
             retry=False,
         )
@@ -379,10 +279,10 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
     await queue.finish(job, done=outcome.done, state=outcome.state)
 
     if outcome.state is JobState.DONE:
-        logger.info("Задание %s: книга переведена, сегментов %d", job.id, outcome.done)
+        logger.info("Задание %s: глава переведена, блоков %d", job.id, outcome.done)
 
         try:
-            await announce(session, job, context)
+            await announce(session, job)
         except (SQLAlchemyError, OSError):
             logger.exception("Задание %s: не удалось сообщить о готовности", job.id)
 
@@ -425,7 +325,7 @@ async def serve() -> None:
     _listen_for_stop(stop)
 
     logger.info(
-        "Рабочий %s начал: пачка %d сегментов, попыток %d, опрос раз в %d с",
+        "Рабочий %s начал: пачка %d блоков, попыток %d, опрос раз в %d с",
         worker,
         settings.worker_batch,
         settings.worker_max_attempts,

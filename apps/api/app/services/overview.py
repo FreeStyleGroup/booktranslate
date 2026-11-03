@@ -1,77 +1,81 @@
 """Сводка по рабочему пространству.
 
-Кабинет открывают чаще всего, и открывают его ради ответа на три вопроса:
-что сейчас в работе, где меня ждут и во сколько это обошлось. Собирать эти
-ответы десятком запросов со стороны витрины нельзя — получится кабинет,
-который открывается три секунды и на медленной связи не открывается вовсе.
+Кабинет открывают чаще всего, и открывают его ради ответа на три вопроса: что сейчас
+в работе, где меня ждут и во сколько это обошлось. Собирать эти ответы десятком
+запросов со стороны витрины нельзя — получится кабинет, который открывается три
+секунды и на медленной связи не открывается вовсе.
 
-Поэтому сводка считается на стороне API одним обращением. Запросы внутри
-намеренно сгруппированные: «сколько документов в каком состоянии» — это
-один запрос с GROUP BY, а не по запросу на документ.
+Поэтому сводка считается на стороне API одним обращением. Запросы внутри намеренно
+сгруппированные: «сколько блоков переведено» — это один запрос, а не по запросу на
+главу.
 """
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 from sqlalchemy import ColumnElement, func, select
-from sqlalchemy.orm import InstrumentedAttribute
 
+from app.models.block import Block
+from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
-from app.models.document import Document, DocumentStatus
+from app.models.chapter import Chapter
+from app.models.document import Document
+from app.models.job import LIVE, JobState, TranslationJob
 from app.models.memory import GlossaryTerm, TranslationUnit
 from app.models.project import Project
-from app.models.segment import Segment, SegmentStatus
 from app.models.terminology import TermCandidate, TermCandidateStatus
+from app.models.translation import TranslationRevision, TranslationRun
 from app.services.base import TenantModel, TenantService
+from app.services.pricing import estimate_usd
 from app.services.providers.base import Usage
 
-# Сколько строк показывать в списках сводки. Кабинет — не отчёт: пять
-# документов и пять замечаний отвечают на «за что взяться», а двести строк
-# на главной не читает никто.
+# Сколько строк показывать в списках сводки. Кабинет — не отчёт: пять книг и пять
+# глав, которые ждут человека, отвечают на «за что взяться», а двести строк на главной
+# не читает никто.
 RECENT = 5
 
 
 @dataclass(slots=True)
-class DocumentCard:
+class BookCard:
     id: uuid.UUID
+    code: str
     title: str
-    status: DocumentStatus
-    segments: int
-    done: int
+    blocks: int
+    translated: int
 
     @property
     def ready_percent(self) -> int:
         """Готовность в процентах — то, что человек ищет глазами первым."""
-        if self.segments == 0:
+        if self.blocks == 0:
             return 0
 
-        return round(self.done * 100 / self.segments)
+        return round(self.translated * 100 / self.blocks)
 
 
 @dataclass(slots=True)
-class FindingCard:
-    segment_id: uuid.UUID
-    document_id: uuid.UUID
-    document_title: str
-    position: int
-    source_text: str
-    target_text: str | None
-    checks: list[str] = field(default_factory=list)
+class AttentionCard:
+    """Прогон, которому нужен человек: сорвался или оставил блоки без перевода."""
+
+    run_id: uuid.UUID
+    book_id: uuid.UUID
+    chapter_id: uuid.UUID
+    title: str
+    problem: str
 
 
 @dataclass(slots=True)
 class Overview:
     projects: int = 0
+    books: int = 0
     documents: int = 0
-    segments: int = 0
 
-    documents_by_status: dict[str, int] = field(default_factory=dict)
-    segments_by_status: dict[str, int] = field(default_factory=dict)
+    blocks: int = 0
+    translated: int = 0
+    # Откуда текущие редакции: модель, готовый перевод, защищённое.
+    by_origin: dict[str, int] = field(default_factory=dict)
 
-    # Сколько сегментов ждёт человека и сколько терминов не решено. Первое —
-    # очередь работы, второе — то, что эту работу останавливает.
-    flagged: int = 0
+    # Что идёт прямо сейчас и что останавливает работу.
+    live_runs: int = 0
     undecided_terms: int = 0
 
     glossary_terms: int = 0
@@ -79,12 +83,12 @@ class Overview:
     memory_units: int = 0
 
     usage: Usage = field(default_factory=Usage)
-    # Чем переводили. Нужно, чтобы посчитать деньги: прейскурант у каждой
-    # модели свой.
-    translated_by: str | None = None
+    # Оценка в долларах: прейскурант у каждой модели свой, поэтому складывается
+    # по моделям. Пусто — ни одна из моделей не в прейскуранте.
+    estimated_usd: float | None = None
 
-    recent_documents: list[DocumentCard] = field(default_factory=list)
-    recent_findings: list[FindingCard] = field(default_factory=list)
+    recent_books: list[BookCard] = field(default_factory=list)
+    attention: list[AttentionCard] = field(default_factory=list)
 
 
 class OverviewService(TenantService):
@@ -92,28 +96,21 @@ class OverviewService(TenantService):
         overview = Overview()
 
         overview.projects = await self._count(Project)
+        overview.books = await self._count(BookEdition)
+        overview.documents = await self._count(Document)
         overview.glossary_terms = await self._count(GlossaryTerm)
         overview.catalog_entries = await self._count(CatalogEntry)
         overview.memory_units = await self._count(TranslationUnit)
-
-        overview.documents_by_status = await self._by_status(Document, Document.status)
-        overview.documents = sum(overview.documents_by_status.values())
-
-        overview.segments_by_status = await self._by_status(Segment, Segment.status)
-        overview.segments = sum(overview.segments_by_status.values())
-        overview.flagged = overview.segments_by_status.get(SegmentStatus.FLAGGED.value, 0)
-
-        # Только кандидаты документов: счётчик ведёт на их разбор, а
-        # кандидаты глав решаются на экране терминологии своей книги.
         overview.undecided_terms = await self._count(
-            TermCandidate,
-            TermCandidate.status == TermCandidateStatus.NEW,
-            TermCandidate.document_id.is_not(None),
+            TermCandidate, TermCandidate.status == TermCandidateStatus.NEW
         )
+        overview.live_runs = await self._count(TranslationJob, TranslationJob.state.in_(LIVE))
 
-        overview.usage, overview.translated_by = await self._usage()
-        overview.recent_documents = await self._documents()
-        overview.recent_findings = await self._findings()
+        overview.blocks, overview.translated = await self._progress()
+        overview.by_origin = await self._by_origin()
+        overview.usage, overview.estimated_usd = await self._usage()
+        overview.recent_books = await self._books()
+        overview.attention = await self._attention()
 
         return overview
 
@@ -126,122 +123,125 @@ class OverviewService(TenantService):
 
         return await self._session.scalar(statement) or 0
 
-    async def _by_status(
-        self, model: type[TenantModel], column: InstrumentedAttribute[Any]
-    ) -> dict[str, int]:
-        """Сколько записей в каждом состоянии — одним запросом.
-
-        Ключи — значения перечисления строками: наружу уходит `.value`,
-        по которому витрина и рисует подписи.
-        """
-        rows = await self._session.execute(
-            select(column, func.count())
-            .select_from(model)
-            .where(model.organization_id == self.organization_id)
-            .group_by(column)
-        )
-
-        return {status.value: amount for status, amount in rows.all()}
-
-    async def _usage(self) -> tuple[Usage, str | None]:
-        """Расход по всем документам организации.
-
-        Складывается в базе, а не в приложении: тянуть на витрину тысячу
-        документов ради четырёх сумм — это тот случай, когда запрос
-        дешевле цикла.
-        """
+    async def _progress(self) -> tuple[int, int]:
         row = (
             await self._session.execute(
-                select(
-                    func.coalesce(func.sum(Document.input_tokens), 0),
-                    func.coalesce(func.sum(Document.output_tokens), 0),
-                    func.coalesce(func.sum(Document.cached_input_tokens), 0),
-                    func.coalesce(func.sum(Document.cache_write_tokens), 0),
-                    func.max(Document.translated_by),
-                ).where(Document.organization_id == self.organization_id)
+                select(func.count(), func.count(Block.current_revision_id)).where(
+                    Block.organization_id == self.organization_id, Block.active.is_(True)
+                )
             )
         ).one()
 
-        # 🔥 int(): сумму по bigint Postgres возвращает типом numeric, и в
-        # Python она приходит Decimal. Пока расход нулевой, coalesce отдаёт
-        # обычный ноль и всё сходится; первая переведённая книга приносит
-        # Decimal, а прейскурант умножает его на float — и сводка падает.
-        usage = Usage(
-            input_tokens=int(row[0]),
-            output_tokens=int(row[1]),
-            cached_input_tokens=int(row[2]),
-            cache_write_tokens=int(row[3]),
+        return int(row[0]), int(row[1])
+
+    async def _by_origin(self) -> dict[str, int]:
+        rows = await self._session.execute(
+            select(TranslationRevision.origin, func.count())
+            .join(Block, Block.current_revision_id == TranslationRevision.id)
+            .where(Block.organization_id == self.organization_id, Block.active.is_(True))
+            .group_by(TranslationRevision.origin)
         )
 
-        return usage, row[4]
+        return {origin.value: int(amount) for origin, amount in rows.all()}
 
-    async def _documents(self) -> list[DocumentCard]:
-        """Последние документы с готовностью.
-
-        Готовность — доля принятых человеком сегментов, а не переведённых:
-        перевод, который никто не смотрел, готовым не является.
-        """
-        documents = list(
-            await self._session.scalars(
-                self.scoped(Document).order_by(Document.updated_at.desc()).limit(RECENT)
-            )
-        )
-
-        if not documents:
-            return []
-
-        ids = [document.id for document in documents]
-
+    async def _usage(self) -> tuple[Usage, float | None]:
+        """Расход по всем прогонам: по моделям, потому что цена у каждой своя."""
         rows = await self._session.execute(
             select(
-                Segment.document_id,
-                func.count(),
-                func.count().filter(Segment.status == SegmentStatus.APPROVED),
+                TranslationRun.model,
+                func.coalesce(func.sum(TranslationRun.input_tokens), 0),
+                func.coalesce(func.sum(TranslationRun.output_tokens), 0),
+                func.coalesce(func.sum(TranslationRun.cached_input_tokens), 0),
+                func.coalesce(func.sum(TranslationRun.cache_write_tokens), 0),
             )
-            .where(Segment.document_id.in_(ids))
-            .group_by(Segment.document_id)
+            .where(TranslationRun.organization_id == self.organization_id)
+            .group_by(TranslationRun.model)
         )
 
-        counts = {row[0]: (row[1], row[2]) for row in rows.all()}
+        usage = Usage()
+        total: float | None = None
+
+        for model, spent_in, spent_out, cached, written in rows.all():
+            # 🔥 int(): сумму по целым Postgres возвращает типом numeric, и в Python
+            # она приходит Decimal, а прейскурант умножает её на float.
+            part = Usage(
+                input_tokens=int(spent_in),
+                output_tokens=int(spent_out),
+                cached_input_tokens=int(cached),
+                cache_write_tokens=int(written),
+            )
+            usage = usage + part
+            usd = estimate_usd(
+                model,
+                input_tokens=part.input_tokens,
+                output_tokens=part.output_tokens,
+                cached_input_tokens=part.cached_input_tokens,
+                cache_write_tokens=part.cache_write_tokens,
+            )
+
+            if usd is not None:
+                total = (total or 0.0) + usd
+
+        return usage, total
+
+    async def _books(self) -> list[BookCard]:
+        """Последние книги с готовностью: сколько блоков уже имеют перевод."""
+        books = list(
+            await self._session.scalars(
+                self.scoped(BookEdition).order_by(BookEdition.updated_at.desc()).limit(RECENT)
+            )
+        )
+
+        if not books:
+            return []
+
+        rows = await self._session.execute(
+            select(Chapter.book_id, func.count(), func.count(Block.current_revision_id))
+            .join(Block, Block.chapter_id == Chapter.id)
+            .where(Chapter.book_id.in_([book.id for book in books]), Block.active.is_(True))
+            .group_by(Chapter.book_id)
+        )
+        counts = {row[0]: (int(row[1]), int(row[2])) for row in rows.all()}
 
         return [
-            DocumentCard(
-                id=document.id,
-                title=document.title,
-                status=document.status,
-                segments=counts.get(document.id, (0, 0))[0],
-                done=counts.get(document.id, (0, 0))[1],
+            BookCard(
+                id=book.id,
+                code=book.code,
+                title=book.title,
+                blocks=counts.get(book.id, (0, 0))[0],
+                translated=counts.get(book.id, (0, 0))[1],
             )
-            for document in documents
+            for book in books
         ]
 
-    async def _findings(self) -> list[FindingCard]:
-        """Худшие сегменты с замечаниями — очередь работы редактора."""
+    async def _attention(self) -> list[AttentionCard]:
+        """Последние сорвавшиеся прогоны и прогоны с блоками без перевода."""
         rows = await self._session.execute(
-            select(Segment, Document.title)
-            .join(Document, Document.id == Segment.document_id)
+            select(TranslationRun, TranslationJob)
+            .join(TranslationJob, TranslationJob.run_id == TranslationRun.id)
             .where(
-                Segment.organization_id == self.organization_id,
-                Segment.status == SegmentStatus.FLAGGED,
+                TranslationRun.organization_id == self.organization_id,
+                (TranslationJob.state == JobState.FAILED)
+                | (
+                    (TranslationJob.state == JobState.DONE)
+                    & (func.jsonb_array_length(TranslationRun.rejections) > 0)
+                ),
             )
-            .order_by(Segment.quality_score.desc().nulls_last(), Segment.position)
+            .order_by(TranslationRun.created_at.desc())
             .limit(RECENT)
         )
 
-        cards = []
-
-        for segment, title in rows.all():
-            findings = (segment.quality or {}).get("findings", [])
-            cards.append(
-                FindingCard(
-                    segment_id=segment.id,
-                    document_id=segment.document_id,
-                    document_title=title,
-                    position=segment.position,
-                    source_text=segment.source_text,
-                    target_text=segment.target_text,
-                    checks=[str(item.get("check", "")) for item in findings],
-                )
+        return [
+            AttentionCard(
+                run_id=run.id,
+                book_id=run.book_id,
+                chapter_id=run.chapter_id,
+                title=job.title,
+                problem=(
+                    job.error or "Прогон сорвался"
+                    if job.state is JobState.FAILED
+                    else f"Без перевода осталось блоков: {len(run.rejections)}"
+                ),
             )
-
-        return cards
+            for run, job in rows.all()
+        ]

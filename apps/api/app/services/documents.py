@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.chapter import Chapter
-from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
+from app.models.document import Document, SourceFormat, SourceRole
 from app.models.organization import Role
 from app.services.base import TenantService
 from app.services.books import BookService
@@ -305,7 +305,6 @@ class DocumentService(TenantService):
             title=title[:500],
             original_filename=original_filename,
             source_format=source_format,
-            status=DocumentStatus.UPLOADED,
             storage_key=storage_key,
             size_bytes=upload.size,
             content_hash=upload.content_hash,

@@ -161,3 +161,39 @@ class BlockHistoryPublic(BaseModel):
     # Защищённое содержимое: заново не переводится.
     protected: bool
     items: list[RevisionPublic]
+
+
+class CostEstimate(BaseModel):
+    """Смета на перевод — оценка сверху, а не счёт.
+
+    Точного числа токенов заранее не знает никто, поэтому это осторожная оценка (см.
+    app/services/pricing.py). `usd` пуст, если модель не в прейскуранте, — это честнее
+    нуля.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    input_tokens: int
+    output_tokens: int
+    usd: float | None
+
+
+class ChapterEstimatePublic(BaseModel):
+    """Смета главы: из чего она состоит и во что обойдётся."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    blocks: int
+    characters: int
+    words: int
+    longest_block_chars: int
+    by_kind: dict[str, int]
+    untranslated: int
+    protected: int
+    unique_untranslated: int
+    repeated: int
+    book_matches: int
+    memory_matches: int
+    billable_texts: int
+    billable_characters: int
+    estimate: CostEstimate | None

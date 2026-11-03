@@ -1,11 +1,11 @@
-"""Перевод документа и словарь терминов."""
+"""Словарь терминов."""
 
 import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
 
-from app.api.deps import ContextDep, ProviderDep, SessionDep
+from app.api.deps import ContextDep, SessionDep
 from app.api.uploads import read_capped
 from app.core.config import get_settings
 from app.models.memory import GlossaryEntryKind, GlossaryTermStatus
@@ -14,7 +14,6 @@ from app.schemas.glossary import (
     GlossaryTermCreate,
     GlossaryTermPublic,
     GlossaryTermUpdate,
-    TranslationResult,
 )
 from app.schemas.shared import (
     DictionaryImportResult,
@@ -24,87 +23,9 @@ from app.schemas.shared import (
 )
 from app.services.dictionaries import read_dictionary
 from app.services.glossary import MAX_REASONS, GlossaryService
-from app.services.pricing import estimate_usd
 from app.services.shared_glossary import SuggestionService
-from app.services.translation import TranslationService
 
-router = APIRouter(tags=["translation"])
-
-
-@router.post("/documents/{document_id}/translate", response_model=TranslationResult)
-async def translate_document(
-    document_id: uuid.UUID,
-    context: ContextDep,
-    session: SessionDep,
-    provider: ProviderDep,
-    limit: Annotated[
-        int | None,
-        Query(
-            description=(
-                "Сколько непереведённых сегментов взять этим вызовом. Без значения — "
-                "TRANSLATION_DEFAULT_LIMIT, не больше TRANSLATION_MAX_SEGMENTS_PER_RUN"
-            )
-        ),
-    ] = None,
-    force: Annotated[
-        bool,
-        Query(
-            description=(
-                "На документе без непереведённых сегментов — перевести заново, включая "
-                "отредактированные и принятые; на документе с непереведёнными — продолжить; "
-                "на зависшем в «переводится» дольше TRANSLATION_STALE_MINUTES — снять "
-                "отметку и продолжить"
-            )
-        ),
-    ] = False,
-    ignore_terminology: Annotated[
-        bool,
-        Query(description="Переводить, не дожидаясь решений по кандидатам в словарь"),
-    ] = False,
-) -> TranslationResult:
-    """Перевести очередную порцию сегментов документа.
-
-    Один вызов берёт `limit` непереведённых сегментов в порядке книги и
-    отвечает, сколько осталось (`remaining`); книга переводится циклом
-    вызовов до нуля. Так задумано: обратный прокси режет соединение через
-    четверть часа, а сделанное до срыва фиксируется по пачкам и не
-    теряется. Повторный вызов не трогает правку человека: берутся только
-    непереведённые.
-
-    Ответ — не список сегментов, а сводка: их могут быть десятки тысяч, а
-    по сводке видно, сколько закрыто памятью и сколько пришлось отдать
-    модели.
-
-    Незаконченный терминологический проход останавливает перевод: словарь,
-    решённый наполовину, даёт в книге два названия для одной вещи. Обойти
-    это можно (`ignore_terminology`), но это осознанный шаг, а не умолчание.
-    """
-    summary = await TranslationService(session, context, provider).translate(
-        document_id, limit=limit, force=force, ignore_terminology=ignore_terminology
-    )
-
-    return TranslationResult(
-        total=summary.total,
-        from_memory=summary.from_memory,
-        from_provider=summary.from_provider,
-        flagged=summary.flagged,
-        unique_texts=summary.unique_texts,
-        provider_calls=summary.provider_calls,
-        saved_calls=summary.saved_calls,
-        remaining=summary.remaining,
-        status=summary.status,
-        input_tokens=summary.usage.input_tokens,
-        output_tokens=summary.usage.output_tokens,
-        cached_input_tokens=summary.usage.cached_input_tokens,
-        cache_write_tokens=summary.usage.cache_write_tokens,
-        estimated_usd=estimate_usd(
-            provider.name,
-            input_tokens=summary.usage.input_tokens,
-            output_tokens=summary.usage.output_tokens,
-            cached_input_tokens=summary.usage.cached_input_tokens,
-            cache_write_tokens=summary.usage.cache_write_tokens,
-        ),
-    )
+router = APIRouter(tags=["glossary"])
 
 
 @router.get("/glossary", response_model=GlossaryPagePublic)

@@ -113,32 +113,7 @@ class Delivery:
     detail: str
 
 
-def ready_message(*, title: str, document_id: uuid.UUID, translated: int, flagged: int) -> Message:
-    """Текст о готовой книге.
-
-    Без похвалы и без «успешно»: сообщается то, что человеку нужно решить
-    дальше — сколько сегментов ждёт его глазами и куда идти.
-    """
-    where = f"{get_settings().web_url.rstrip('/')}/app/documents/{document_id}"
-
-    if flagged == 0:
-        verdict = "Проверки ни к чему не придрались."
-    else:
-        verdict = (
-            f"Проверки отметили {flagged} — числа, термины или подстановки "
-            "разошлись с исходником. Это не приговор переводу, а список мест, "
-            "на которые стоит посмотреть."
-        )
-
-    return Message(
-        subject=f"Книга «{title}» переведена",
-        body=(
-            f"Книга «{title}» переведена: {translated} сегментов.\n{verdict}\n\nОткрыть: {where}"
-        ),
-    )
-
-
-def chapter_ready_message(
+def ready_message(
     *, title: str, book_id: uuid.UUID, chapter_id: uuid.UUID, translated: int, rejected: int
 ) -> Message:
     """Текст о переведённой главе: сколько готово и что осталось без перевода."""

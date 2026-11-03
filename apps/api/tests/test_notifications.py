@@ -33,17 +33,22 @@ def test_username_is_stored_without_the_at_sign() -> None:
 
 
 def test_ready_message_says_what_to_do_next() -> None:
-    document_id = uuid.uuid4()
+    book_id = uuid.uuid4()
+    chapter_id = uuid.uuid4()
 
-    clean = ready_message(title="Насосы", document_id=document_id, translated=120, flagged=0)
-    dirty = ready_message(title="Насосы", document_id=document_id, translated=120, flagged=7)
+    clean = ready_message(
+        title="Насосы", book_id=book_id, chapter_id=chapter_id, translated=120, rejected=0
+    )
+    dirty = ready_message(
+        title="Насосы", book_id=book_id, chapter_id=chapter_id, translated=120, rejected=7
+    )
 
     assert "Насосы" in clean.subject
-    assert "ни к чему не придрались" in clean.body
-    assert "Проверки отметили 7" in dirty.body
-    # Ссылка ведёт на книгу: уведомление без адреса заставляет искать её
-    # руками.
-    assert str(document_id) in dirty.body
+    assert "без перевода" not in clean.body
+    assert "(7)" in dirty.body
+    assert "без перевода" in dirty.body
+    # Ссылка ведёт на главу: уведомление без адреса заставляет искать её руками.
+    assert str(chapter_id) in dirty.body
 
 
 @requires_database
@@ -163,7 +168,11 @@ async def test_nothing_claims_to_be_sent(db_client: AsyncClient, session: AsyncS
     await db_client.put("/settings/notifications", headers=account.headers, json=SETTINGS)
 
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
     deliveries = await NotificationService(session).notify(account.organization_id, message)
 
@@ -178,7 +187,11 @@ async def test_telegram_names_the_real_reason(
     """«Не отправлено» бывает разным, и чинится это разными руками."""
     account = await register(db_client)
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
 
     # Канал включён, ник не дописан — чинит человек, и прямо сейчас.
@@ -209,7 +222,11 @@ async def test_silence_when_nobody_asked(db_client: AsyncClient, session: AsyncS
     account = await register(db_client)
 
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
 
     assert await NotificationService(session).notify(account.organization_id, message) == []
@@ -228,7 +245,11 @@ async def test_email_falls_back_to_the_one_who_asked(
     )
 
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
     deliveries = await NotificationService(session).notify(
         account.organization_id, message, requested_by_email="owner@example.com"
@@ -251,7 +272,11 @@ async def test_letter_goes_to_the_one_who_asked_and_to_the_shared_box(
     )
 
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
     deliveries = await NotificationService(session).notify(
         account.organization_id, message, requested_by_email="owner@example.com"
@@ -276,7 +301,11 @@ async def test_the_same_address_is_not_written_twice(
     )
 
     message = ready_message(
-        title="Насосы", document_id=account.organization_id, translated=10, flagged=0
+        title="Насосы",
+        book_id=account.organization_id,
+        chapter_id=account.organization_id,
+        translated=10,
+        rejected=0,
     )
     deliveries = await NotificationService(session).notify(
         account.organization_id, message, requested_by_email="owner@example.com"

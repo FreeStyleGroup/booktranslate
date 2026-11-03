@@ -132,15 +132,15 @@ async def test_lookup_reports_what_it_cost(db_client: AsyncClient) -> None:
 
 
 @requires_database
-async def test_document_lookup_takes_undecided_candidates(
+async def test_chapter_lookup_takes_undecided_candidates(
     db_client: AsyncClient, lookup_log: list
 ) -> None:
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account)
+    await extract(db_client, account, chapter_id)
 
     response = await db_client.post(
-        f"/documents/{document_id}/terminology/lookup", headers=account.headers, json={"limit": 2}
+        f"/chapters/{chapter_id}/terminology/lookup", headers=account.headers, json={"limit": 2}
     )
     assert response.status_code == 200, response.text
 
@@ -160,18 +160,18 @@ async def test_document_lookup_takes_undecided_candidates(
 async def test_decision_keeps_the_source_of_the_answer(db_client: AsyncClient) -> None:
     """Адрес, по которому термин посмотрели, обязан уехать в словарь."""
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    candidates = await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account)
+    candidates = await extract(db_client, account, chapter_id)
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/lookup",
+        f"/chapters/{chapter_id}/terminology/lookup",
         headers=account.headers,
         json={"limit": 5},
     )
 
     valve = by_source(candidates, "check valve")
     decided = await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={
             "decisions": [
@@ -191,17 +191,17 @@ async def test_decision_keeps_the_source_of_the_answer(db_client: AsyncClient) -
 async def test_own_reference_wins_over_the_catalogue(db_client: AsyncClient) -> None:
     """Человек мог посмотреть термин в бумажном справочнике, которого в сети нет."""
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    candidates = await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account)
+    candidates = await extract(db_client, account, chapter_id)
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/lookup",
+        f"/chapters/{chapter_id}/terminology/lookup",
         headers=account.headers,
         json={"limit": 5},
     )
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={
             "decisions": [
@@ -277,29 +277,28 @@ async def test_lookup_needs_a_project_language_pair(db_client: AsyncClient) -> N
 
 
 @requires_database
-async def test_document_lookup_needs_the_document(db_client: AsyncClient) -> None:
+async def test_chapter_lookup_needs_the_chapter(db_client: AsyncClient) -> None:
     account = await register(db_client)
     project_id = await create_project(db_client, account)
-    assert project_id
 
     response = await db_client.post(
-        f"/documents/{project_id}/terminology/lookup", headers=account.headers, json={}
+        f"/chapters/{project_id}/terminology/lookup", headers=account.headers, json={}
     )
 
     assert response.status_code == 404
 
 
 @requires_database
-async def test_document_lookup_skips_decided_candidates(
+async def test_chapter_lookup_skips_decided_candidates(
     db_client: AsyncClient, lookup_log: list
 ) -> None:
     """По разобранному справка уже не нужна, а деньги стоит."""
     account = await register(db_client)
-    document_id = await prepare(db_client, account, data=MANUAL)
-    candidates = await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account, data=MANUAL)
+    candidates = await extract(db_client, account, chapter_id)
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={
             "decisions": [
@@ -309,7 +308,7 @@ async def test_document_lookup_skips_decided_candidates(
     )
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/lookup", headers=account.headers, json={}
+        f"/chapters/{chapter_id}/terminology/lookup", headers=account.headers, json={}
     )
 
     assert "check valve" not in [request.source_term for request in lookup_log]

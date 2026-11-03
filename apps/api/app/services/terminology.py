@@ -20,18 +20,14 @@ import uuid
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 
-from sqlalchemy import ColumnElement, func, select
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy import func, select
 
 from app.models.block import Block, BlockKind
 from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
 from app.models.chapter import Chapter
-from app.models.document import Document
 from app.models.master import ChapterMaster
 from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
-from app.models.project import Project
-from app.models.segment import Segment
 from app.models.terminology import TermCandidate, TermCandidateStatus, TerminologyPass
 from app.services import extraction
 from app.services.base import TenantService
@@ -76,27 +72,6 @@ class DecisionReport:
     # Сколько кандидатов ещё ждёт решения. Пока их больше нуля, терминология
     # не готова.
     remaining: int
-
-
-@dataclass(frozen=True, slots=True)
-class _Owner:
-    """Чьи кандидаты: документа прежнего контура или главы.
-
-    Колонка и значение вместе — чтобы отбор и новая строка не разошлись:
-    кандидат главы, заведённый с колонкой документа, нарушил бы
-    ограничение базы, а отбор по чужой колонке не нашёл бы своих.
-    """
-
-    column: InstrumentedAttribute[uuid.UUID | None]
-    value: uuid.UUID
-
-    @property
-    def where(self) -> ColumnElement[bool]:
-        return self.column == self.value
-
-    @property
-    def fields(self) -> dict[str, uuid.UUID]:
-        return {self.column.key: self.value}
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +140,7 @@ class TerminologyService(TenantService):
         )
 
         found = await self._refresh(
-            _Owner(TermCandidate.chapter_id, chapter.id),
+            chapter.id,
             texts=[block.source_text for block in blocks],
             places=[_Place(order[block.id], block.id) for block in blocks],
             min_frequency=min_frequency,
@@ -198,9 +173,7 @@ class TerminologyService(TenantService):
     ) -> list[TermCandidate]:
         chapter = await self._chapter(chapter_id)
 
-        return await self._list(
-            _Owner(TermCandidate.chapter_id, chapter.id), status=status, limit=limit, offset=offset
-        )
+        return await self._list(chapter.id, status=status, limit=limit, offset=offset)
 
     async def first_codes(
         self, chapter_id: uuid.UUID, candidates: Sequence[TermCandidate]
@@ -236,7 +209,7 @@ class TerminologyService(TenantService):
         # Пара — у книги, а не у проекта: в проекте бывают книги с другой
         # целевой парой, и термин, решённый для одной, другой не годится.
         return await self._decide(
-            _Owner(TermCandidate.chapter_id, chapter.id),
+            chapter.id,
             decisions,
             _Pair(book.project_id, book.source_language, book.target_language),
         )
@@ -282,81 +255,11 @@ class TerminologyService(TenantService):
 
     # ── документ прежнего контура ──────────────────────────────────────
 
-    async def extract(
-        self, document_id: uuid.UUID, *, min_frequency: int = 2, limit: int = 400
-    ) -> list[TermCandidate]:
-        """Пройти по сегментам документа и обновить список кандидатов."""
-        self._context.require(*EDITING_ROLES)
-
-        document = await self._document(document_id)
-
-        segments = list(
-            await self._session.scalars(
-                self.scoped(Segment)
-                .where(Segment.document_id == document.id)
-                .order_by(Segment.position)
-            )
-        )
-        if not segments:
-            raise ConflictError("Документ ещё не разобран на сегменты")
-
-        await self._refresh(
-            _Owner(TermCandidate.document_id, document.id),
-            texts=[segment.source_text for segment in segments],
-            places=[_Place(segment.position) for segment in segments],
-            min_frequency=min_frequency,
-            limit=limit,
-        )
-        await self._session.commit()
-
-        return await self.document_candidates(document.id)
-
-    async def document_candidates(
-        self,
-        document_id: uuid.UUID,
-        *,
-        status: TermCandidateStatus | None = None,
-        limit: int = 200,
-        offset: int = 0,
-    ) -> list[TermCandidate]:
-        return await self._list(
-            _Owner(TermCandidate.document_id, document_id),
-            status=status,
-            limit=limit,
-            offset=offset,
-        )
-
-    async def decide(self, document_id: uuid.UUID, decisions: Sequence[Decision]) -> DecisionReport:
-        """Применить решения по кандидатам документа."""
-        self._context.require(*EDITING_ROLES)
-
-        owner = _Owner(TermCandidate.document_id, document_id)
-
-        if not decisions:
-            return DecisionReport(0, 0, await self._undecided(owner))
-
-        document = await self._document(document_id)
-        project = await self._session.scalar(
-            self.scoped(Project).where(Project.id == document.project_id)
-        )
-        if project is None:
-            raise NotFoundError("Проект не найден")
-
-        return await self._decide(
-            owner,
-            decisions,
-            _Pair(project.id, project.source_language, project.target_language),
-        )
-
-    async def undecided(self, document_id: uuid.UUID) -> int:
-        """Сколько кандидатов документа ждёт решения."""
-        return await self._undecided(_Owner(TermCandidate.document_id, document_id))
-
     # ── общее ──────────────────────────────────────────────────────────
 
     async def _refresh(
         self,
-        owner: _Owner,
+        chapter_id: uuid.UUID,
         *,
         texts: list[str],
         places: list[_Place],
@@ -384,7 +287,9 @@ class TerminologyService(TenantService):
 
         existing = {
             row.source_term_normalized: row
-            for row in await self._session.scalars(self.scoped(TermCandidate).where(owner.where))
+            for row in await self._session.scalars(
+                self.scoped(TermCandidate).where(TermCandidate.chapter_id == chapter_id)
+            )
         }
 
         seen: set[str] = set()
@@ -417,7 +322,7 @@ class TerminologyService(TenantService):
                 self._session.add(
                     TermCandidate(
                         organization_id=self.organization_id,
-                        **owner.fields,
+                        chapter_id=chapter_id,
                         source_term=candidate.source,
                         source_term_normalized=key,
                         kind=candidate.kind,
@@ -455,9 +360,9 @@ class TerminologyService(TenantService):
         return len(seen)
 
     async def _list(
-        self, owner: _Owner, *, status: TermCandidateStatus | None, limit: int, offset: int
+        self, chapter_id: uuid.UUID, *, status: TermCandidateStatus | None, limit: int, offset: int
     ) -> list[TermCandidate]:
-        query = self.scoped(TermCandidate).where(owner.where)
+        query = self.scoped(TermCandidate).where(TermCandidate.chapter_id == chapter_id)
 
         if status is not None:
             query = query.where(TermCandidate.status == status)
@@ -475,7 +380,7 @@ class TerminologyService(TenantService):
         return list(await self._session.scalars(query.limit(limit).offset(offset)))
 
     async def _decide(
-        self, owner: _Owner, decisions: Sequence[Decision], pair: _Pair
+        self, chapter_id: uuid.UUID, decisions: Sequence[Decision], pair: _Pair
     ) -> DecisionReport:
         """Применить решения пачкой.
 
@@ -485,21 +390,22 @@ class TerminologyService(TenantService):
         Транзакция одна: либо принято всё, либо ничего.
         """
         if not decisions:
-            return DecisionReport(0, 0, await self._undecided(owner))
+            return DecisionReport(0, 0, await self._undecided(chapter_id))
 
         glossary = GlossaryService(self._session, self._context)
         # Адреса, по которым термины смотрели в каталоге. Забираются заранее
         # одним запросом: справка, добытая поиском, обязана уехать в словарь
         # вместе с решением — потерять её в этот момент значит через месяц
         # начать спор о термине заново.
-        sources = await self._catalog_sources(owner, pair)
+        sources = await self._catalog_sources(chapter_id, pair)
         accepted = 0
         rejected = 0
 
         for decision in decisions:
             row = await self._session.scalar(
                 self.scoped(TermCandidate).where(
-                    TermCandidate.id == decision.candidate_id, owner.where
+                    TermCandidate.id == decision.candidate_id,
+                    TermCandidate.chapter_id == chapter_id,
                 )
             )
             if row is None:
@@ -542,9 +448,9 @@ class TerminologyService(TenantService):
 
         await self._session.commit()
 
-        return DecisionReport(accepted, rejected, await self._undecided(owner))
+        return DecisionReport(accepted, rejected, await self._undecided(chapter_id))
 
-    async def _catalog_sources(self, owner: _Owner, pair: _Pair) -> dict[str, str]:
+    async def _catalog_sources(self, chapter_id: uuid.UUID, pair: _Pair) -> dict[str, str]:
         """Адреса источников из каталога по терминам владельца.
 
         Один запрос на всю пачку решений, а не по запросу на кандидата:
@@ -558,7 +464,7 @@ class TerminologyService(TenantService):
                 TermCandidate.source_term_normalized == CatalogEntry.source_term_normalized,
             )
             .where(
-                owner.where,
+                TermCandidate.chapter_id == chapter_id,
                 CatalogEntry.source_language == pair.source_language,
                 CatalogEntry.target_language == pair.target_language,
                 CatalogEntry.found.is_(True),
@@ -575,11 +481,11 @@ class TerminologyService(TenantService):
 
         return found
 
-    async def _undecided(self, owner: _Owner) -> int:
+    async def _undecided(self, chapter_id: uuid.UUID) -> int:
         counted = await self._session.scalar(
             select(func.count()).where(
                 TermCandidate.organization_id == self.organization_id,
-                owner.where,
+                TermCandidate.chapter_id == chapter_id,
                 TermCandidate.status == TermCandidateStatus.NEW,
             )
         )
@@ -659,12 +565,3 @@ class TerminologyService(TenantService):
         )
 
         return master
-
-    async def _document(self, document_id: uuid.UUID) -> Document:
-        document = await self._session.scalar(
-            self.scoped(Document).where(Document.id == document_id)
-        )
-        if document is None:
-            raise NotFoundError("Документ не найден")
-
-        return document

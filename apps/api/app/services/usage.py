@@ -1,54 +1,44 @@
 """Отчёт о расходе.
 
-Токены хранятся, деньги считаются на лету — правило из `pricing.py`, и
-здесь оно же: в базе лежат счётчики, а стоимость собирается при запросе по
-той модели, которой книгу переводили. Пересчитывать потраченное задним
-числом по новому прейскуранту значит подделывать отчёт.
+Токены хранятся, деньги считаются на лету — правило из `pricing.py` действует и
+здесь: в базе лежат счётчики, а стоимость собирается по прейскуранту той модели,
+которой переводили. Пересчитывать потраченное задним числом по новому прейскуранту
+значит подделывать отчёт.
 
-🔥 **Разрез по времени — по месяцу загрузки книги, и так и написано.**
-Отдельной записи «когда потратили» в базе нет: счётчики документа растут
-при каждом прогоне и хранятся итогом. Группировать их по `updated_at`
-нельзя — правка редактора через месяц утащила бы весь расход книги в
-другой месяц. `created_at` не меняется никогда, поэтому разрез по нему
-устойчив; что он означает именно загрузку, а не оплату, сказано и в
-подписи на экране.
+Расход записан в прогонах, поэтому разрез по времени честный: месяц запуска прогона,
+а не загрузки книги. Прогон, начатый в конце месяца и законченный в следующем, идёт в
+месяц запуска: на такой точности разрез и нужен.
 """
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 
-from app.models.document import Document
+from app.models.book import BookEdition
 from app.models.project import Project
+from app.models.translation import TranslationRun
 from app.services.base import TenantService
 from app.services.pricing import estimate_usd
 from app.services.providers import Usage
 
-# Сколько книг показывать в разборе. Отчёт читают, чтобы понять, на что
-# ушли деньги, а это всегда несколько самых дорогих: хвост из сотни
-# копеечных книг ответа на этот вопрос не добавляет.
-TOP_DOCUMENTS = 12
+# Сколько книг показывать в разборе. Отчёт читают, чтобы понять, куда ушли деньги, а
+# это всегда несколько самых дорогих: хвост из копеечных ответа на этот вопрос не
+# добавляет.
+TOP_BOOKS = 12
 
-# Глубина разреза по времени. Год — столько, сколько имеет смысл сравнивать
-# в одном масштабе; что было раньше, попадает в общий итог.
+# Глубина разреза по времени. Год — столько, сколько имеет смысл сравнивать в одном
+# масштабе; что было раньше, попадает в общий итог.
 MONTHS = 12
-
-# Книга, у которой переводчик не записан. Не «неизвестная модель»: модель
-# не вызывалась вовсе — всё закрыли память переводов и повторы внутри
-# книги. Разница видна в отчёте: у первого расход неизвестен, у второго
-# его нет.
-NO_MODEL = "без модели"
 
 
 @dataclass(frozen=True, slots=True)
 class Money:
     """Токены и то, во что они обошлись.
 
-    Стоимость может быть неизвестна — у заглушки и у модели вне
-    прейскуранта, — и `None` здесь честнее нуля: бесплатное и неизвестное
-    это разные вещи.
+    Стоимость может быть неизвестна — у заглушки и у модели вне прейскуранта, — и
+    `None` здесь честнее нуля: бесплатное и неизвестное — это разные вещи.
     """
 
     usage: Usage
@@ -56,18 +46,19 @@ class Money:
 
 
 @dataclass(frozen=True, slots=True)
-class DocumentSpend:
-    document_id: uuid.UUID
+class BookSpend:
+    book_id: uuid.UUID
     title: str
     project_name: str
-    translated_by: str | None
+    # Какими моделями переводили, начиная с самой дорогой.
+    models: list[str]
     money: Money
 
 
 @dataclass(frozen=True, slots=True)
 class ModelSpend:
     model: str
-    documents: int
+    books: int
     money: Money
 
 
@@ -76,32 +67,35 @@ class MonthSpend:
     # «2026-09» — разбирается витриной в название месяца.
     month: str
     money: Money
-    # Из чего сложился месяц. Без этого столбец отвечает «сколько», но не
-    # «на что», — а на вопрос «почему в марте вдвое дороже» отвечает
-    # именно разбивка: сменили модель или перевели вдвое больше.
+    # Из чего сложился месяц. Без этого столбец отвечает на «сколько», но не на
+    # «почему в марте вдвое дороже»: сменили модель или перевели вдвое больше.
     by_model: list[ModelSpend]
 
 
 @dataclass(slots=True)
 class UsageReport:
     total: Money
-    # Сколько книг вообще переводилось моделью: по нему видно, что итог
-    # собран не с одной.
-    documents: int
+    # Сколько книг вообще переводилось моделью.
+    books: int
     by_month: list[MonthSpend] = field(default_factory=list)
     by_model: list[ModelSpend] = field(default_factory=list)
-    by_document: list[DocumentSpend] = field(default_factory=list)
+    by_book: list[BookSpend] = field(default_factory=list)
 
 
-def _money(usage: Usage, model: str | None) -> Money:
-    """Во что обошлись эти токены.
+@dataclass(frozen=True, slots=True)
+class _Row:
+    """Расход одной книги одной моделью за один месяц."""
 
-    Без модели считать нечего: `translated_by` пусто ровно тогда, когда
-    модель не вызывалась вовсе — всё закрыли память и повторы.
-    """
-    if model is None:
-        return Money(usage=usage, usd=None)
+    book_id: uuid.UUID
+    title: str
+    project_name: str
+    model: str
+    month: str
+    money: Money
 
+
+def _money(usage: Usage, model: str) -> Money:
+    """Во что обошлись эти токены."""
     return Money(
         usage=usage,
         usd=estimate_usd(
@@ -117,9 +111,8 @@ def _money(usage: Usage, model: str | None) -> Money:
 def _add(first: Money, second: Money) -> Money:
     """Сложить расход двух строк.
 
-    Неизвестная стоимость не превращается в ноль и не обнуляет известную:
-    итог по книгам, переведённым разными моделями, остаётся суммой того,
-    что удалось посчитать.
+    Неизвестная стоимость не превращается в ноль и не обнуляет итог: итог по книгам,
+    переведённым разными моделями, остаётся суммой того, что удалось посчитать.
     """
     usd = first.usd if second.usd is None else (first.usd or 0.0) + second.usd
 
@@ -137,69 +130,79 @@ def _add(first: Money, second: Money) -> Money:
 EMPTY = Money(usage=Usage(), usd=None)
 
 
+def _weight(money: Money) -> int:
+    return money.usage.input_tokens + money.usage.output_tokens
+
+
 class UsageService(TenantService):
     """Расход рабочего пространства — по месяцам, моделям и книгам."""
 
     async def report(self) -> UsageReport:
         """Отчёт целиком, одним запросом к базе.
 
-        Все три разреза считаются по одной выборке: документов с расходом
-        столько же, сколько переведённых книг, то есть немного, а три
-        запроса с одинаковым условием разошлись бы при первой же правке
-        условия.
+        Все разрезы считаются по одной выборке: два запроса с одинаковым условием
+        разошлись бы при первой правке этого условия.
         """
-        rows = (
+        rows = await self._rows()
+
+        return UsageReport(
+            total=self._sum(row.money for row in rows),
+            books=len({row.book_id for row in rows}),
+            by_month=self._by_month(rows),
+            by_model=self._by_model(rows),
+            by_book=self._by_book(rows),
+        )
+
+    async def _rows(self) -> list[_Row]:
+        month = func.to_char(TranslationRun.created_at, "YYYY-MM")
+        spent = (
             await self._session.execute(
                 select(
-                    Document.id,
-                    Document.title,
-                    Document.translated_by,
-                    Document.input_tokens,
-                    Document.output_tokens,
-                    Document.cached_input_tokens,
-                    Document.cache_write_tokens,
-                    func.to_char(Document.created_at, "YYYY-MM"),
+                    BookEdition.id,
+                    BookEdition.title,
                     Project.name,
+                    TranslationRun.model,
+                    month,
+                    func.sum(TranslationRun.input_tokens),
+                    func.sum(TranslationRun.output_tokens),
+                    func.sum(TranslationRun.cached_input_tokens),
+                    func.sum(TranslationRun.cache_write_tokens),
                 )
-                .join(Project, Project.id == Document.project_id)
+                .join(BookEdition, BookEdition.id == TranslationRun.book_id)
+                .join(Project, Project.id == BookEdition.project_id)
                 .where(
-                    Document.organization_id == self.organization_id,
-                    # Книги без единого потраченного токена в отчёт о
-                    # расходе не входят: строка с четырьмя нулями ничего не
-                    # сообщает, а список делает длиннее.
-                    (Document.input_tokens + Document.output_tokens) > 0,
+                    TranslationRun.organization_id == self.organization_id,
+                    # Прогоны без единого потраченного токена в отчёт о расходе не
+                    # входят: строка с нулями ничего не сообщает, а список делает длиннее.
+                    (TranslationRun.input_tokens + TranslationRun.output_tokens) > 0,
                 )
-                .order_by(Document.created_at.desc())
+                .group_by(
+                    BookEdition.id, BookEdition.title, Project.name, TranslationRun.model, month
+                )
             )
         ).all()
 
-        spends = [
-            DocumentSpend(
-                document_id=row[0],
+        return [
+            _Row(
+                book_id=row[0],
                 title=row[1],
-                project_name=row[8],
-                translated_by=row[2],
+                project_name=row[2],
+                model=row[3],
+                month=row[4],
+                # 🔥 int(): сумму по целым Postgres возвращает типом numeric, и в Python
+                # она приходит Decimal, а прейскурант умножает её на float.
                 money=_money(
                     Usage(
-                        input_tokens=row[3],
-                        output_tokens=row[4],
-                        cached_input_tokens=row[5],
-                        cache_write_tokens=row[6],
+                        input_tokens=int(row[5]),
+                        output_tokens=int(row[6]),
+                        cached_input_tokens=int(row[7]),
+                        cache_write_tokens=int(row[8]),
                     ),
-                    row[2],
+                    row[3],
                 ),
             )
-            for row in rows
+            for row in spent
         ]
-        months = [row[7] for row in rows]
-
-        return UsageReport(
-            total=self._sum(spend.money for spend in spends),
-            documents=len(spends),
-            by_month=self._by_month(spends, months),
-            by_model=self._by_model(spends),
-            by_document=self._most_expensive(spends),
-        )
 
     @staticmethod
     def _sum(items: Iterable[Money]) -> Money:
@@ -211,55 +214,59 @@ class UsageService(TenantService):
         return total
 
     @classmethod
-    def _by_month(cls, spends: list[DocumentSpend], months: list[str]) -> list[MonthSpend]:
-        """Расход по месяцам с разбивкой по моделям — старые слева.
+    def _by_month(cls, rows: Sequence[_Row]) -> list[MonthSpend]:
+        """Расход по месяцам с разбивкой по моделям — старые первыми."""
+        grouped: dict[str, list[_Row]] = {}
 
-        Разбивка внутри месяца не украшение: расход вырос либо потому, что
-        перевели больше, либо потому, что сменили модель, и различить это
-        можно только так.
-        """
-        grouped: dict[str, list[DocumentSpend]] = {}
-
-        for spend, month in zip(spends, months, strict=True):
-            grouped.setdefault(month, []).append(spend)
+        for row in rows:
+            grouped.setdefault(row.month, []).append(row)
 
         return [
             MonthSpend(
                 month=month,
-                money=cls._sum(spend.money for spend in grouped[month]),
+                money=cls._sum(row.money for row in grouped[month]),
                 by_model=cls._by_model(grouped[month]),
             )
             for month in sorted(grouped)[-MONTHS:]
         ]
 
     @classmethod
-    def _by_model(cls, spends: list[DocumentSpend]) -> list[ModelSpend]:
+    def _by_model(cls, rows: Sequence[_Row]) -> list[ModelSpend]:
         """Чем переводили и во что это обошлось — дорогие сверху."""
-        grouped: dict[str, list[DocumentSpend]] = {}
+        grouped: dict[str, list[_Row]] = {}
 
-        for spend in spends:
-            # Пусто — модель не вызывалась вовсе: всё закрыли память и
-            # повторы. Это не «неизвестная модель», и называть это надо
-            # своим именем.
-            grouped.setdefault(spend.translated_by or NO_MODEL, []).append(spend)
+        for row in rows:
+            grouped.setdefault(row.model, []).append(row)
 
         return sorted(
             (
                 ModelSpend(
                     model=model,
-                    documents=len(items),
+                    books=len({item.book_id for item in items}),
                     money=cls._sum(item.money for item in items),
                 )
                 for model, items in grouped.items()
             ),
-            key=lambda item: item.money.usage.input_tokens + item.money.usage.output_tokens,
+            key=lambda item: _weight(item.money),
             reverse=True,
         )
 
-    @staticmethod
-    def _most_expensive(spends: list[DocumentSpend]) -> list[DocumentSpend]:
-        return sorted(
-            spends,
-            key=lambda spend: spend.money.usage.input_tokens + spend.money.usage.output_tokens,
-            reverse=True,
-        )[:TOP_DOCUMENTS]
+    @classmethod
+    def _by_book(cls, rows: Sequence[_Row]) -> list[BookSpend]:
+        grouped: dict[uuid.UUID, list[_Row]] = {}
+
+        for row in rows:
+            grouped.setdefault(row.book_id, []).append(row)
+
+        spends = [
+            BookSpend(
+                book_id=book_id,
+                title=items[0].title,
+                project_name=items[0].project_name,
+                models=[item.model for item in cls._by_model(items)],
+                money=cls._sum(item.money for item in items),
+            )
+            for book_id, items in grouped.items()
+        ]
+
+        return sorted(spends, key=lambda spend: _weight(spend.money), reverse=True)[:TOP_BOOKS]

@@ -8,10 +8,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict
 
-from app.models.document import DocumentStatus, SourceFormat, SourceRole
-from app.services.export import ExportFormat, formats_for
+from app.models.document import SourceFormat, SourceRole
 
 
 class DocumentPublic(BaseModel):
@@ -27,76 +26,9 @@ class DocumentPublic(BaseModel):
     # загрузка сама по себе ещё не говорит, чем этот файл будет.
     book_id: uuid.UUID | None
     source_role: SourceRole | None
-    status: DocumentStatus
     size_bytes: int | None
     # Контрольная сумма отдаётся клиенту сознательно: по ней он понимает,
     # что загрузка вернула уже существующий документ, а не завела новый.
     content_hash: str | None
-    error: str | None
-
-    # Потрачено на перевод документа нарастающим итогом по всем запускам.
-    # Токены, а не деньги: цены меняются, а потраченное на эту книгу —
-    # исторический факт, и пересчитывать его задним числом нельзя.
-    input_tokens: int
-    output_tokens: int
-    cached_input_tokens: int
-    cache_write_tokens: int
-    # Чем переведён документ: по нему считается стоимость и понятно, что
-    # перепроверять после смены модели.
-    translated_by: str | None
-
     created_at: datetime
     updated_at: datetime
-
-    # Во что собирается перевод. Считается здесь, а не в витрине: реестр
-    # сборщиков живёт в API, и по нему же отвечает сама выгрузка — второй
-    # список на другой стороне однажды пообещал бы формат, которого нет.
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def export_formats(self) -> list[ExportFormat]:
-        return formats_for(self.source_format)
-
-
-class CostEstimate(BaseModel):
-    """Смета на перевод — оценка сверху, а не счёт.
-
-    Точного числа токенов заранее не знает никто, поэтому здесь заведомо
-    осторожная оценка (см. app/services/pricing.py). Показывать её надо
-    именно так, как она названа: числом порядка, а не суммой к оплате.
-    `usd` пуст, если модель не в прейскуранте, — это честнее нуля.
-    """
-
-    model_config = ConfigDict(from_attributes=True)
-
-    input_tokens: int
-    output_tokens: int
-    usd: float | None
-
-
-class DocumentProfilePublic(BaseModel):
-    """Паспорт документа: из чего он состоит и во что обойдётся перевод."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    segments: int
-    characters: int
-    words: int
-    longest_segment_chars: int
-
-    by_kind: dict[str, int]
-    by_status: dict[str, int]
-
-    untranslated: int
-    unique_untranslated: int
-    repeated: int
-    memory_matches: int
-    # Кандидатов в словарь: всего и без решения. Пока нерешённые есть,
-    # перевод не начнётся. Два числа, а не одно: ноль нерешённых означает и
-    # «всё решено», и «проход не делался вовсе» — состояния разные.
-    terms_total: int
-    undecided_terms: int
-
-    billable_texts: int
-    billable_characters: int
-
-    estimate: CostEstimate | None

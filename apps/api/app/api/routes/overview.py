@@ -4,13 +4,12 @@ from fastapi import APIRouter
 
 from app.api.deps import ContextDep, SessionDep
 from app.schemas.overview import (
-    DocumentProgress,
-    FindingPreview,
+    AttentionPreview,
+    BookProgress,
     OverviewPublic,
     UsageSummary,
 )
 from app.services.overview import OverviewService
-from app.services.pricing import estimate_usd
 
 router = APIRouter(tags=["overview"])
 
@@ -19,18 +18,19 @@ router = APIRouter(tags=["overview"])
 async def overview(context: ContextDep, session: SessionDep) -> OverviewPublic:
     """Что в работе, где ждут человека и во сколько это обошлось.
 
-    Один запрос вместо десятка со стороны витрины: кабинет открывают чаще
-    всего, и собирать его по частям значит открывать три секунды.
+    Один запрос вместо десятка со стороны витрины: сводку открывают чаще всего, и
+    собирать её по частям значит открывать кабинет секундами.
     """
     summary = await OverviewService(session, context).build()
 
     return OverviewPublic(
         projects=summary.projects,
+        books=summary.books,
         documents=summary.documents,
-        segments=summary.segments,
-        documents_by_status=summary.documents_by_status,
-        segments_by_status=summary.segments_by_status,
-        flagged=summary.flagged,
+        blocks=summary.blocks,
+        translated=summary.translated,
+        by_origin=summary.by_origin,
+        live_runs=summary.live_runs,
         undecided_terms=summary.undecided_terms,
         glossary_terms=summary.glossary_terms,
         catalog_entries=summary.catalog_entries,
@@ -40,36 +40,27 @@ async def overview(context: ContextDep, session: SessionDep) -> OverviewPublic:
             output_tokens=summary.usage.output_tokens,
             cached_input_tokens=summary.usage.cached_input_tokens,
             cache_write_tokens=summary.usage.cache_write_tokens,
-            translated_by=summary.translated_by,
-            estimated_usd=estimate_usd(
-                summary.translated_by or "",
-                input_tokens=summary.usage.input_tokens,
-                output_tokens=summary.usage.output_tokens,
-                cached_input_tokens=summary.usage.cached_input_tokens,
-                cache_write_tokens=summary.usage.cache_write_tokens,
-            ),
+            estimated_usd=summary.estimated_usd,
         ),
-        recent_documents=[
-            DocumentProgress(
+        recent_books=[
+            BookProgress(
                 id=card.id,
+                code=card.code,
                 title=card.title,
-                status=card.status,
-                segments=card.segments,
-                done=card.done,
+                blocks=card.blocks,
+                translated=card.translated,
                 ready_percent=card.ready_percent,
             )
-            for card in summary.recent_documents
+            for card in summary.recent_books
         ],
-        recent_findings=[
-            FindingPreview(
-                segment_id=card.segment_id,
-                document_id=card.document_id,
-                document_title=card.document_title,
-                position=card.position,
-                source_text=card.source_text,
-                target_text=card.target_text,
-                checks=card.checks,
+        attention=[
+            AttentionPreview(
+                run_id=card.run_id,
+                book_id=card.book_id,
+                chapter_id=card.chapter_id,
+                title=card.title,
+                problem=card.problem,
             )
-            for card in summary.recent_findings
+            for card in summary.attention
         ],
     )

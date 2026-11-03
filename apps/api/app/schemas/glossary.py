@@ -6,7 +6,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.document import DocumentStatus
 from app.models.memory import FirstUseRule, GlossaryEntryKind, GlossaryTermStatus
 
 # Допустимый вариант перевода — та же строка словаря, что и сам перевод.
@@ -96,45 +95,3 @@ class GlossaryPagePublic(BaseModel):
 
     total: int
     items: list[GlossaryTermPublic]
-
-
-class TranslationResult(BaseModel):
-    """Чем закончился перевод документа.
-
-    Цифры отдаются не для красоты: по ним считается, сколько обращений к
-    модели не понадобилось, и они же обосновывают заказчику скидку на
-    повторный заказ.
-
-    Вызов переводит порцию, а не книгу: `total` — сколько взято этим
-    вызовом, `remaining` — сколько непереведённых осталось. Клиент зовёт
-    ручку, пока `remaining` не станет нулём.
-    """
-
-    total: int
-    from_memory: int
-    from_provider: int
-    flagged: int
-    unique_texts: int
-    # Обращений к провайдеру — против числа сегментов: разница и есть
-    # экономия на повторах и памяти.
-    provider_calls: int
-    saved_calls: int
-
-    # Сколько непереведённых сегментов осталось после этого вызова и в
-    # каком состоянии документ: «разобран», пока остаток есть, «на
-    # вычитке», когда его нет.
-    remaining: int
-    status: DocumentStatus
-
-    # Расход этого запуска в токенах. Прочитанное из кэша отдельно: оно
-    # стоит примерно десятую часть обычного ввода, и сложенное с ним
-    # потеряло бы ровно то, ради чего кэш заводили.
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cached_input_tokens: int = 0
-    cache_write_tokens: int = 0
-
-    # Оценка стоимости в долларах. Именно оценка: у поставщика свои скидки
-    # и тарифы площадок. `null` — модель не в прейскуранте, и показывать её
-    # как бесплатную было бы враньём.
-    estimated_usd: float | None = None

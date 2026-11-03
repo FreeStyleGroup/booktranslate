@@ -8,11 +8,11 @@ from app.api.deps import ContextDep, SessionDep
 from app.schemas.catalog import CatalogEntryPublic
 from app.schemas.document import DocumentPublic
 from app.schemas.finder import (
+    BlockHitPublic,
+    BlockHits,
     DocumentHits,
     EntryHits,
     SearchResult,
-    SegmentHitPublic,
-    SegmentHits,
     TermHits,
 )
 from app.schemas.glossary import GlossaryTermPublic
@@ -52,8 +52,24 @@ async def search(
             total=found.entries.total,
             items=[CatalogEntryPublic.model_validate(item) for item in found.entries.items],
         ),
-        segments=SegmentHits(
-            total=found.segments.total,
-            items=[SegmentHitPublic.model_validate(item) for item in found.segments.items],
+        blocks=BlockHits(
+            total=found.blocks.total,
+            items=[
+                BlockHitPublic(
+                    id=item.block.id,
+                    book_id=item.chapter.book_id,
+                    book_title=item.book_title,
+                    chapter_id=item.chapter.id,
+                    full_code=(
+                        f"{item.chapter.code}-{item.block.code}"
+                        if item.chapter.code
+                        else item.block.code
+                    ),
+                    kind=item.block.kind,
+                    source_text=item.block.source_text,
+                    translation=item.translation,
+                )
+                for item in found.blocks.items
+            ],
         ),
     )

@@ -2,28 +2,25 @@
 
 import uuid
 
-from pydantic import AliasPath, BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from app.models.block import BlockKind
-from app.models.segment import SegmentStatus
 from app.schemas.catalog import CatalogEntryPublic
 from app.schemas.document import DocumentPublic
 from app.schemas.glossary import GlossaryTermPublic
 
 
-class SegmentHitPublic(BaseModel):
-    """Сегмент в выдаче поиска — с книгой, в которой он стоит."""
+class BlockHitPublic(BaseModel):
+    """Блок в выдаче поиска — с книгой и главой, где он стоит."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID = Field(validation_alias=AliasPath("segment", "id"))
-    document_id: uuid.UUID = Field(validation_alias=AliasPath("segment", "document_id"))
-    document_title: str
-    position: int = Field(validation_alias=AliasPath("segment", "position"))
-    kind: BlockKind = Field(validation_alias=AliasPath("segment", "kind"))
-    status: SegmentStatus = Field(validation_alias=AliasPath("segment", "status"))
-    source_text: str = Field(validation_alias=AliasPath("segment", "source_text"))
-    target_text: str | None = Field(validation_alias=AliasPath("segment", "target_text"))
+    id: uuid.UUID
+    book_id: uuid.UUID
+    book_title: str
+    chapter_id: uuid.UUID
+    full_code: str
+    kind: BlockKind
+    source_text: str
+    translation: str | None
 
 
 class DocumentHits(BaseModel):
@@ -41,9 +38,9 @@ class EntryHits(BaseModel):
     items: list[CatalogEntryPublic]
 
 
-class SegmentHits(BaseModel):
+class BlockHits(BaseModel):
     total: int
-    items: list[SegmentHitPublic]
+    items: list[BlockHitPublic]
 
 
 class SearchResult(BaseModel):
@@ -54,4 +51,4 @@ class SearchResult(BaseModel):
     documents: DocumentHits
     terms: TermHits
     entries: EntryHits
-    segments: SegmentHits
+    blocks: BlockHits

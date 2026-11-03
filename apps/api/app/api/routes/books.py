@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
+from app.models.document import SourceRole
 from app.schemas.book import (
     BookCreate,
     BookKitPublic,
@@ -18,6 +19,7 @@ from app.schemas.book import (
 )
 from app.schemas.paging import SortOrder
 from app.services.books import BookPage, BookService, BookSort, SourceInKit
+from app.services.export import formats_for
 from app.services.source_validation import SourceValidationService
 
 router = APIRouter(tags=["books"])
@@ -106,7 +108,22 @@ async def book_sources(
     """
     kit = await BookService(session, context).kit(book_id)
 
-    return BookKitPublic(sources=[_source(source) for source in kit.sources], mismatch=kit.mismatch)
+    primary = next(
+        (
+            source.document
+            for source in kit.sources
+            if source.document.source_role is SourceRole.PRIMARY_TEXT
+        ),
+        None,
+    )
+
+    return BookKitPublic(
+        sources=[_source(source) for source in kit.sources],
+        mismatch=kit.mismatch,
+        export_formats=formats_for(primary.source_format) if primary is not None else [],
+        blocks=kit.blocks,
+        translated=kit.translated,
+    )
 
 
 @router.post(

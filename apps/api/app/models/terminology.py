@@ -18,7 +18,7 @@
 import enum
 import uuid
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,22 +38,13 @@ class TermCandidate(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     __table_args__ = (
         # Один кандидат на владельца. Повторный проход обновляет частоту, а
         # не плодит вторую строку с тем же словом.
-        UniqueConstraint(
-            "document_id", "source_term_normalized", name="term_candidate_in_document"
-        ),
         UniqueConstraint("chapter_id", "source_term_normalized", name="term_candidate_in_chapter"),
-        CheckConstraint("num_nonnulls(document_id, chapter_id) = 1", name="term_candidate_owner"),
     )
 
-    # Прежний владелец — разобранный на сегменты документ.
-    document_id: Mapped[uuid.UUID | None] = mapped_column(
-        postgresql.UUID(as_uuid=True),
-        ForeignKey("documents.id", ondelete="CASCADE"),
-        index=True,
-    )
-    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
+    chapter_id: Mapped[uuid.UUID] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("chapters.id", ondelete="CASCADE"),
+        nullable=False,
         index=True,
     )
 

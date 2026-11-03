@@ -1,23 +1,32 @@
 """Общий поиск через API.
 
-Проверяется главное: одно слово находится во всех четырёх местах, где оно
-может лежать, чужое пространство не видно, а поиск по одной букве не
-принимается.
+Проверяется главное: одно слово находится во всех местах, где оно может лежать, чужое
+пространство не видно, а поиск по одной букве не принимается.
 """
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from tests.chapters import open_book, translated_book
 from tests.conftest import requires_database
 from tests.factories import register
 from tests.test_catalog import lookup
-from tests.test_translation import MANUAL, prepare
+
+MANUAL = (
+    b"Open the valve before start.\n"
+    b"\n"
+    b"Warning! Disconnect the power supply.\n"
+    b"\n"
+    b"Check the pressure gauge.\n"
+    b"\n"
+    b"Close the door.\n"
+)
 
 
 @requires_database
-async def test_one_word_is_found_everywhere(db_client: AsyncClient) -> None:
+async def test_one_word_is_found_everywhere(db_client: AsyncClient, session: AsyncSession) -> None:
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
+    book = await translated_book(db_client, session, account, data=MANUAL)
 
     added = await db_client.post(
         "/glossary",
@@ -37,23 +46,38 @@ async def test_one_word_is_found_everywhere(db_client: AsyncClient) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
 
-    # Книга называется «manual» — по слову «valve» её нет, и это верно.
+    # Файл называется «manual» — по слову «valve» его нет, и это правильно.
     assert body["documents"]["total"] == 0
     assert [item["source_term"] for item in body["terms"]["items"]] == ["valve"]
     assert [item["source_term"] for item in body["entries"]["items"]] == ["check valve"]
-    assert body["segments"]["total"] == 1
-    hit = body["segments"]["items"][0]
+    assert body["blocks"]["total"] == 1
+    hit = body["blocks"]["items"][0]
     assert hit["source_text"] == "Open the valve before start."
-    assert hit["document_title"] == "manual"
-    assert hit["document_id"] == document_id
-    assert hit["position"] == 0
+    assert hit["translation"] == "[ru] Open the valve before start."
+    assert hit["book_title"] == "Manual"
+    assert hit["book_id"] == book.book_id
+    assert hit["chapter_id"] == book.chapter
+    assert hit["full_code"].startswith("CH01-B")
+
+
+@requires_database
+async def test_translation_is_searched_too(db_client: AsyncClient, session: AsyncSession) -> None:
+    """Редактор ищет фразу так, как она написана в переводе."""
+    account = await register(db_client)
+    await translated_book(db_client, session, account, data=MANUAL)
+
+    response = await db_client.get(
+        "/search", headers=account.headers, params={"query": "[ru] Open"}
+    )
+
+    assert response.json()["blocks"]["total"] == 1
 
 
 @requires_database
 async def test_search_counts_beyond_the_shown(db_client: AsyncClient) -> None:
-    """Число считается по всей базе, показывается несколько: видно, куда идти."""
+    """Число считается по всей базе, показывается несколько."""
     account = await register(db_client)
-    document_id = await prepare(db_client, account, data=MANUAL)
+    book = await open_book(db_client, account, data=MANUAL)
 
     response = await db_client.get(
         "/search", headers=account.headers, params={"query": "the", "limit": 1}
@@ -61,18 +85,16 @@ async def test_search_counts_beyond_the_shown(db_client: AsyncClient) -> None:
     body = response.json()
 
     assert body["documents"]["total"] == 0
-    # Слово «the» есть во всех четырёх сегментах; показан один.
-    assert body["segments"]["total"] == 4
-    assert len(body["segments"]["items"]) == 1
-    assert body["segments"]["items"][0]["document_id"] == document_id
+    # Слово «the» есть во всех четырёх блоках; показан один.
+    assert body["blocks"]["total"] == 4
+    assert len(body["blocks"]["items"]) == 1
+    assert body["blocks"]["items"][0]["book_id"] == book.book_id
 
 
 @requires_database
-async def test_search_finds_books_by_title_and_stays_in_the_organization(
-    db_client: AsyncClient,
-) -> None:
+async def test_search_finds_files_and_stays_in_the_organization(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    await prepare(db_client, account)
+    await open_book(db_client, account, data=MANUAL)
 
     mine = await db_client.get("/search", headers=account.headers, params={"query": "manu"})
     assert mine.json()["documents"]["total"] == 1
@@ -82,7 +104,7 @@ async def test_search_finds_books_by_title_and_stays_in_the_organization(
 
     assert theirs.status_code == 200
     assert theirs.json()["documents"]["total"] == 0
-    assert theirs.json()["segments"]["total"] == 0
+    assert theirs.json()["blocks"]["total"] == 0
 
 
 @requires_database

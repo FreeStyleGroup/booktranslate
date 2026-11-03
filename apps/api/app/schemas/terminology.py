@@ -13,9 +13,7 @@ class TermCandidatePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-    # Владелец — ровно один: документ прежнего контура или глава.
-    document_id: uuid.UUID | None
-    chapter_id: uuid.UUID | None
+    chapter_id: uuid.UUID
     source_term: str
     kind: GlossaryEntryKind
     status: TermCandidateStatus

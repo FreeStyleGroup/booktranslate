@@ -27,8 +27,9 @@ from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.book import BookEdition
 from app.models.catalog import CatalogEntry
-from app.models.document import Document
+from app.models.chapter import Chapter
 from app.models.project import Project
 from app.models.terminology import TermCandidate, TermCandidateStatus
 from app.services.base import TenantService
@@ -138,40 +139,43 @@ class CatalogService(TenantService):
 
         return report
 
-    async def explain_document(
+    async def explain_chapter(
         self,
-        document_id: uuid.UUID,
+        chapter_id: uuid.UUID,
         *,
         candidate_ids: Sequence[uuid.UUID] | None = None,
         limit: int | None = None,
         refresh: bool = False,
     ) -> LookupReport:
-        """Разобраться с нерешёнными кандидатами документа.
+        """Разобраться с нерешёнными кандидатами главы.
 
-        Берутся самые частые из нерешённых: слово, встреченное сорок раз,
-        стоит справки больше, чем случайное из подписи к рисунку. Отрывок из
-        книги уходит в запрос вместе с термином — одно и то же слово в разных
-        отраслях значит разное.
+        Берутся самые частые из нерешённых: слово, встретившееся сорок раз, стоит
+        справки больше, чем случайное из подписи. Название книги уходит в запрос вместе
+        с термином — одно слово в разных отраслях значит разное.
         """
-        document = await self._session.scalar(
-            self.scoped(Document).where(Document.id == document_id)
+        chapter = await self._session.scalar(self.scoped(Chapter).where(Chapter.id == chapter_id))
+        if chapter is None:
+            raise NotFoundError("Глава не найдена")
+
+        book = await self._session.scalar(
+            self.scoped(BookEdition).where(BookEdition.id == chapter.book_id)
         )
-        if document is None:
-            raise NotFoundError("Документ не найден")
+        if book is None:
+            raise NotFoundError("Книга не найдена")
 
         project = await self._session.scalar(
-            self.scoped(Project).where(Project.id == document.project_id)
+            self.scoped(Project).where(Project.id == book.project_id)
         )
         if project is None:
             raise NotFoundError("Проект не найден")
 
-        query = self.scoped(TermCandidate).where(TermCandidate.document_id == document.id)
+        query = self.scoped(TermCandidate).where(TermCandidate.chapter_id == chapter.id)
 
         if candidate_ids:
             query = query.where(TermCandidate.id.in_(list(candidate_ids)))
         else:
-            # Без явного списка спрашиваем только про нерешённое: по
-            # разобранному справка уже не нужна, а деньги стоит.
+            # Без явного списка спрашиваем только про нерешённое: по разобранному справка
+            # уже не нужна, а деньги стоит.
             query = query.where(TermCandidate.status == TermCandidateStatus.NEW)
 
         query = query.order_by(TermCandidate.frequency.desc(), TermCandidate.first_position)
@@ -184,10 +188,10 @@ class CatalogService(TenantService):
                 Unknown(source_term=row.source_term, sample=row.sample[:MAX_SAMPLE])
                 for row in candidates
             ],
-            source_language=project.source_language,
-            target_language=project.target_language,
-            # Название книги и проекта задаёт отрасль там, где отрывка мало.
-            subject=f"{project.name}. {document.title}",
+            source_language=book.source_language,
+            target_language=book.target_language,
+            # Название книги и проекта задаёт отрасль термина.
+            subject=f"{project.name}. {book.title}",
             refresh=refresh,
         )
 

@@ -12,7 +12,7 @@ from app.models.book_object import BookObject, ObjectReference, ObjectType, Refe
 from app.models.catalog import CatalogEntry
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeCounter, CodeKind
-from app.models.document import Document, DocumentStatus, SourceFormat, SourceRole
+from app.models.document import Document, SourceFormat, SourceRole
 from app.models.glossary_version import (
     GlossaryScope,
     GlossaryVersion,
@@ -35,7 +35,6 @@ from app.models.memory import (
 from app.models.notification import NotificationSettings
 from app.models.organization import Membership, Organization, Role, User, UserStatus
 from app.models.project import Project
-from app.models.segment import Segment, SegmentStatus
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
@@ -65,7 +64,6 @@ __all__ = [
     "CodeCounter",
     "CodeKind",
     "Document",
-    "DocumentStatus",
     "FirstUseRule",
     "GlossaryEntryKind",
     "GlossaryScope",
@@ -93,9 +91,7 @@ __all__ = [
     "RevisionStage",
     "Role",
     "RunKind",
-    "Segment",
     "SegmentChunk",
-    "SegmentStatus",
     "SharedTerm",
     "SourceFormat",
     "SourceRole",

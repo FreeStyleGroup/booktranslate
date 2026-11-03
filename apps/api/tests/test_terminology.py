@@ -5,9 +5,22 @@
 ошибку перевода.
 """
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.conftest import requires_database
+from app import worker as worker_module
+from app.services.providers import TranslationRequest
+from tests.chapters import (
+    approve_glossary,
+    block_rows,
+    decide_terms,
+    open_book,
+    translate,
+    uploaded_book,
+    with_masters,
+)
+from tests.conftest import RecordingProvider, requires_database
 from tests.factories import Account, create_project, register
 
 # Сочетание повторяется трижды — ровно то, что должно попасть в словарь.
@@ -23,25 +36,19 @@ MANUAL = (
 
 
 async def prepare(client: AsyncClient, account: Account, *, data: bytes = MANUAL) -> str:
-    project_id = await create_project(client, account)
-
-    uploaded = await client.post(
-        f"/projects/{project_id}/documents",
-        headers=account.headers,
-        files={"file": ("manual.txt", data, "text/plain")},
+    """Глава с извлечённым мастером: по нему собираются кандидаты."""
+    book = await uploaded_book(client, account, data=data)
+    extracted = await client.post(
+        f"/chapters/{book.chapter}/masters", headers=account.headers, json={"reason": None}
     )
-    assert uploaded.status_code == 201, uploaded.text
-    document_id: str = uploaded.json()["id"]
+    assert extracted.status_code == 201, extracted.text
 
-    parsed = await client.post(f"/documents/{document_id}/parse", headers=account.headers)
-    assert parsed.status_code == 200, parsed.text
-
-    return document_id
+    return book.chapter
 
 
-async def extract(client: AsyncClient, account: Account, document_id: str) -> list[dict]:
+async def extract(client: AsyncClient, account: Account, chapter_id: str) -> list[dict]:
     response = await client.post(
-        f"/documents/{document_id}/terminology/extract", headers=account.headers
+        f"/chapters/{chapter_id}/terminology/extract", headers=account.headers
     )
     assert response.status_code == 200, response.text
 
@@ -59,9 +66,9 @@ def by_source(candidates: list[dict], source: str) -> dict:
 @requires_database
 async def test_extract_collects_candidates(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
+    chapter_id = await prepare(db_client, account)
 
-    candidates = await extract(db_client, account, document_id)
+    candidates = await extract(db_client, account, chapter_id)
 
     valve = by_source(candidates, "check valve")
 
@@ -77,37 +84,37 @@ async def test_extract_collects_candidates(db_client: AsyncClient) -> None:
 
 
 @requires_database
-async def test_translation_waits_for_decisions(db_client: AsyncClient) -> None:
-    """Перевод поверх нерешённого словаря — ровно та ошибка, ради которой всё это."""
+async def test_accepted_term_reaches_translation(
+    db_client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Принятый термин доезжает до модели через утверждённую версию глоссария."""
+    log: list[TranslationRequest] = []
+    monkeypatch.setattr(worker_module, "get_provider", lambda _model=None: RecordingProvider(log))
+
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    await extract(db_client, account, document_id)
-
-    response = await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
-
-    assert response.status_code == 409
-    assert "Терминологический проход" in response.json()["detail"]
-
-
-@requires_database
-async def test_ignore_terminology_lets_translation_through(db_client: AsyncClient) -> None:
-    """Обойти проверку можно, но осознанно — умолчание остаётся строгим."""
-    account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    await extract(db_client, account, document_id)
-
-    response = await db_client.post(
-        f"/documents/{document_id}/translate?ignore_terminology=true", headers=account.headers
+    book = await open_book(
+        db_client, account, data=MANUAL, accepted={"check valve": "обратный клапан"}
     )
 
-    assert response.status_code == 200, response.text
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
+    terms = {item["source_term"]: item for item in glossary}
+
+    assert terms["check valve"]["source"] == "extracted"
+    assert terms["check valve"]["status"] == "confirmed"
+
+    await translate(db_client, session, account, book.chapter)
+
+    assert any(term.target == "обратный клапан" for request in log for term in request.terms)
+
+    rows = await block_rows(db_client, account, book.chapter)
+    assert "обратный клапан" in rows[0]["current"]["text"]
 
 
 @requires_database
-async def test_accepted_term_reaches_translation(db_client: AsyncClient) -> None:
+async def test_do_not_translate_needs_no_target(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    candidates = await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account)
+    candidates = await extract(db_client, account, chapter_id)
 
     decisions = [
         {
@@ -115,12 +122,12 @@ async def test_accepted_term_reaches_translation(db_client: AsyncClient) -> None
             "accept": True,
             "target_term": "обратный клапан",
         },
-        # Непереводимому перевод не нужен: он совпадает с исходником.
+        # Непереводимому перевод не нужен: он совпадает с исходным.
         {"candidate_id": by_source(candidates, "ISO 9001")["id"], "accept": True},
     ]
 
     report = await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={"decisions": decisions},
     )
@@ -130,29 +137,15 @@ async def test_accepted_term_reaches_translation(db_client: AsyncClient) -> None
     glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
     terms = {item["source_term"]: item for item in glossary}
 
-    assert terms["check valve"]["source"] == "extracted"
-    assert terms["check valve"]["status"] == "confirmed"
-    # У непереводимого перевод подставлен сам, копировать строку руками не
-    # пришлось.
+    # У непереводимого перевод подставлен сам, копировать строку не пришлось.
     assert terms["ISO 9001"]["target_term"] == "ISO 9001"
-
-    translated = await db_client.post(
-        f"/documents/{document_id}/translate", headers=account.headers
-    )
-    assert translated.status_code == 200, translated.text
-
-    segments = (
-        await db_client.get(f"/documents/{document_id}/segments", headers=account.headers)
-    ).json()["items"]
-
-    assert "обратный клапан" in segments[0]["target_text"]
 
 
 @requires_database
 async def test_abbreviation_keeps_expansion_in_note(db_client: AsyncClient) -> None:
     """Расшифровка из текста уезжает в примечание к термину, а не теряется."""
     account = await register(db_client)
-    document_id = await prepare(
+    chapter_id = await prepare(
         db_client,
         account,
         data=(
@@ -160,14 +153,14 @@ async def test_abbreviation_keeps_expansion_in_note(db_client: AsyncClient) -> N
         ),
     )
 
-    candidates = await extract(db_client, account, document_id)
+    candidates = await extract(db_client, account, chapter_id)
     plc = by_source(candidates, "PLC")
 
     assert plc["kind"] == "abbreviation"
     assert plc["expansion"] == "Programmable Logic Controller"
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={"decisions": [{"candidate_id": plc["id"], "accept": True, "target_term": "ПЛК"}]},
     )
@@ -185,11 +178,11 @@ async def test_abbreviation_keeps_expansion_in_note(db_client: AsyncClient) -> N
 async def test_rejected_candidate_does_not_come_back(db_client: AsyncClient) -> None:
     """Иначе на повторном проходе редактор увидит те же строки заново."""
     account = await register(db_client)
-    document_id = await prepare(db_client, account)
-    candidates = await extract(db_client, account, document_id)
+    chapter_id = await prepare(db_client, account)
+    candidates = await extract(db_client, account, chapter_id)
 
     await db_client.post(
-        f"/documents/{document_id}/terminology/decisions",
+        f"/chapters/{chapter_id}/terminology/decisions",
         headers=account.headers,
         json={
             "decisions": [
@@ -198,80 +191,21 @@ async def test_rejected_candidate_does_not_come_back(db_client: AsyncClient) -> 
         },
     )
 
-    again = await extract(db_client, account, document_id)
+    again = await extract(db_client, account, chapter_id)
 
     assert by_source(again, "check valve")["status"] == "rejected"
 
 
 @requires_database
-async def test_settled_term_flags_missing_translation(db_client: AsyncClient) -> None:
-    """Подтверждённый обязательный термин, которого нет в переводе, — это ошибка."""
+async def test_retired_term_does_not_enter_the_version(db_client: AsyncClient) -> None:
     account = await register(db_client)
 
-    # Регистр не совпадает с текстом: сопоставление термин найдёт, а заглушка
-    # подставить не сможет — так получается перевод без нужного слова.
-    await db_client.post(
-        "/glossary",
-        headers=account.headers,
-        json={
-            "source_term": "Check Valve",
-            "target_term": "обратный клапан",
-            "source_language": "en",
-            "target_language": "ru",
-            "status": "confirmed",
-        },
-    )
+    book = await uploaded_book(db_client, account, data=MANUAL)
+    await with_masters(db_client, account, book)
+    await decide_terms(db_client, account, book.chapter, {"check valve": "обратный клапан"})
 
-    document_id = await prepare(db_client, account)
-    result = await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
-
-    assert result.json()["flagged"] == 3
-
-    segments = (
-        await db_client.get(f"/documents/{document_id}/segments", headers=account.headers)
-    ).json()["items"]
-
-    assert segments[0]["status"] == "flagged"
-
-
-@requires_database
-async def test_unsettled_term_does_not_flag(db_client: AsyncClient) -> None:
-    """Спор о словаре не должен выглядеть как сотня ошибок перевода."""
-    account = await register(db_client)
-
-    await db_client.post(
-        "/glossary",
-        headers=account.headers,
-        json={
-            "source_term": "Check Valve",
-            "target_term": "обратный клапан",
-            "source_language": "en",
-            "target_language": "ru",
-            "status": "needs_unification",
-        },
-    )
-
-    document_id = await prepare(db_client, account)
-    result = await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
-
-    assert result.json()["flagged"] == 0
-
-
-@requires_database
-async def test_retired_term_is_ignored(db_client: AsyncClient) -> None:
-    account = await register(db_client)
-
-    added = await db_client.post(
-        "/glossary",
-        headers=account.headers,
-        json={
-            "source_term": "Check Valve",
-            "target_term": "обратный клапан",
-            "source_language": "en",
-            "target_language": "ru",
-        },
-    )
-    term_id = added.json()["id"]
+    glossary = (await db_client.get("/glossary", headers=account.headers)).json()["items"]
+    term_id = next(item["id"] for item in glossary if item["source_term"] == "check valve")
 
     retired = await db_client.patch(
         f"/glossary/{term_id}", headers=account.headers, json={"status": "retired"}
@@ -279,10 +213,9 @@ async def test_retired_term_is_ignored(db_client: AsyncClient) -> None:
     assert retired.status_code == 200, retired.text
     assert retired.json()["status"] == "retired"
 
-    document_id = await prepare(db_client, account)
-    result = await db_client.post(f"/documents/{document_id}/translate", headers=account.headers)
+    version = await approve_glossary(db_client, account, book.book_id)
 
-    assert result.json()["flagged"] == 0
+    assert version["term_count"] == 0
 
 
 @requires_database
@@ -321,30 +254,22 @@ async def test_update_keeps_untouched_fields(db_client: AsyncClient) -> None:
 @requires_database
 async def test_candidates_are_scoped_to_organization(db_client: AsyncClient) -> None:
     owner = await register(db_client)
-    document_id = await prepare(db_client, owner)
-    await extract(db_client, owner, document_id)
+    chapter_id = await prepare(db_client, owner)
+    await extract(db_client, owner, chapter_id)
 
     stranger = await register(db_client, email="other@example.com", organization_name="Чужие")
-    listing = await db_client.get(f"/documents/{document_id}/terminology", headers=stranger.headers)
+    listing = await db_client.get(f"/chapters/{chapter_id}/terminology", headers=stranger.headers)
 
-    assert listing.status_code == 200
-    assert listing.json() == []
+    assert listing.status_code == 404
 
 
 @requires_database
-async def test_extract_needs_parsed_document(db_client: AsyncClient) -> None:
+async def test_extract_needs_a_master(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    project_id = await create_project(db_client, account)
-
-    uploaded = await db_client.post(
-        f"/projects/{project_id}/documents",
-        headers=account.headers,
-        files={"file": ("manual.txt", MANUAL, "text/plain")},
-    )
-    document_id = uploaded.json()["id"]
+    book = await uploaded_book(db_client, account, data=MANUAL)
 
     response = await db_client.post(
-        f"/documents/{document_id}/terminology/extract", headers=account.headers
+        f"/chapters/{book.chapter}/terminology/extract", headers=account.headers
     )
 
     assert response.status_code == 409

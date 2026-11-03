@@ -9,17 +9,11 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.api.uploads import chunks
-from app.core.config import get_settings
 from app.models.document import SourceFormat, SourceRole
-from app.schemas.document import DocumentProfilePublic, DocumentPublic
+from app.schemas.document import DocumentPublic
 from app.services.documents import DocumentService
 from app.services.errors import InvalidInputError
-from app.services.export import ExportFormat
-from app.services.exporting import ExportService
 from app.services.formats import media_type
-from app.services.profiling import ProfilingService
-from app.services.providers import provider_name
-from app.services.workspace import WorkspaceSettingsService
 
 router = APIRouter(tags=["documents"])
 
@@ -115,33 +109,6 @@ async def get_document(
     return DocumentPublic.model_validate(document)
 
 
-@router.get("/documents/{document_id}/profile", response_model=DocumentProfilePublic)
-async def document_profile(
-    document_id: uuid.UUID,
-    context: ContextDep,
-    session: SessionDep,
-) -> DocumentProfilePublic:
-    """Из чего состоит документ и во что обойдётся его перевод.
-
-    Считается по сегментам, поэтому до разбора отвечает нулями — это не
-    ошибка, а честный ответ: пока файл не разобран, про его состав ничего
-    не известно, кроме размера в байтах.
-
-    Смета — оценка сверху и помечена как оценка. Она нужна до перевода:
-    узнать цену книги, запустив перевод, можно и так, но платить за это
-    придётся уже по-настоящему.
-    """
-    # Смета — по модели, которую выбрало пространство: иначе она считала
-    # бы по умолчанию площадки и расходилась бы со счётом вдвое.
-    profile = await ProfilingService(session, context).build(
-        document_id,
-        model=provider_name(await WorkspaceSettingsService(session, context).model()),
-        context_segments=get_settings().translation_context_segments,
-    )
-
-    return DocumentProfilePublic.model_validate(profile)
-
-
 @router.get("/documents/{document_id}/content")
 async def download_document(
     document_id: uuid.UUID,
@@ -178,47 +145,6 @@ async def download_document(
             # Тип файла — тот, что объявлен, а не угаданный браузером по
             # содержимому: угадывание и превращает «картинку» в страницу.
             "X-Content-Type-Options": "nosniff",
-        },
-    )
-
-
-@router.get("/documents/{document_id}/export")
-async def export_document(
-    document_id: uuid.UUID,
-    context: ContextDep,
-    session: SessionDep,
-    storage: StorageDep,
-    export_format: Annotated[
-        ExportFormat,
-        Query(alias="format", description="Формат выгрузки; source — как приносили"),
-    ] = ExportFormat.SOURCE,
-    allow_untranslated: Annotated[
-        bool,
-        Query(description="Выгрузить черновик: непереведённое уйдёт исходным текстом"),
-    ] = False,
-) -> Response:
-    """Забрать перевод файлом.
-
-    По умолчанию собирается в формате оригинала и только целиком:
-    недопереведённая книга, отданная молча, — худшее, что здесь можно
-    сделать, потому что заметят это позже всех. Черновик доступен явным
-    разрешением, и тогда число непереведённых блоков возвращается заголовком
-    `X-Untranslated-Blocks`.
-    """
-    result = await ExportService(session, context, storage).export(
-        document_id, export_format=export_format, allow_untranslated=allow_untranslated
-    )
-
-    # filename* с процентным кодированием: имя собирается из названия
-    # документа, а оно бывает русским.
-    name = quote(result.filename)
-
-    return Response(
-        content=result.rendered.content,
-        media_type=result.rendered.media_type,
-        headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
-            "X-Untranslated-Blocks": str(result.untranslated),
         },
     )
 

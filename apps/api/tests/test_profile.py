@@ -1,8 +1,7 @@
-"""Паспорт документа через API.
+"""Смета главы и список файлов пространства.
 
-Проверяется то, по чему человек решает, платить ли: объём считается по
-разобранному тексту, повтор в оплату не попадает, память переводов
-уменьшает счёт, а чужой документ не показывает своего объёма.
+Проверяется то, ради чего смета заведена: цену видно до запуска, повторы и готовые
+переводы её снижают, а защищённое не стоит ничего.
 """
 
 from httpx import AsyncClient
@@ -10,203 +9,160 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.organization import Membership, Role
+from tests.chapters import open_book, translate
 from tests.conftest import requires_database
-from tests.factories import Account, create_project, register
+from tests.factories import create_project, register
+from tests.test_memory import seed
 
-# Второй и четвёртый абзацы совпадают: в руководствах предупреждение
-# повторяется десятками раз, и в смете оно обязано стоить один раз.
 MANUAL = (
     b"Open the valve before start.\n"
     b"\n"
     b"Warning! Disconnect the power supply.\n"
     b"\n"
-    b"Check the pressure gauge.\n"
+    b"Open the valve before start.\n"
     b"\n"
-    b"Warning! Disconnect the power supply.\n"
+    b"12,5\n"
 )
 
 
-async def upload(
-    client: AsyncClient, account: Account, project_id: str, *, data: bytes = MANUAL
-) -> str:
-    response = await client.post(
-        f"/projects/{project_id}/documents",
-        headers=account.headers,
-        files={"file": ("manual.txt", data, "text/plain")},
-    )
-    assert response.status_code == 201, response.text
-
-    document_id: str = response.json()["id"]
-    return document_id
-
-
-@requires_database
-async def test_profile_of_unparsed_document_is_empty(db_client: AsyncClient) -> None:
-    """До разбора состав неизвестен — и отвечать надо именно так.
-
-    Нули, а не отказ: карточка документа открывается сразу после загрузки,
-    и ошибка вместо паспорта выглядела бы как сломанный файл.
-    """
-    account = await register(db_client)
-    project_id = await create_project(db_client, account)
-    document_id = await upload(db_client, account, project_id)
-
-    response = await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
-
+async def estimate(client: AsyncClient, headers: dict[str, str], chapter_id: str) -> dict:
+    response = await client.get(f"/chapters/{chapter_id}/translation/estimate", headers=headers)
     assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["segments"] == 0
-    assert body["characters"] == 0
-    assert body["estimate"] is None
+
+    body: dict = response.json()
+    return body
 
 
 @requires_database
-async def test_profile_counts_text_after_parsing(db_client: AsyncClient) -> None:
+async def test_estimate_counts_the_chapter(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    project_id = await create_project(db_client, account)
-    document_id = await upload(db_client, account, project_id)
+    book = await open_book(db_client, account, data=MANUAL)
 
-    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
+    body = await estimate(db_client, account.headers, book.chapter)
 
-    body = (
-        await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
-    ).json()
-
-    assert body["segments"] == 4
+    assert body["blocks"] == 4
     assert body["characters"] > 0
     assert body["words"] > 0
-    # Самый длинный сегмент не длиннее всего текста и не короче среднего:
-    # проверяется, что считается именно максимум, а не первая попавшаяся
-    # строка.
-    assert 0 < body["longest_segment_chars"] <= body["characters"]
-    assert body["by_kind"]["paragraph"] == 4
-    assert body["by_status"]["new"] == 4
-    # Терминологический проход не запускался — решать нечего, и это не то
-    # же самое, что «есть нерешённые».
-    assert body["undecided_terms"] == 0
-
-
-@requires_database
-async def test_repeated_text_is_billed_once(db_client: AsyncClient) -> None:
-    """Повтор внутри книги переводится один раз — и стоит один раз."""
-    account = await register(db_client)
-    project_id = await create_project(db_client, account)
-    document_id = await upload(db_client, account, project_id)
-
-    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
-
-    body = (
-        await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
-    ).json()
-
+    assert body["longest_block_chars"] == len("Warning! Disconnect the power supply.")
+    assert body["by_kind"]
     assert body["untranslated"] == 4
-    assert body["unique_untranslated"] == 3
-    assert body["repeated"] == 1
-    assert body["billable_texts"] == 3
-    assert body["estimate"]["input_tokens"] > 0
 
 
 @requires_database
-async def test_memory_lowers_the_bill(db_client: AsyncClient) -> None:
-    """Переведённое однажды не оплачивается второй раз.
-
-    Ровно то, чем память переводов окупается, и ровно то, что заказчик
-    хочет видеть до начала работы, а не в отчёте после.
-    """
+async def test_protected_and_repeated_are_not_billed(db_client: AsyncClient) -> None:
     account = await register(db_client)
-    project_id = await create_project(db_client, account)
+    book = await open_book(db_client, account, data=MANUAL)
 
-    first = await upload(db_client, account, project_id)
-    await db_client.post(f"/documents/{first}/parse", headers=account.headers)
-    translated = await db_client.post(f"/documents/{first}/translate", headers=account.headers)
-    assert translated.status_code == 200, translated.text
+    body = await estimate(db_client, account.headers, book.chapter)
 
-    # Вторая книга начинается с того же предупреждения — и оно уже в памяти.
-    second = await upload(
-        db_client,
-        account,
-        project_id,
-        data=b"Warning! Disconnect the power supply.\n\nRemove the cover.\n",
-    )
-    await db_client.post(f"/documents/{second}/parse", headers=account.headers)
-
-    body = (await db_client.get(f"/documents/{second}/profile", headers=account.headers)).json()
-
+    assert body["protected"] == 1
+    assert body["repeated"] == 1
     assert body["unique_untranslated"] == 2
+    assert body["billable_texts"] == 2
+    assert body["billable_characters"] == len("Open the valve before start.") + len(
+        "Warning! Disconnect the power supply."
+    )
+
+
+@requires_database
+async def test_memory_lowers_the_bill(db_client: AsyncClient, session: AsyncSession) -> None:
+    account = await register(db_client)
+    await seed(session, account, [("Open the valve before start.", "Откройте клапан.")])
+    book = await open_book(db_client, account, data=MANUAL)
+
+    body = await estimate(db_client, account.headers, book.chapter)
+
     assert body["memory_matches"] == 1
     assert body["billable_texts"] == 1
 
 
 @requires_database
-async def test_profile_does_not_need_a_model_key(db_client: AsyncClient) -> None:
-    """Карточку документа открывают, не собираясь никуда ходить.
+async def test_translation_in_the_book_lowers_the_bill(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Текст уже переведён в другой главе — платить за него второй раз незачем."""
+    account = await register(db_client)
+    book = await open_book(
+        db_client,
+        account,
+        data=b"# One\n\nCheck the valve daily.\n\n# Two\n\nCheck the valve daily.\n\nFresh text.\n",
+        name="manual.md",
+        media="text/markdown",
+    )
+    assert len(book.chapters) == 2
 
-    Смете нужно имя модели, а не соединение с ней. Пока имя добывалось
-    через клиента, установка с невписанным ключом отвечала на открытие
-    карточки отказом — и выглядело это как сломанный документ.
-    """
+    await translate(db_client, session, account, book.chapters[0])
+
+    body = await estimate(db_client, account.headers, book.chapters[1])
+
+    assert body["book_matches"] == 1
+    assert body["billable_texts"] == 2
+
+
+@requires_database
+async def test_translated_chapter_has_nothing_to_pay_for(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    account = await register(db_client)
+    book = await open_book(db_client, account, data=MANUAL)
+    await translate(db_client, session, account, book.chapter)
+
+    body = await estimate(db_client, account.headers, book.chapter)
+
+    assert body["untranslated"] == 0
+    assert body["billable_characters"] == 0
+    assert body["estimate"] is None
+
+
+@requires_database
+async def test_estimate_does_not_need_a_model_key(db_client: AsyncClient) -> None:
+    """Смете нужно имя модели, а не клиент: иначе отказ на установке без ключа."""
     settings = get_settings()
-    was_provider, was_key = settings.translation_provider, settings.anthropic_api_key
+    provider, key = settings.translation_provider, settings.anthropic_api_key
+    account = await register(db_client)
+    book = await open_book(db_client, account, data=MANUAL)
+
     settings.translation_provider = "claude"
     settings.anthropic_api_key = ""
 
     try:
-        account = await register(db_client)
-        project_id = await create_project(db_client, account)
-        document_id = await upload(db_client, account, project_id)
-        await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
-
-        response = await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
+        body = await estimate(db_client, account.headers, book.chapter)
     finally:
-        settings.translation_provider = was_provider
-        settings.anthropic_api_key = was_key
+        settings.translation_provider = provider
+        settings.anthropic_api_key = key
 
-    assert response.status_code == 200, response.text
-    # Модель известна и есть в прейскуранте — значит смета в деньгах.
-    assert response.json()["estimate"]["usd"] > 0
-
-
-@requires_database
-async def test_profile_counts_terms_waiting_for_a_decision(db_client: AsyncClient) -> None:
-    """Готовность к переводу видна в паспорте, а не только в отказе.
-
-    Нерешённые термины останавливают перевод, и знать об этом надо до
-    нажатия «перевести», а не в ответ на него.
-    """
-    account = await register(db_client)
-    project_id = await create_project(db_client, account)
-    document_id = await upload(db_client, account, project_id)
-    await db_client.post(f"/documents/{document_id}/parse", headers=account.headers)
-
-    extracted = await db_client.post(
-        f"/documents/{document_id}/terminology/extract",
-        params={"min_frequency": 2},
-        headers=account.headers,
-    )
-    assert extracted.status_code == 200, extracted.text
-    assert len(extracted.json()) > 0
-
-    body = (
-        await db_client.get(f"/documents/{document_id}/profile", headers=account.headers)
-    ).json()
-
-    assert body["undecided_terms"] == len(extracted.json())
+    assert body["estimate"] is not None
+    assert body["estimate"]["usd"] is not None
 
 
 @requires_database
-async def test_foreign_document_has_no_profile(db_client: AsyncClient) -> None:
-    """Объём чужой книги — тоже сведения о ней."""
+async def test_foreign_chapter_has_no_estimate(db_client: AsyncClient) -> None:
     owner = await register(db_client)
-    project_id = await create_project(db_client, owner)
-    document_id = await upload(db_client, owner, project_id)
+    book = await open_book(db_client, owner, data=MANUAL)
+    stranger = await register(db_client, email="other@example.com", organization_name="Чужие")
 
-    stranger = await register(
-        db_client, email="stranger@example.com", organization_name="Другая контора"
+    response = await db_client.get(
+        f"/chapters/{book.chapter}/translation/estimate", headers=stranger.headers
     )
-
-    response = await db_client.get(f"/documents/{document_id}/profile", headers=stranger.headers)
 
     assert response.status_code == 404, response.text
+
+
+@requires_database
+async def test_viewer_sees_the_estimate(db_client: AsyncClient, session: AsyncSession) -> None:
+    """Смету смотрит и наблюдатель: иначе ему не с чем прийти к заказчику."""
+    owner = await register(db_client)
+    book = await open_book(db_client, owner, data=MANUAL)
+
+    guest = await register(db_client, email="guest@example.com", organization_name="Своя")
+    session.add(
+        Membership(organization_id=owner.organization_id, user_id=guest.user_id, role=Role.VIEWER)
+    )
+    await session.flush()
+
+    body = await estimate(db_client, guest.headers_for(owner.organization_id), book.chapter)
+
+    assert body["blocks"] == 4
 
 
 @requires_database
@@ -216,8 +172,13 @@ async def test_workspace_lists_documents_of_all_projects(db_client: AsyncClient)
     first = await create_project(db_client, account, name="Первый проект")
     second = await create_project(db_client, account, name="Второй проект")
 
-    await upload(db_client, account, first)
-    await upload(db_client, account, second, data=b"Another manual entirely.\n")
+    for project, data in ((first, MANUAL), (second, b"Another manual entirely.\n")):
+        uploaded = await db_client.post(
+            f"/projects/{project}/documents",
+            headers=account.headers,
+            files={"file": ("manual.txt", data, "text/plain")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
 
     everything = await db_client.get("/documents", headers=account.headers)
     only_second = await db_client.get(
@@ -228,27 +189,3 @@ async def test_workspace_lists_documents_of_all_projects(db_client: AsyncClient)
     assert len(everything.json()) == 2
     assert len(only_second.json()) == 1
     assert only_second.json()[0]["project_id"] == second
-
-
-@requires_database
-async def test_viewer_sees_the_profile(db_client: AsyncClient, session: AsyncSession) -> None:
-    """Смету смотрит и наблюдатель: загружать он не вправе, а знать объём —
-    вправе, иначе ему не с чем прийти к заказчику."""
-    owner = await register(db_client)
-    project_id = await create_project(db_client, owner)
-    document_id = await upload(db_client, owner, project_id)
-    await db_client.post(f"/documents/{document_id}/parse", headers=owner.headers)
-
-    guest = await register(db_client, email="guest@example.com", organization_name="Своя контора")
-    session.add(
-        Membership(organization_id=owner.organization_id, user_id=guest.user_id, role=Role.VIEWER)
-    )
-    await session.flush()
-
-    response = await db_client.get(
-        f"/documents/{document_id}/profile",
-        headers=guest.headers_for(owner.organization_id),
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json()["segments"] == 4

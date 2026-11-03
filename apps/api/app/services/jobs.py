@@ -2,8 +2,9 @@
 
 Два разных пользователя у одного кода, и разделены они намеренно.
 
-`JobService` работает от имени человека: ставит книгу в очередь, показывает
-её задания, останавливает их. Всё — в границах его рабочего пространства.
+`JobService` работает от имени человека: показывает задания и останавливает их.
+Всё — в границах его рабочего пространства. В очередь работу ставит служба, которая
+знает, что это за работа, — см. `translation_runs`.
 
 `JobQueue` работает от имени фонового процесса, у которого ни запроса, ни
 организации нет: он забирает следующее задание по всей базе. Смешать их в
@@ -16,103 +17,29 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import Select, func, select, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.document import Document, DocumentStatus
 from app.models.job import LIVE, JobState, TranslationJob
 from app.models.organization import Role
-from app.models.segment import Segment, SegmentStatus
 from app.services.base import TenantService
 from app.services.errors import ConflictError, NotFoundError
-from app.services.terminology import TerminologyService
 
 logger = logging.getLogger(__name__)
 
 # Ставить книгу в очередь — та же работа, что переводить её вручную.
 QUEUEING_ROLES = (Role.ADMIN, Role.MANAGER, Role.TRANSLATOR)
 
-# Состояния документа, из которых перевод запускать нечего.
-NOT_PARSED = (DocumentStatus.UPLOADED, DocumentStatus.PARSING, DocumentStatus.FAILED)
-
 
 class JobService(TenantService):
-    async def enqueue(self, document_id: uuid.UUID) -> TranslationJob:
-        """Поставить книгу в очередь на перевод.
-
-        Всё, что помешает переводу, спрашивается здесь, а не откладывается
-        до рабочего: задание, которое заведомо сорвётся через минуту,
-        человеку бесполезно — он узнает о том же самом, но позже и в виде
-        отказа, которого не просил.
-
-        Правила при этом не переписываются: незаконченный терминологический
-        проход считает та же служба, что и перевод. Второго места, где
-        записано «сколько кандидатов без решения», не заводится.
-        """
-        self._context.require(*QUEUEING_ROLES)
-
-        document = await self._session.scalar(
-            self.scoped(Document).where(Document.id == document_id)
-        )
-        if document is None:
-            raise NotFoundError("Документ не найден")
-
-        if document.status in NOT_PARSED:
-            raise ConflictError("Документ ещё не разобран на сегменты")
-
-        untranslated = await self._untranslated(document_id)
-
-        if untranslated == 0:
-            raise ConflictError("В книге не осталось непереведённых сегментов")
-
-        undecided = await TerminologyService(self._session, self._context).undecided(document_id)
-
-        if undecided:
-            raise ConflictError(
-                f"Терминологический проход не закончен: {undecided} кандидатов без решения"
-            )
-
-        job = TranslationJob(
-            organization_id=self.organization_id,
-            document_id=document_id,
-            state=JobState.WAITING,
-            requested_by_id=self._context.user.id,
-            segments_total=untranslated,
-        )
-        self._session.add(job)
-
-        try:
-            await self._session.commit()
-        except IntegrityError as error:
-            # Одна книга — одно живое задание; ограничение стоит в базе.
-            # Два одновременных нажатия проходят проверку оба, и отличить
-            # повтор от настоящей ошибки можно только здесь.
-            await self._session.rollback()
-
-            existing = await self._session.scalar(
-                self.scoped(TranslationJob).where(
-                    TranslationJob.document_id == document_id,
-                    TranslationJob.state.in_(list(LIVE)),
-                )
-            )
-            if existing is not None:
-                raise ConflictError("Книга уже стоит в очереди на перевод") from error
-
-            raise
-
-        await self._session.refresh(job)
-
-        return job
-
     async def list(
-        self, *, document_id: uuid.UUID | None = None, limit: int = 50
+        self, *, chapter_id: uuid.UUID | None = None, limit: int = 50
     ) -> list[TranslationJob]:
         """Задания пространства — новые сверху."""
         query: Select[tuple[TranslationJob]] = self.scoped(TranslationJob)
 
-        if document_id is not None:
-            query = query.where(TranslationJob.document_id == document_id)
+        if chapter_id is not None:
+            query = query.where(TranslationJob.chapter_id == chapter_id)
 
         return list(
             await self._session.scalars(
@@ -155,20 +82,6 @@ class JobService(TenantService):
         await self._session.refresh(job)
 
         return job
-
-    async def _untranslated(self, document_id: uuid.UUID) -> int:
-        return int(
-            await self._session.scalar(
-                select(func.count())
-                .select_from(Segment)
-                .where(
-                    Segment.organization_id == self.organization_id,
-                    Segment.document_id == document_id,
-                    Segment.status == SegmentStatus.NEW,
-                )
-            )
-            or 0
-        )
 
 
 class JobQueue:
@@ -290,7 +203,7 @@ class JobQueue:
         после этой пачки.
         """
         job.heartbeat_at = datetime.now(UTC)
-        job.segments_done = done
+        job.items_done = done
 
         await self._session.commit()
         await self._session.refresh(job)
@@ -299,7 +212,7 @@ class JobQueue:
 
     async def finish(self, job: TranslationJob, *, done: int, state: JobState) -> None:
         job.state = state
-        job.segments_done = done
+        job.items_done = done
         job.finished_at = datetime.now(UTC)
 
         await self._session.commit()
@@ -317,7 +230,7 @@ class JobQueue:
         job.state = JobState.WAITING
         job.worker = None
         job.attempts = max(0, job.attempts - 1)
-        job.segments_done = done
+        job.items_done = done
 
         await self._session.commit()
 
@@ -332,7 +245,7 @@ class JobQueue:
         """
         attempts_left = job.attempts < get_settings().worker_max_attempts
 
-        job.segments_done = done
+        job.items_done = done
         job.error = error
 
         if retry and attempts_left:

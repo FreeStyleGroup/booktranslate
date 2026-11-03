@@ -30,31 +30,29 @@ class MoneyPublic(BaseModel):
 
 class ModelSpendPublic(BaseModel):
     model: str
-    documents: int
+    books: int
     money: MoneyPublic
 
 
 class MonthSpendPublic(BaseModel):
-    # «2026-09». Месяц загрузки книги, а не оплаты: отдельной записи «когда
-    # потратили» в базе нет, а `created_at` не меняется никогда.
+    # «2026-09». Месяц запуска прогона.
     month: str
     money: MoneyPublic
     by_model: list[ModelSpendPublic]
 
 
-class DocumentSpendPublic(BaseModel):
-    document_id: uuid.UUID
+class BookSpendPublic(BaseModel):
+    book_id: uuid.UUID
     title: str
     project_name: str
-    # Чем переводили. `null` — модель не вызывалась: всё закрыли память и
-    # повторы.
-    translated_by: str | None
+    # Какими моделями переводили, начиная с самой дорогой.
+    models: list[str]
     money: MoneyPublic
 
 
 class UsageReportPublic(BaseModel):
     total: MoneyPublic
-    documents: int
+    books: int
     by_month: list[MonthSpendPublic]
     by_model: list[ModelSpendPublic]
-    by_document: list[DocumentSpendPublic]
+    by_book: list[BookSpendPublic]
