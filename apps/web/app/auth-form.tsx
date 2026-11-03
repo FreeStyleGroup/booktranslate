@@ -25,6 +25,8 @@ export type AuthTexts = {
   sent: { title: string; text: string } | null;
 };
 
+// Метод нужен на случай нажатия до загрузки скриптов: без него браузер отправит форму методом GET,
+// и пароль окажется в адресе, истории и журналах сервера.
 export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: AuthTexts }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +99,7 @@ export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: A
   }
 
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form className="form" method="post" onSubmit={submit} noValidate>
       {register && (
         <label className="field">
           <span>{t.name}</span>

@@ -11,6 +11,8 @@ import { ReportError } from "../app/ui/toast";
    правами. Ответ на неверные данные тоже общий: раздел не подсказывает,
    существует ли он для того, кто в него стучится. */
 
+// Метод нужен на случай нажатия до загрузки скриптов: без него браузер отправит форму методом GET,
+// и пароль окажется в адресе, истории и журналах сервера.
 export function AdminLogin({ unreachable = false }: { unreachable?: boolean }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export function AdminLogin({ unreachable = false }: { unreachable?: boolean }) {
 
   return (
     <div className="root-login">
-      <form className="root-login__card form" onSubmit={submit} noValidate>
+      <form className="root-login__card form" method="post" onSubmit={submit} noValidate>
         <span className="root-login__mark" aria-hidden="true">
           🛡️
         </span>
