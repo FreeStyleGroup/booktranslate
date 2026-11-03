@@ -28,6 +28,11 @@ from app.services.providers.base import (
     keys_of,
 )
 from app.services.providers.claude import PROMPT_VERSION, ClaudeProvider, ClaudeSettings
+from app.services.providers.figures import (
+    ClaudeFigureReader,
+    FigureReader,
+    StubFigureReader,
+)
 from app.services.providers.lookup import (
     ClaudeLookup,
     Explanation,
@@ -181,6 +186,25 @@ def semantic_info(model: str | None = None) -> ProviderInfo:
         provider=CLAUDE,
         model=model or settings.anthropic_model,
         prompt_version=SEMANTIC_PROMPT_VERSION,
+    )
+
+
+@lru_cache
+def get_figure_reader(model: str | None = None) -> FigureReader:
+    """Чтение надписей на рисунках — той же моделью и с теми же настройками."""
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return StubFigureReader()
+
+    return ClaudeFigureReader(
+        _client(),
+        ClaudeSettings(
+            model=model or settings.anthropic_model,
+            max_tokens=settings.anthropic_max_tokens,
+            effort=settings.anthropic_effort or None,
+            use_fallbacks=False,
+        ),
     )
 
 

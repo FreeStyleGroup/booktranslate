@@ -18,6 +18,7 @@ from app.api.routes import (
     chapter_translation,
     chapters,
     documents,
+    figures,
     glossary,
     glossary_versions,
     health,
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(qa.router)
     app.include_router(reviews.router)
     app.include_router(releases.router)
+    app.include_router(figures.router)
     app.include_router(chapters.router)
     app.include_router(masters.router)
     app.include_router(objects.router)

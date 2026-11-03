@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import worker
 from app.models.block import BlockKind
 from app.models.issue import IssueAttachment
-from app.services.export.pdf import (
+from app.services.export.document import (
     FigureElement,
-    PdfDocument,
+    PublicationDocument,
     TableCell,
     TableElement,
     TextElement,
+)
+from app.services.export.pdf import (
     build_html,
     page_count,
     page_png,
@@ -42,7 +44,7 @@ def worker_storage(monkeypatch: pytest.MonkeyPatch, storage_root: Path) -> None:
 
 
 def test_html_escapes_everything_from_the_book() -> None:
-    document = PdfDocument(
+    document = PublicationDocument(
         title="<script>alert(1)</script>",
         language="ru",
         elements=[
@@ -60,13 +62,13 @@ def test_html_escapes_everything_from_the_book() -> None:
 
 
 def test_html_takes_only_known_language() -> None:
-    bad = PdfDocument(title="T", language='ru"><script>', elements=[])
+    bad = PublicationDocument(title="T", language='ru"><script>', elements=[])
     assert 'lang="ru"' in build_html(bad)
 
 
 def test_table_keeps_merged_cells() -> None:
     built = build_html(
-        PdfDocument(
+        PublicationDocument(
             title="T",
             language="ru",
             elements=[
@@ -81,7 +83,7 @@ def test_table_keeps_merged_cells() -> None:
 
 def test_figure_uses_only_given_address() -> None:
     built = build_html(
-        PdfDocument(
+        PublicationDocument(
             title="T",
             language="ru",
             elements=[FigureElement(urls=["asset:0"], alts=['"><script>'])],
@@ -92,7 +94,7 @@ def test_figure_uses_only_given_address() -> None:
 
 
 def test_stub_is_a_real_pdf_with_pages_and_anchors() -> None:
-    document = PdfDocument(
+    document = PublicationDocument(
         title="T",
         language="ru",
         elements=[
