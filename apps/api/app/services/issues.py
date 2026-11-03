@@ -608,6 +608,7 @@ class IssueService(TenantService):
             origin=RevisionOrigin.HUMAN,
             text=clean,
             supersedes_id=base.id,
+            issue_id=issue.id,
             created_by_id=self._context.user.id,
         )
         self._session.add(revision)

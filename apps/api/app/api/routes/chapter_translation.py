@@ -358,6 +358,8 @@ def _revision(view: RevisionView, covered: Coverage) -> RevisionPublic:
         glossary_label=view.glossary_label,
         ignore_terminology=run.ignore_terminology if run is not None else False,
         author=view.author,
+        edit_reason=revision.edit_reason,
+        issue_id=revision.issue_id,
         formal_checked=formal,
         semantic_checked=semantic,
         compared_with=view.compared_with,

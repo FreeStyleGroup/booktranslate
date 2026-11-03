@@ -59,6 +59,14 @@ from app.models.regression import (
     RegressionRun,
     RegressionStatus,
 )
+from app.models.review import (
+    EditReason,
+    ReviewCoverage,
+    ReviewKind,
+    ReviewResult,
+    ReviewRun,
+    ReviewStatus,
+)
 from app.models.session import RefreshSession
 from app.models.shared import SharedTerm
 from app.models.team import Invitation
@@ -118,6 +126,12 @@ __all__ = [
     "RegressionItem",
     "RegressionRun",
     "RegressionStatus",
+    "EditReason",
+    "ReviewCoverage",
+    "ReviewKind",
+    "ReviewResult",
+    "ReviewRun",
+    "ReviewStatus",
     "JobKind",
     "JobState",
     "Membership",

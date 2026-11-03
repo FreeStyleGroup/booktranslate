@@ -26,6 +26,7 @@ from app.models.regression import (
     RegressionRun,
     RegressionStatus,
 )
+from app.models.review import ReviewCoverage, ReviewKind, ReviewRun, ReviewStatus
 from app.models.translation import RevisionOrigin, RevisionStage, TranslationRevision
 from app.services.audit import AuditService
 from app.services.base import TenantService
@@ -140,6 +141,8 @@ class RegressionService(TenantService):
             )
         }
 
+        approved = await self._approved(list(currents))
+
         # Сначала проверить всё, потом записывать: применение идёт целиком или никак.
         for item in items:
             block = blocks[item.block_id]  # type: ignore[index]
@@ -153,7 +156,7 @@ class RegressionService(TenantService):
 
             if (
                 current is not None
-                and current.stage is RevisionStage.FINAL_CANDIDATE
+                and (current.stage is RevisionStage.FINAL_CANDIDATE or current.id in approved)
                 and not overwrite_final
             ):
                 raise ConflictError(
@@ -286,6 +289,24 @@ class RegressionService(TenantService):
 
         return run
 
+    async def _approved(self, revision_ids: Sequence[uuid.UUID]) -> set[uuid.UUID]:
+        """Редакции, прошедшие завершённую финальную сверку: их без решения не перезаписывают."""
+        if not revision_ids:
+            return set()
+
+        rows = await self._session.scalars(
+            select(ReviewCoverage.revision_id)
+            .join(ReviewRun, ReviewRun.id == ReviewCoverage.run_id)
+            .where(
+                ReviewRun.organization_id == self.organization_id,
+                ReviewRun.kind == ReviewKind.FINAL_COMPARE,
+                ReviewRun.status == ReviewStatus.COMPLETED,
+                ReviewCoverage.revision_id.in_(revision_ids),
+            )
+        )
+
+        return {row for row in rows if row is not None}
+
     async def _next_numbers(self, block_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
         rows = await self._session.execute(
             select(TranslationRevision.block_id, func.max(TranslationRevision.revision_no))
@@ -320,6 +341,7 @@ class RegressionService(TenantService):
         children = await self._load(
             Issue, {i.child_issue_id for i in items if i.child_issue_id is not None}
         )
+        approved = await self._approved(list(revisions))
 
         rows = []
         for item in items:
@@ -341,7 +363,10 @@ class RegressionService(TenantService):
                     source_text=block.source_text if block is not None else None,
                     current_text=current.text if current is not None else None,
                     final_candidate=(
-                        current is not None and current.stage is RevisionStage.FINAL_CANDIDATE
+                        current is not None
+                        and (
+                            current.stage is RevisionStage.FINAL_CANDIDATE or current.id in approved
+                        )
                     ),
                     child_code=(
                         children[item.child_issue_id].code

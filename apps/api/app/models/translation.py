@@ -37,6 +37,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.models.mixins import TenantMixin, TimestampMixin, UUIDPrimaryKey
+from app.models.review import EditReason
 
 
 class RunKind(str, enum.Enum):
@@ -202,6 +203,15 @@ class TranslationRevision(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     )
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    # Зачем правили стиль; пусто у всего, что не литературная правка.
+    edit_reason: Mapped[EditReason | None] = mapped_column(
+        Enum(EditReason, name="edit_reason", native_enum=True)
+    )
+    # Замечание, по которому внесена правка, если оно было.
+    issue_id: Mapped[uuid.UUID | None] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("issues.id", deferrable=True, initially="DEFERRED"),
     )
 
 

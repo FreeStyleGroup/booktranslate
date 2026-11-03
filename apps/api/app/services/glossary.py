@@ -243,7 +243,7 @@ class Glossary:
         return [
             term
             for term in self.match(source_text)
-            if term.mandatory and term.settled and not _is_used(term, target_text)
+            if term.mandatory and term.settled and not term_is_used(term, target_text)
         ]
 
     def optional_missing_in(self, source_text: str, target_text: str) -> list[Term]:
@@ -251,11 +251,46 @@ class Glossary:
         return [
             term
             for term in self.match(source_text)
-            if term.settled and not term.mandatory and not _is_used(term, target_text)
+            if term.settled and not term.mandatory and not term_is_used(term, target_text)
         ]
 
 
-def _is_used(term: Term, target_text: str) -> bool:
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def _stem(word: str) -> str:
+    """Основа слова для сравнения: без окончания, которое меняет падеж и число.
+
+    Не морфология, а её достаточное приближение: цена промаха здесь — лишнее замечание или
+    пропущенный падеж, а словарь и разбор форм ради этого не окупаются.
+    """
+    if len(word) <= 3:
+        return word
+    if len(word) == 4:
+        return word[:3]
+
+    return word[: max(4, len(word) - 2)]
+
+
+def _appears(form: str, text: str) -> bool:
+    """Встречается ли термин подряд идущими словами с точностью до окончаний.
+
+    «Предохранительным клапаном» — это тот же «предохранительный клапан». Сравнение подстрокой
+    считало такой текст потерей термина, а русский склоняет почти каждое вхождение.
+    """
+    stems = [_stem(word) for word in _WORD.findall(form.casefold())]
+    words = _WORD.findall(text.casefold())
+
+    if not stems:
+        return False
+
+    return any(
+        all(words[start + shift].startswith(stem) for shift, stem in enumerate(stems))
+        for start in range(len(words) - len(stems) + 1)
+    )
+
+
+def term_is_used(term: Term, target_text: str) -> bool:
     """Есть ли термин в переводе: основной перевод или любой согласованный вариант."""
     accepted = (term.target, *term.allowed_variants)
 
@@ -264,9 +299,7 @@ def _is_used(term: Term, target_text: str) -> bool:
     if term.case_sensitive or term.kind is GlossaryEntryKind.DO_NOT_TRANSLATE:
         return any(form in target_text for form in accepted)
 
-    text = normalize_term(target_text)
-
-    return any(normalize_term(form) in text for form in accepted)
+    return any(_appears(form, target_text) for form in accepted)
 
 
 class GlossaryService(TenantService):

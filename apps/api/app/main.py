@@ -28,6 +28,7 @@ from app.api.routes import (
     preferences,
     projects,
     qa,
+    reviews,
     search,
     team,
     terminology,
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(books.router)
     app.include_router(issues.router)
     app.include_router(qa.router)
+    app.include_router(reviews.router)
     app.include_router(chapters.router)
     app.include_router(masters.router)
     app.include_router(objects.router)
