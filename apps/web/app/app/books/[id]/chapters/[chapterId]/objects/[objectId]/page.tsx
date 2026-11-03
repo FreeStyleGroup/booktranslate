@@ -3,25 +3,26 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { load, type Book, type BookStructure, type ObjectDetail } from "../../../../../../../lib/work";
-import { KIND_ONE, MENTION_LABEL, OBJECT_ONE, shortHash } from "../../../../../../labels";
+import { KIND_ONE, MENTION_LABEL, OBJECT_ONE, shortHash, when } from "../../../../../../labels";
 import "../../../../../../work.css";
 import "../../../../../../ui/ui.css";
 import "../../../../../books.css";
 import { CopyId } from "../../../../../../ui/copy-id";
 import { paramsOf } from "../../../../../../ui/query";
 import { FigureImages, Formula, TableGrid } from "../../object-views";
+import { VerifyObjectButton } from "../../translation/[blockId]/revision-actions";
 
 export const metadata: Metadata = {
   title: "Объект главы — BookTranslate",
   description: "Рисунок, таблица, формула или листинг: оригинал, подпись и упоминания в тексте.",
 };
 
-/* Карточка объекта: оригинал, подпись, и где он упомянут.
+/* Карточка объекта: оригинал рядом с переводом, подпись, и где он упомянут.
 
    Объект не правится: он появился при извлечении мастера и выводится из
-   действия при следующем. Поэтому здесь только чтение — оригинал таким,
-   каким он лежал в исходнике, его контрольная сумма и родство с прежним
-   объектом, если этот получился из него. */
+   действия при следующем. Поэтому единственное действие здесь — отметить, что
+   объект проверен технически. Отметка относится к тому, что проверяли:
+   изменились объект или редакции его блоков — она перестаёт действовать сама. */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -118,7 +119,18 @@ export default async function ObjectPage({
 
         {item.type === "figure" && <FigureImages object={item} large />}
 
-        {item.type === "table" && <TableGrid payload={item.payload} cells={item.content} />}
+        {item.type === "table" && (
+          <div className="bk-side">
+            <div>
+              <h4>Оригинал</h4>
+              <TableGrid payload={item.payload} cells={item.content} />
+            </div>
+            <div>
+              <h4>Перевод</h4>
+              <TableGrid payload={item.payload} cells={item.content} translated />
+            </div>
+          </div>
+        )}
 
         {item.type === "equation" && (
           <>
@@ -142,15 +154,31 @@ export default async function ObjectPage({
               </pre>
             ))}
             <p className="tile__note">
-              Язык: {item.payload.language ?? "не указан"}. Листинг хранится знак в знак —
-              отступы и пустые строки в нём и есть текст.
+              Язык: {item.payload.language ?? "не указан"}. Листинг хранится знак в знак — отступы
+              и пустые строки в нём и есть текст, поэтому в перевод он переносится без изменений.
             </p>
           </>
         )}
 
-        <p className="tile__note">
-          Перевод появится рядом с оригиналом, когда глава будет переведена.
-        </p>
+        <div className="tile__foot">
+          {item.verification.verified ? (
+            <span className="chip chip--ok">
+              проверено технически
+              {item.verification.verified_at !== null &&
+                ` · ${when(item.verification.verified_at)}`}
+              {item.verification.verified_by !== null && ` · ${item.verification.verified_by}`}
+            </span>
+          ) : item.verification.outdated ? (
+            <span className="chip chip--warn">
+              проверка устарела: содержимое или перевод изменились
+            </span>
+          ) : (
+            <span className="tile__note">Ещё не проверено технически</span>
+          )}
+          {item.active && !item.verification.verified && (
+            <VerifyObjectButton bookId={id} chapterId={chapterId} objectId={item.id} />
+          )}
+        </div>
       </section>
 
       <section className="tile">
@@ -160,6 +188,10 @@ export default async function ObjectPage({
         ) : (
           <div className="bk-caption">
             <p className="bk-block-text">{item.caption_block.text}</p>
+            {item.caption_block.translation !== undefined &&
+              item.caption_block.translation !== null && (
+                <p className="bk-block-text">{item.caption_block.translation}</p>
+              )}
             <Link className="tile__note" href={blockLink(item.caption_block.full_code)}>
               {item.caption_block.full_code}
             </Link>

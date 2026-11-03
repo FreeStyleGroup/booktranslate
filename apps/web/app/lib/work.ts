@@ -253,6 +253,8 @@ export type BlockRef = {
   active: boolean;
   row: number | null;
   column: number | null;
+  /** Текущая редакция перевода. Пусто, пока блок не переведён. */
+  translation?: string | null;
 };
 
 export type ObjectMention = {
@@ -262,7 +264,16 @@ export type ObjectMention = {
   phrase: string;
 };
 
+/** Отметка «проверено технически»: действует, пока не изменилось содержимое. */
+export type ObjectVerification = {
+  verified: boolean;
+  verified_at: string | null;
+  verified_by: string | null;
+  outdated: boolean;
+};
+
 export type ObjectDetail = BookObject & {
+  verification: ObjectVerification;
   book_id: string;
   master_id: string;
   master_label: string;
@@ -385,9 +396,13 @@ export type JobState = "waiting" | "running" | "done" | "failed" | "cancelled";
 /** Задание на перевод книги — работа, которая идёт без человека. */
 export type TranslationJob = {
   id: string;
-  document_id: string;
+  kind: "document" | "chapter";
+  document_id: string | null;
+  chapter_id: string | null;
+  book_id: string | null;
+  run_id: string | null;
   // Название книги — с заданием: список заданий читают люди.
-  document_title: string;
+  title: string;
   state: JobState;
   requested_by_id: string | null;
   attempts: number;
@@ -401,6 +416,119 @@ export type TranslationJob = {
   notified_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type RevisionOrigin = "model" | "memory" | "human" | "copy";
+export type RevisionStage = "draft" | "working" | "final_candidate";
+
+/** Блок, ответ по которому отвергнут: остался без редакции. */
+export type RunRejection = { block_id: string; code: string; reason: string };
+
+/** Прогон перевода: чем и по чему переводили, как идёт и сколько стоил. */
+export type TranslationRun = {
+  id: string;
+  chapter_id: string;
+  master_id: string;
+  kind: "draft" | "retranslate";
+  provider: string;
+  model: string;
+  prompt_version: string;
+  glossary_version_id: string | null;
+  glossary_label: string | null;
+  ignore_terminology: boolean;
+  bypass_reason: string | null;
+  requested_by_id: string | null;
+  job_id: string | null;
+  state: JobState | null;
+  error: string | null;
+  blocks_total: number;
+  blocks_done: number;
+  from_model: number;
+  from_memory: number;
+  copied: number;
+  rejections: RunRejection[];
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+};
+
+/** Можно ли переводить главу и что об этом известно. */
+export type ChapterTranslation = {
+  chapter_id: string;
+  open: boolean;
+  bypassable: boolean;
+  blockers: GateItem[];
+  warnings: GateItem[];
+  glossary_version_id: string | null;
+  glossary_label: string | null;
+  master_id: string | null;
+  master_label: string | null;
+  total: number;
+  translated: number;
+  pending: number;
+  live: TranslationRun | null;
+  latest: TranslationRun | null;
+};
+
+export type RevisionBrief = {
+  id: string;
+  revision_no: number;
+  stage: RevisionStage;
+  origin: RevisionOrigin;
+  text: string;
+  created_at: string;
+};
+
+export type ChapterBlock = {
+  id: string;
+  code: string;
+  ordinal: number;
+  kind: string;
+  source_text: string;
+  protected: boolean;
+  current: RevisionBrief | null;
+  variants: number;
+};
+
+export type ChapterBlockPage = { total: number; items: ChapterBlock[] };
+
+export type RevisionChange = { op: "equal" | "insert" | "delete"; text: string };
+
+export type BlockRevision = {
+  id: string;
+  block_id: string;
+  revision_no: number;
+  stage: RevisionStage;
+  origin: RevisionOrigin;
+  text: string;
+  current: boolean;
+  supersedes_id: string | null;
+  copied_from_id: string | null;
+  memory_unit_id: string | null;
+  run_id: string | null;
+  run_kind: "draft" | "retranslate" | null;
+  model: string | null;
+  prompt_version: string | null;
+  glossary_version_id: string | null;
+  glossary_label: string | null;
+  ignore_terminology: boolean;
+  author: string | null;
+  compared_with: number | null;
+  changes: RevisionChange[];
+  created_at: string;
+};
+
+export type RevisionHistory = {
+  block_id: string;
+  code: string;
+  source_text: string;
+  active: boolean;
+  protected: boolean;
+  items: BlockRevision[];
 };
 
 /** Состояние книги для очереди замечаний и полосы выполнения. */

@@ -13,6 +13,7 @@ import {
   type BookObject,
   type BookStructure,
   type ChapterMaster,
+  type ChapterTranslation,
   type TerminologyGate,
 } from "../../../../../lib/work";
 import {
@@ -35,6 +36,7 @@ import { FindBlock } from "../../../find-block";
 import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
+import { TranslationPanel } from "./translation-panel";
 
 export const metadata: Metadata = {
   title: "Глава — BookTranslate",
@@ -62,6 +64,8 @@ const OFFSET_MAX = 1_000_000;
 
 // Кто извлекает и утверждает мастер. Тот же набор, что в API.
 const MANAGING = new Set(["owner", "admin", "manager", "translator"]);
+// Обход гейта терминологии — только администратор: решение с причиной и в журнал.
+const BYPASSING = new Set(["owner", "admin"]);
 
 const TEXT_TAB = "text";
 const TABS = [TEXT_TAB, ...OBJECT_TABS.map((tab) => tab.type)];
@@ -82,12 +86,13 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
     load<BookKit>(`/books/${id}/sources`, here),
     load<TerminologyGate>(`/chapters/${chapterId}/terminology/gate`, here),
+    load<ChapterTranslation>(`/chapters/${chapterId}/translation`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -111,6 +116,7 @@ export default async function ChapterPage({
   const membership =
     me?.memberships.find((item) => item.organization_id === organization) ?? me?.memberships[0];
   const canManage = membership !== undefined && MANAGING.has(membership.role);
+  const canBypass = membership !== undefined && BYPASSING.has(membership.role);
 
   const current = versions.data[0];
   const requested = query.get("version");
@@ -184,6 +190,16 @@ export default async function ChapterPage({
       {/* Готова ли глава к переводу по терминам — до самого перевода, а не
           отказом на кнопке «Перевести». */}
       {gate.data !== undefined && <GatePanel gate={gate.data} bookId={id} termsLink />}
+
+      {translation.data !== undefined && current !== undefined && (
+        <TranslationPanel
+          bookId={id}
+          chapterId={chapterId}
+          state={translation.data}
+          canTranslate={canManage}
+          canBypass={canBypass}
+        />
+      )}
 
       {shown !== undefined && current !== undefined && shown.id !== current.id && (
         // Прежняя версия открыта нарочно — но это должно быть видно сразу,

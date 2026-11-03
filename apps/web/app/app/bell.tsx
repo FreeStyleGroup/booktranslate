@@ -234,8 +234,15 @@ function Item({ job, fresh, onGo }: { job: TranslationJob; fresh: boolean; onGo:
     <li className={fresh ? "bell__item is-new" : "bell__item"}>
       <span className={`bell__mark bell__mark--${job.state}`} aria-hidden="true" />
       <div className="bell__text">
-        <Link href={`/app/documents/${job.document_id}`} onClick={onGo}>
-          {job.document_title}
+        <Link
+          href={
+            job.book_id !== null && job.chapter_id !== null
+              ? `/app/books/${job.book_id}/chapters/${job.chapter_id}`
+              : `/app/documents/${job.document_id}`
+          }
+          onClick={onGo}
+        >
+          {job.title}
         </Link>
         <span className="bell__line">{describe(job, percent)}</span>
       </div>
