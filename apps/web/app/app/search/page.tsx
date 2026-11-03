@@ -62,7 +62,7 @@ export default async function SearchPage({
         <div>
           <h1>Поиск</h1>
           <p className="tile__note">
-            Файлы, словарь, справки и текст книг — по подстроке, без учёта регистра.
+            Файлы, словарь, справки, текст книг и ошибки — по подстроке, без учёта регистра.
           </p>
         </div>
       </header>
@@ -98,14 +98,14 @@ export default async function SearchPage({
 }
 
 function Results({ result }: { result: SearchResult }) {
-  const { query, documents, terms, entries, blocks } = result;
-  const total = documents.total + terms.total + entries.total + blocks.total;
+  const { query, documents, terms, entries, blocks, issues } = result;
+  const total = documents.total + terms.total + entries.total + blocks.total + issues.total;
 
   if (total === 0) {
     return (
       <section className="tile">
         <p className="tile__empty">
-          По запросу «{query}» ничего нет — ни в книгах, ни в словаре, ни в справках, ни в тексте.
+          По запросу «{query}» ничего нет — ни в книгах, ни в словаре, ни в справках, ни в тексте, ни в ошибках.
         </p>
       </section>
     );
@@ -194,6 +194,23 @@ function Results({ result }: { result: SearchResult }) {
                 )}
               </span>
               {!item.found && <span className="chip chip--warn">не нашлось</span>}
+            </Link>
+          ))}
+        </Group>
+      )}
+
+      {issues.total > 0 && (
+        <Group title="Ошибки" total={issues.total} shown={issues.items.length} more="/app/issues">
+          {issues.items.map((item) => (
+            <Link className="sr-row" key={item.id} href={`/app/issues/${item.id}`}>
+              <span className="sr-row__main">
+                <b>
+                  <Mark text={item.code} query={query} />
+                </b>
+                <span className="sr-row__text">
+                  <Mark text={item.description} query={query} />
+                </span>
+              </span>
             </Link>
           ))}
         </Group>

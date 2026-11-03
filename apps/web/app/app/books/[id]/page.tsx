@@ -10,6 +10,7 @@ import {
   type BookKit,
   type BookStructure,
   type BookTerminology,
+  type IssueStats,
   type Document,
   type Project,
 } from "../../../lib/work";
@@ -20,6 +21,7 @@ import "../books.css";
 import { CopyId } from "../../ui/copy-id";
 import { AddSource } from "../add-source";
 import { ExportLinks } from "../export-links";
+import { IssuesTile } from "../../issues/issues-tile";
 import { Kit } from "../kit";
 
 export const metadata: Metadata = {
@@ -70,7 +72,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
   }
 
   const edition = book.data;
-  const [kit, project, documents, me, organization, structure, terminology] = await Promise.all([
+  const [kit, project, documents, me, organization, structure, terminology, issueStats] = await Promise.all([
     load<BookKit>(`/books/${id}/sources`, here),
     load<Project>(`/projects/${edition.project_id}`, here),
     // Файлы проекта, чтобы предложить уже загруженные. Потолок тот же, что
@@ -81,6 +83,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
     organizationId(),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<BookTerminology>(`/books/${id}/terminology`, here),
+    load<IssueStats>(`/issues/stats?book_id=${id}`, here),
   ]);
 
   const membership =
@@ -213,6 +216,14 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
           Открыть
         </Link>
       </section>
+
+      {issueStats.data !== undefined && (
+        <IssuesTile
+          stats={issueStats.data}
+          href={`/app/issues?book=${id}&state=`}
+          scope="этой книге"
+        />
+      )}
 
       {/* Пока ничего не переведено, выгружать нечего: получилась бы копия исходника. */}
       {kit.data !== undefined && kit.data.export_formats.length > 0 && kit.data.translated > 0 && (

@@ -1,0 +1,194 @@
+/* Реестр ошибок: только то, чего нет в общих стилях кабинета. */
+
+.is-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.is-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.is-filters__query {
+  grid-column: span 3;
+}
+
+.is-filters__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.is-description {
+  display: block;
+  max-width: 46ch;
+  overflow-wrap: anywhere;
+}
+
+.is-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.is-form__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.is-register {
+  padding-block: 14px;
+}
+
+/* Подпись раскрывающегося блока выглядит кнопкой; значок раскрытия браузера ей ни к чему. */
+.is-register > summary {
+  display: inline-flex;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.is-register > summary::-webkit-details-marker {
+  display: none;
+}
+
+.is-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.is-subhead,
+.is-pair h4,
+.is-candidates h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.is-candidates {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.is-candidate {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.is-assign {
+  margin-top: 14px;
+  max-width: 360px;
+}
+
+.is-subhead {
+  margin-top: 14px;
+}
+
+.is-context {
+  display: grid;
+  gap: 10px;
+}
+
+.is-context li {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 16px;
+}
+
+.is-context,
+.is-terms,
+.is-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.is-context__code {
+  grid-column: 1 / -1;
+}
+
+.is-terms {
+  display: grid;
+  gap: 6px;
+}
+
+.is-timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.is-timeline li {
+  display: grid;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 2px solid var(--line);
+}
+
+.is-timeline p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* У поля файла широкий собственный размер: без этого он раздвигает карточку на телефоне. */
+.is-file {
+  min-width: 0;
+}
+
+.is-file input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.is-files {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.is-files img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .is-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .is-filters,
+  .is-pair,
+  .is-form__row,
+  .is-context li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .is-filters__query {
+    grid-column: auto;
+  }
+
+  .is-files {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

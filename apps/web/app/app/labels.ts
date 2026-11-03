@@ -1,3 +1,5 @@
+import type { IssueCategory, IssueEventKind, IssueSeverity, IssueStatus } from "../lib/work";
+
 /** Где книга в конвейере. */
 export const BOOK_STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
@@ -120,6 +122,80 @@ export const REVISION_STAGE_LABEL: Record<string, string> = {
   draft: "черновик",
   working: "рабочая",
   final_candidate: "кандидат в выпуск",
+};
+
+export const ISSUE_CATEGORY_LABEL: Record<IssueCategory, string> = {
+  translation: "Перевод",
+  terminology: "Терминология",
+  semantic: "Смысл",
+  number: "Числа",
+  formula: "Формула",
+  table: "Таблица",
+  figure: "Рисунок",
+  code: "Код",
+  technical: "Техническая",
+  style: "Стиль",
+  cross_reference: "Перекрёстная ссылка",
+  source_error: "Ошибка оригинала",
+  layout: "Вёрстка",
+};
+
+export const ISSUE_CATEGORY_ORDER = Object.keys(ISSUE_CATEGORY_LABEL) as IssueCategory[];
+
+export const ISSUE_SEVERITY_LABEL: Record<IssueSeverity, string> = {
+  critical: "Критичная",
+  major: "Серьёзная",
+  minor: "Незначительная",
+};
+
+export const ISSUE_SEVERITY_ORDER = Object.keys(ISSUE_SEVERITY_LABEL) as IssueSeverity[];
+
+export const ISSUE_SEVERITY_CHIP: Record<IssueSeverity, string> = {
+  critical: "chip chip--danger",
+  major: "chip chip--warn",
+  minor: "chip chip--info",
+};
+
+// Критерии те же, что в docs/DECISIONS.md: оценивающий должен видеть их в момент выбора.
+export const ISSUE_SEVERITY_HINT: Record<IssueSeverity, string> = {
+  critical: "Читатель сделает неверно: число, формула, код, потерянный или обратный смысл.",
+  major: "Смысл или термин искажён, но опасности нет: читатель заметит или переспросит.",
+  minor: "Стиль и оформление: на понимание не влияет.",
+};
+
+export const ISSUE_STATUS_LABEL: Record<IssueStatus, string> = {
+  new: "Новая",
+  needs_clarification: "Нужно уточнение",
+  confirmed: "Подтверждена",
+  fixed: "Исправлена",
+  verified: "Проверена",
+  closed: "Закрыта",
+  rejected: "Отклонена",
+  reopened: "Открыта заново",
+};
+
+export const ISSUE_STATUS_ORDER = Object.keys(ISSUE_STATUS_LABEL) as IssueStatus[];
+
+export const ISSUE_STATUS_CHIP: Record<IssueStatus, string> = {
+  new: "chip chip--warn",
+  needs_clarification: "chip chip--warn",
+  confirmed: "chip chip--danger",
+  fixed: "chip chip--info",
+  verified: "chip chip--info",
+  closed: "chip chip--ok",
+  rejected: "chip",
+  reopened: "chip chip--warn",
+};
+
+export const ISSUE_EVENT_LABEL: Record<IssueEventKind, string> = {
+  created: "Зарегистрирована",
+  status_changed: "Состояние изменено",
+  reclassified: "Изменена классификация",
+  assigned: "Изменено назначение",
+  commented: "Комментарий",
+  attached: "Приложен файл",
+  archived: "Убрана в архив",
+  restored: "Возвращена из архива",
 };
 
 export const REVISION_ORIGIN_COLOR: Record<string, string> = {

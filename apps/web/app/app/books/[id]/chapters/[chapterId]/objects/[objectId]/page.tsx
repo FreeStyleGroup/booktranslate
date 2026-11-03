@@ -2,8 +2,24 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { load, type Book, type BookStructure, type ObjectDetail } from "../../../../../../../lib/work";
-import { KIND_ONE, MENTION_LABEL, OBJECT_ONE, shortHash, when } from "../../../../../../labels";
+import { currentUser } from "../../../../../../../lib/current-user";
+import { organizationId } from "../../../../../../../lib/session";
+import {
+  load,
+  type Book,
+  type BookStructure,
+  type IssueCategory,
+  type IssuePage,
+  type ObjectDetail,
+} from "../../../../../../../lib/work";
+import {
+  ISSUE_STATUS_LABEL,
+  KIND_ONE,
+  MENTION_LABEL,
+  OBJECT_ONE,
+  shortHash,
+  when,
+} from "../../../../../../labels";
 import "../../../../../../work.css";
 import "../../../../../../ui/ui.css";
 import "../../../../../books.css";
@@ -11,6 +27,8 @@ import { CopyId } from "../../../../../../ui/copy-id";
 import { paramsOf } from "../../../../../../ui/query";
 import { FigureImages, Formula, TableGrid } from "../../object-views";
 import { VerifyObjectButton } from "../../translation/[blockId]/revision-actions";
+import { RegisterIssue } from "../../../../../../issues/register-issue";
+import "../../../../../../issues/issues.css";
 
 export const metadata: Metadata = {
   title: "Объект главы — BookTranslate",
@@ -25,6 +43,16 @@ export const metadata: Metadata = {
    изменились объект или редакции его блоков — она перестаёт действовать сама. */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Те же роли, что в API: кнопку показывать тому, кто сможет ей воспользоваться.
+const REGISTERING = new Set(["owner", "admin", "manager", "translator", "reviewer"]);
+
+const ISSUE_CATEGORY_OF: Record<string, IssueCategory> = {
+  figure: "figure",
+  table: "table",
+  equation: "formula",
+  code: "code",
+};
 
 export default async function ObjectPage({
   params,
@@ -44,13 +72,16 @@ export default async function ObjectPage({
   const here = `${chapterPath}/objects/${objectId}`;
   const inVersion = version !== null && UUID.test(version) ? version : null;
 
-  const [book, structure, found] = await Promise.all([
+  const [book, structure, found, issues, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ObjectDetail>(
       `/objects/${objectId}${inVersion !== null ? `?master_id=${inVersion}` : ""}`,
       here,
     ),
+    load<IssuePage>(`/issues?object_id=${objectId}&limit=20`, here),
+    currentUser(here),
+    organizationId(),
   ]);
 
   const chapter = structure.data?.chapters.find((item) => item.id === chapterId);
@@ -71,6 +102,9 @@ export default async function ObjectPage({
 
   const item = found.data;
   const name = OBJECT_ONE[item.type] ?? item.type;
+  const membership =
+    me?.memberships.find((entry) => entry.organization_id === organization) ?? me?.memberships[0];
+  const canRegister = membership !== undefined && REGISTERING.has(membership.role);
   const blockLink = (code: string) =>
     `/app/find?book=${id}&code=${encodeURIComponent(code)}`;
 
@@ -204,6 +238,25 @@ export default async function ObjectPage({
           </p>
         )}
       </section>
+
+      {canRegister && (
+        <RegisterIssue objectId={item.id} category={ISSUE_CATEGORY_OF[item.type] ?? "technical"} />
+      )}
+
+      {issues.data !== undefined && issues.data.total > 0 && (
+        <section className="tile">
+          <h3>Замечания к объекту</h3>
+          <ul className="is-terms">
+            {issues.data.items.map((issue) => (
+              <li key={issue.id}>
+                <Link href={`/app/issues/${issue.id}`}>{issue.code}</Link>
+                {" · "}
+                {ISSUE_STATUS_LABEL[issue.status]} · {issue.description}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="tile">
         <h3>Где упомянут</h3>

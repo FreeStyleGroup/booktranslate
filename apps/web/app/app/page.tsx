@@ -25,6 +25,8 @@ type Overview = {
   by_origin: Record<string, number>;
   live_runs: number;
   undecided_terms: number;
+  open_issues: number;
+  open_critical: number;
   glossary_terms: number;
   catalog_entries: number;
   memory_units: number;
@@ -60,6 +62,8 @@ const DEMO: Overview = {
   by_origin: { model: 6980, memory: 2460, copy: 180 },
   live_runs: 1,
   undecided_terms: 14,
+  open_issues: 9,
+  open_critical: 1,
   glossary_terms: 420,
   catalog_entries: 96,
   memory_units: 5840,
@@ -274,8 +278,12 @@ export default async function DashboardPage() {
           <span className="stat__mark" aria-hidden="true">
             🧪
           </span>
-          <div className="stat__value">{thousands(data.attention.length)}</div>
-          <div className="stat__label">Глав ждут решения</div>
+          <div className="stat__value">{thousands(data.open_issues)}</div>
+          <div className="stat__label">
+            {data.open_critical > 0
+              ? `Незакрытых ошибок, из них критичных: ${thousands(data.open_critical)}`
+              : "Незакрытых ошибок"}
+          </div>
         </section>
 
         <section className="stat stat--violet">

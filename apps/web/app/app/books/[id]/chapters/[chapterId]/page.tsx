@@ -15,6 +15,7 @@ import {
   type ChapterEstimate,
   type ChapterMaster,
   type ChapterTranslation,
+  type IssueStats,
   type TerminologyGate,
 } from "../../../../../lib/work";
 import {
@@ -38,6 +39,7 @@ import { GatePanel } from "../../../gate-panel";
 import { MasterPanel } from "./master-panel";
 import { ObjectsTab } from "./objects-tab";
 import { TranslationPanel } from "./translation-panel";
+import { IssuesTile } from "../../../../issues/issues-tile";
 
 export const metadata: Metadata = {
   title: "Глава — BookTranslate",
@@ -87,7 +89,7 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, estimate, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, issueStats, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
@@ -95,6 +97,7 @@ export default async function ChapterPage({
     load<TerminologyGate>(`/chapters/${chapterId}/terminology/gate`, here),
     load<ChapterTranslation>(`/chapters/${chapterId}/translation`, here),
     load<ChapterEstimate>(`/chapters/${chapterId}/translation/estimate`, here),
+    load<IssueStats>(`/issues/stats?chapter_id=${chapterId}`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -191,6 +194,14 @@ export default async function ChapterPage({
 
       {/* Готова ли глава к переводу по терминам — до самого перевода, а не
           отказом на кнопке «Перевести». */}
+      {issueStats.data !== undefined && (
+        <IssuesTile
+          stats={issueStats.data}
+          href={`/app/issues?book=${id}&chapter=${chapterId}&state=`}
+          scope="этой главе"
+        />
+      )}
+
       {gate.data !== undefined && <GatePanel gate={gate.data} bookId={id} termsLink />}
 
       {translation.data !== undefined && current !== undefined && (

@@ -9,6 +9,7 @@ import {
   type Book,
   type BookStructure,
   type RevisionChange,
+  type IssuePage,
   type RevisionHistory,
 } from "../../../../../../../lib/work";
 import {
@@ -16,11 +17,14 @@ import {
   REVISION_ORIGIN_LABEL,
   REVISION_STAGE_LABEL,
   when,
+  ISSUE_STATUS_LABEL,
 } from "../../../../../../labels";
 import "../../../../../../work.css";
 import "../../../../../../ui/ui.css";
 import "../../../../../books.css";
+import "../../../../../../issues/issues.css";
 import { CopyId } from "../../../../../../ui/copy-id";
+import { RegisterIssue } from "../../../../../../issues/register-issue";
 import { AdoptButton, RetranslateButton } from "./revision-actions";
 
 export const metadata: Metadata = {
@@ -71,10 +75,11 @@ export default async function BlockHistoryPage({
   const chapterPath = `/app/books/${id}/chapters/${chapterId}`;
   const here = `${chapterPath}/translation/${blockId}`;
 
-  const [book, structure, history, me, organization] = await Promise.all([
+  const [book, structure, history, issues, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<RevisionHistory>(`/blocks/${blockId}/revisions`, here),
+    load<IssuePage>(`/issues?block_id=${blockId}&limit=20`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -140,6 +145,25 @@ export default async function BlockHistoryPage({
         </div>
         <p className="bk-block-text">{block.source_text}</p>
       </section>
+
+      {canAdopt && <RegisterIssue blockId={block.block_id} />}
+
+      {issues.data !== undefined && issues.data.total > 0 && (
+        <section className="tile">
+          <div className="tile__head">
+            <h3>Замечания к блоку</h3>
+          </div>
+          <ul className="is-terms">
+            {issues.data.items.map((item) => (
+              <li key={item.id}>
+                <Link href={`/app/issues/${item.id}`}>{item.code}</Link>
+                {" · "}
+                {ISSUE_STATUS_LABEL[item.status]} · {item.description}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {block.items.length === 0 ? (
         <section className="tile">
