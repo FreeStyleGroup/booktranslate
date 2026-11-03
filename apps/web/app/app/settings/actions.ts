@@ -61,6 +61,7 @@ export type WorkspaceSettings = {
   subjects: Subject[];
   // Разрешено ли площадке брать термины загруженных словарей в общий.
   share_glossary: boolean;
+  two_person_review: boolean;
 };
 
 export type ModelResult = {
@@ -90,6 +91,34 @@ export async function saveSharing(_previous: ModelResult, formData: FormData): P
 
     revalidatePath("/app/settings");
     revalidatePath("/app/glossary");
+
+    return { saved, savedAt: Date.now() };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { error: error.message };
+    }
+
+    return { error: "Сервис недоступен. Попробуйте ещё раз." };
+  }
+}
+
+/** Правило двух человек для критичных ошибок. */
+export async function saveReview(_previous: ModelResult, formData: FormData): Promise<ModelResult> {
+  try {
+    const token = await accessToken();
+
+    if (token === undefined) {
+      return { error: "Сеанс закончился — войдите заново" };
+    }
+
+    const saved = await apiFetch<WorkspaceSettings>("/settings/workspace", {
+      method: "PUT",
+      token,
+      organizationId: await organizationId(),
+      body: { two_person_review: formData.get("two_person_review") === "yes" },
+    });
+
+    revalidatePath("/app/settings");
 
     return { saved, savedAt: Date.now() };
   } catch (error) {

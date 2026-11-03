@@ -786,6 +786,141 @@ export type CatalogEntry = {
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
 
+/* Реестр ошибок. */
+
+export type IssueCategory =
+  | "translation"
+  | "terminology"
+  | "semantic"
+  | "number"
+  | "formula"
+  | "table"
+  | "figure"
+  | "code"
+  | "technical"
+  | "style"
+  | "cross_reference"
+  | "source_error"
+  | "layout";
+
+export type IssueSeverity = "critical" | "major" | "minor";
+
+export type IssueStatus =
+  | "new"
+  | "needs_clarification"
+  | "confirmed"
+  | "fixed"
+  | "verified"
+  | "closed"
+  | "rejected"
+  | "reopened";
+
+export type IssueEventKind =
+  | "created"
+  | "status_changed"
+  | "reclassified"
+  | "assigned"
+  | "commented"
+  | "attached"
+  | "archived"
+  | "restored";
+
+export type IssueRow = {
+  id: string;
+  code: string;
+  book_id: string;
+  book_title: string;
+  chapter_id: string;
+  block_id: string | null;
+  block_code: string | null;
+  object_id: string | null;
+  object_code: string | null;
+  parent_issue_id: string | null;
+  category: IssueCategory;
+  severity: IssueSeverity;
+  status: IssueStatus;
+  priority_score: number;
+  impact_count: number;
+  automatic: boolean;
+  detected_by: string | null;
+  assignee_id: string | null;
+  assignee: string | null;
+  description: string;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IssuePage = { total: number; items: IssueRow[] };
+
+export type IssueStats = {
+  total: number;
+  by_status: Partial<Record<IssueStatus, number>>;
+  by_severity: Partial<Record<IssueSeverity, number>>;
+  by_category: Partial<Record<IssueCategory, number>>;
+  open_critical: number;
+  open_major: number;
+};
+
+export type IssueEvent = {
+  id: string;
+  kind: IssueEventKind;
+  from_status: IssueStatus | null;
+  to_status: IssueStatus | null;
+  actor: string | null;
+  note: string | null;
+  related_revision_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type IssueCandidate = {
+  revision_id: string;
+  revision_no: number;
+  block_code: string;
+  text: string;
+};
+
+export type IssueBrief = { id: string; code: string; status: IssueStatus };
+
+export type IssueDetail = IssueRow & {
+  chapter_label: string | null;
+  source_snapshot: string;
+  target_snapshot: string | null;
+  proposed_fix: string | null;
+  discovered_revision_id: string | null;
+  fix_revision_id: string | null;
+  current_revision_id: string | null;
+  current_text: string | null;
+  subject_active: boolean;
+  context: { block_id: string; code: string; source_text: string; translation: string | null }[];
+  terms: { source: string; target: string; mandatory: boolean; note: string | null }[];
+  objects: { id: string; code: string; type: string }[];
+  events: IssueEvent[];
+  attachments: {
+    id: string;
+    filename: string;
+    media_type: string;
+    size_bytes: number;
+    created_at: string;
+  }[];
+  candidates: IssueCandidate[];
+  children: IssueBrief[];
+  parent: IssueBrief | null;
+  /** Что этому человеку можно сделать сейчас: кнопки рисуются по этому списку. */
+  actions: string[];
+  review_note: string | null;
+};
+
+/** Замечание в выдаче поиска. */
+export type IssueHit = {
+  id: string;
+  code: string;
+  status: IssueStatus;
+  severity: IssueSeverity;
+  description: string;
+};
+
 /** Блок в выдаче поиска — с книгой и главой, где он стоит. */
 export type BlockHit = {
   id: string;
@@ -805,6 +940,7 @@ export type SearchResult = {
   terms: { total: number; items: GlossaryTerm[] };
   entries: { total: number; items: CatalogEntry[] };
   blocks: { total: number; items: BlockHit[] };
+  issues: { total: number; items: IssueHit[] };
 };
 
 /** Чем закончился запрос справок. */

@@ -6,6 +6,7 @@ import "../work.css";
 import "./settings.css";
 import { Models } from "./models";
 import { Notifications } from "./notifications";
+import { Review } from "./review";
 import { Sharing } from "./sharing";
 import type { NotificationSettings, WorkspaceSettings } from "./actions";
 
@@ -55,6 +56,7 @@ export default async function SettingsPage() {
         <>
           <Models settings={workspace.data} />
           <Sharing settings={workspace.data} />
+          <Review settings={workspace.data} />
         </>
       )}
 
