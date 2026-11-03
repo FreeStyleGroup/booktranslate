@@ -411,3 +411,157 @@ export async function approveMaster(
 
   return { done: true };
 }
+
+/** Поставить в очередь перевод главы. Причина — только при обходе гейта. */
+export async function startTranslation(
+  bookId: string,
+  chapterId: string,
+  reason: string | null,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/chapters/${chapterId}/translation`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+      body: JSON.stringify(
+        reason === null ? {} : { ignore_terminology: true, reason: reason.trim() },
+      ),
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+
+  return { done: true };
+}
+
+/** Остановить прогон. Сделанное остаётся: оно зафиксировано после каждой пачки. */
+export async function cancelRun(
+  bookId: string,
+  chapterId: string,
+  jobId: string,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId) || !UUID.test(jobId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/jobs/${jobId}/cancel`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}`);
+
+  return { done: true };
+}
+
+/** Попросить вариант перевода блока рядом с редакцией, которую человек видит. */
+export async function retranslateBlock(
+  bookId: string,
+  chapterId: string,
+  blockId: string,
+  baseRevisionId: string | null,
+): Promise<Result> {
+  if (
+    !UUID.test(bookId) ||
+    !UUID.test(chapterId) ||
+    !UUID.test(blockId) ||
+    (baseRevisionId !== null && !UUID.test(baseRevisionId))
+  ) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/chapters/${chapterId}/translation/retranslate`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+      body: JSON.stringify({
+        items: [{ block_id: blockId, base_revision_id: baseRevisionId }],
+      }),
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}/translation/${blockId}`);
+
+  return { done: true };
+}
+
+/** Сделать вариант текущей редакцией. Прежняя остаётся в истории. */
+export async function adoptRevision(
+  bookId: string,
+  chapterId: string,
+  blockId: string,
+  revisionId: string,
+): Promise<Result> {
+  if (
+    !UUID.test(bookId) ||
+    !UUID.test(chapterId) ||
+    !UUID.test(blockId) ||
+    !UUID.test(revisionId)
+  ) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/revisions/${revisionId}/adopt`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}/translation/${blockId}`);
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}/translation`);
+
+  return { done: true };
+}
+
+/** Отметить объект проверенным технически. */
+export async function verifyObject(
+  bookId: string,
+  chapterId: string,
+  objectId: string,
+): Promise<Result> {
+  if (!UUID.test(bookId) || !UUID.test(chapterId) || !UUID.test(objectId)) {
+    return { error: "Запрос повреждён — обновите страницу" };
+  }
+
+  try {
+    const { token, organizationId: organization } = await credentials();
+
+    await apiFetch(`/objects/${objectId}/verification`, {
+      method: "POST",
+      token,
+      organizationId: organization,
+    });
+  } catch (error) {
+    return failure(error);
+  }
+
+  revalidatePath(`/app/books/${bookId}/chapters/${chapterId}/objects/${objectId}`);
+
+  return { done: true };
+}

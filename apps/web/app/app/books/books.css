@@ -648,3 +648,44 @@
   border-color: var(--brand);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
 }
+
+/* Сравнение редакций: вставленное и убранное отличаются не только цветом —
+   подчёркивание и зачёркивание видны и без него. */
+.bk-diff {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.bk-diff ins {
+  background: color-mix(in srgb, var(--ok, #2f9e44) 18%, transparent);
+  text-decoration: underline;
+}
+
+.bk-diff del {
+  background: color-mix(in srgb, var(--danger, #c92a2a) 14%, transparent);
+  text-decoration: line-through;
+}
+
+.bk-revision.is-current {
+  border-color: var(--brand);
+}
+
+/* Перевод объекта рядом с оригиналом. */
+.bk-side {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 760px) {
+  .bk-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.bk-side > div > h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}

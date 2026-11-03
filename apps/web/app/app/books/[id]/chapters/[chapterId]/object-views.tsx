@@ -32,7 +32,16 @@ function mathNode(tree: MathTree, key: string): ReactNode {
 }
 
 /** Таблица по сетке: ячейки на своих местах, объединения как в исходнике. */
-export function TableGrid({ payload, cells }: { payload: ObjectPayload; cells: BlockRef[] }) {
+export function TableGrid({
+  payload,
+  cells,
+  translated = false,
+}: {
+  payload: ObjectPayload;
+  cells: BlockRef[];
+  /** Показать перевод ячеек. Сетка и объединения — те же, что в оригинале. */
+  translated?: boolean;
+}) {
   const texts = new Map<string, BlockRef[]>();
 
   for (const cell of cells) {
@@ -65,7 +74,7 @@ export function TableGrid({ payload, cells }: { payload: ObjectPayload; cells: B
                   >
                     {content.map((block) => (
                       <span key={block.id} className="bk-grid__part" title={block.full_code}>
-                        {block.text}
+                        {translated ? (block.translation ?? "—") : block.text}
                       </span>
                     ))}
                   </Cell>

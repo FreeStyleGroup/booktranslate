@@ -149,6 +149,34 @@ export const KIND_ONE: Record<string, string> = {
 };
 
 /** Специальный объект главы — одним словом, как его называют в книге. */
+export const REVISION_ORIGIN_LABEL: Record<string, string> = {
+  model: "модель",
+  memory: "готовый перевод",
+  human: "человек",
+  copy: "без перевода",
+};
+
+export const REVISION_ORIGIN_CHIP: Record<string, string> = {
+  model: "chip chip--info",
+  memory: "chip chip--info",
+  human: "chip chip--ok",
+  copy: "chip chip--info",
+};
+
+export const REVISION_STAGE_LABEL: Record<string, string> = {
+  draft: "черновик",
+  working: "рабочая",
+  final_candidate: "кандидат в выпуск",
+};
+
+export const JOB_LABEL: Record<string, string> = {
+  waiting: "в очереди",
+  running: "переводится",
+  done: "готово",
+  failed: "сорвалось",
+  cancelled: "остановлено",
+};
+
 export const OBJECT_ONE: Record<string, string> = {
   figure: "Рисунок",
   table: "Таблица",
