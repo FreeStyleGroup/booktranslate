@@ -13,6 +13,7 @@
 площадке. Выключено, пока не включили: чужой словарь по умолчанию чужой.
 """
 
+import enum
 import uuid
 
 from sqlalchemy import Boolean, Enum, ForeignKey, String
@@ -22,6 +23,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.models.mixins import TimestampMixin, UUIDPrimaryKey
 from app.models.qa import QAScope
+
+
+class MemoryPublish(str, enum.Enum):
+    VERIFIED = "verified"
+    CLOSED = "closed"
 
 
 class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
@@ -52,4 +58,11 @@ class WorkspaceSettings(UUIDPrimaryKey, TimestampMixin, Base):
     # Что отдавать на смысловую сверку: второй проход модели по всей книге удваивает расход.
     semantic_scope: Mapped[QAScope] = mapped_column(
         Enum(QAScope, name="qa_scope", native_enum=True), nullable=False, default=QAScope.RISKY
+    )
+
+    # Когда исправление попадает в память переводов: после проверки или только после закрытия.
+    memory_publish_on: Mapped[MemoryPublish] = mapped_column(
+        Enum(MemoryPublish, name="memory_publish", native_enum=True),
+        nullable=False,
+        default=MemoryPublish.VERIFIED,
     )

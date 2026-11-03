@@ -12,7 +12,7 @@ from app.api.deps import ContextDep, SessionDep
 from app.core.config import get_settings
 from app.models.notification import NotificationSettings
 from app.models.qa import QAScope
-from app.models.workspace import WorkspaceSettings
+from app.models.workspace import MemoryPublish, WorkspaceSettings
 from app.schemas.notification import NotificationSettingsPublic, NotificationSettingsUpdate
 from app.schemas.workspace import (
     ModelChoicePublic,
@@ -100,6 +100,9 @@ def _workspace(settings: WorkspaceSettings | None) -> WorkspaceSettingsPublic:
         share_glossary=settings is not None and settings.share_glossary,
         two_person_review=settings is not None and settings.two_person_review,
         semantic_scope=settings.semantic_scope if settings is not None else QAScope.RISKY,
+        memory_publish_on=(
+            settings.memory_publish_on if settings is not None else MemoryPublish.VERIFIED
+        ),
         models=[
             ModelChoicePublic(
                 id=choice.id,

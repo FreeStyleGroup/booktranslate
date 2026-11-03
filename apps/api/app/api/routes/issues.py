@@ -20,6 +20,8 @@ from app.schemas.issue import (
     IssueCandidatePublic,
     IssueCreate,
     IssueDetailPublic,
+    IssueEdit,
+    IssueEditablePublic,
     IssueEventPublic,
     IssueFix,
     IssueNeighbourPublic,
@@ -30,6 +32,10 @@ from app.schemas.issue import (
     IssueStatsPublic,
     IssueTermPublic,
     OptionalNote,
+    RegressionApply,
+    RegressionDecide,
+    RegressionItemPublic,
+    RegressionRunPublic,
     RequiredNote,
 )
 from app.schemas.paging import SortOrder
@@ -43,6 +49,7 @@ from app.services.issue_export import (
     to_xlsx,
 )
 from app.services.issues import IssueFilter, IssueRow, IssueService, IssueSort, IssueView
+from app.services.regression import RegressionService, RegressionView
 
 router = APIRouter(tags=["issues"])
 
@@ -147,6 +154,16 @@ def _detail(view: IssueView) -> IssueDetailPublic:
                 text=item.revision.text,
             )
             for item in view.candidates
+        ],
+        editable=[
+            IssueEditablePublic(
+                block_id=item.block.id,
+                block_code=prefix + item.block.code,
+                revision_id=item.revision.id,
+                revision_no=item.revision.revision_no,
+                text=item.revision.text,
+            )
+            for item in view.editable
         ],
         children=[_brief(child) for child in view.children],
         parent=_brief(view.parent) if view.parent is not None else None,
@@ -370,6 +387,107 @@ async def answer_clarification(
     service = IssueService(session, context, storage)
 
     return await _answer(service, await service.answer_clarification(issue_id, note=payload.note))
+
+
+def _regression(view: RegressionView) -> RegressionRunPublic:
+    return RegressionRunPublic(
+        id=view.run.id,
+        status=view.run.status,
+        fix_revision_id=view.run.fix_revision_id,
+        pending=view.pending,
+        items=[
+            RegressionItemPublic(
+                id=row.item.id,
+                kind=row.item.kind,
+                block_id=row.item.block_id,
+                object_id=row.item.object_id,
+                code=row.code,
+                required=row.item.required,
+                safe=row.item.safe,
+                source_text=row.source_text,
+                current_text=row.current_text,
+                proposed_text=row.item.proposed_text,
+                final_candidate=row.final_candidate,
+                decision=row.item.decision,
+                note=row.item.note,
+                child_issue_id=row.item.child_issue_id,
+                child_code=row.child_code,
+            )
+            for row in view.items
+        ],
+    )
+
+
+@router.get("/issues/{issue_id}/regression", response_model=RegressionRunPublic | None)
+async def issue_regression(
+    issue_id: uuid.UUID, context: ContextDep, session: SessionDep, storage: StorageDep
+) -> RegressionRunPublic | None:
+    """Последний прогон регрессии: что могло задеть исправление и что по этому решили."""
+    await IssueService(session, context, storage).get(issue_id)
+    view = await RegressionService(session, context, storage).of_issue(issue_id)
+
+    return _regression(view) if view is not None else None
+
+
+@router.post("/regression-runs/{run_id}/apply", response_model=RegressionRunPublic)
+async def apply_regression(
+    run_id: uuid.UUID,
+    payload: RegressionApply,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> RegressionRunPublic:
+    """Применить исправление к выбранным повторам. Само по книге оно не расходится."""
+    return _regression(
+        await RegressionService(session, context, storage).apply(
+            run_id,
+            item_ids=payload.item_ids,
+            overwrite_final=payload.overwrite_final,
+            note=payload.note,
+        )
+    )
+
+
+@router.post("/regression-items/{item_id}/decision", response_model=RegressionRunPublic)
+async def decide_regression(
+    item_id: uuid.UUID,
+    payload: RegressionDecide,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> RegressionRunPublic:
+    return _regression(
+        await RegressionService(session, context, storage).decide(
+            item_id,
+            affected=payload.affected,
+            note=payload.note,
+            category=payload.category,
+            severity=payload.severity,
+        )
+    )
+
+
+@router.post("/issues/{issue_id}/revision", response_model=IssuePublic)
+async def edit_issue_text(
+    issue_id: uuid.UUID,
+    payload: IssueEdit,
+    context: ContextDep,
+    session: SessionDep,
+    storage: StorageDep,
+) -> IssuePublic:
+    """Исправить текст: новая редакция. Другая текущая редакция — это 409, а не затирание."""
+    service = IssueService(session, context, storage)
+
+    return await _answer(
+        service,
+        await service.edit(
+            issue_id,
+            block_id=payload.block_id,
+            base_revision_id=payload.base_revision_id,
+            text=payload.text,
+            note=payload.note,
+        ),
+    )
 
 
 @router.post("/issues/{issue_id}/fix", response_model=IssuePublic)
