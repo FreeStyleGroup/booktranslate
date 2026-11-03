@@ -429,9 +429,7 @@ export async function startTranslation(
       method: "POST",
       token,
       organizationId: organization,
-      body: JSON.stringify(
-        reason === null ? {} : { ignore_terminology: true, reason: reason.trim() },
-      ),
+      body: reason === null ? {} : { ignore_terminology: true, reason: reason.trim() },
     });
   } catch (error) {
     return failure(error);
@@ -492,9 +490,7 @@ export async function retranslateBlock(
       method: "POST",
       token,
       organizationId: organization,
-      body: JSON.stringify({
-        items: [{ block_id: blockId, base_revision_id: baseRevisionId }],
-      }),
+      body: { items: [{ block_id: blockId, base_revision_id: baseRevisionId }] },
     });
   } catch (error) {
     return failure(error);

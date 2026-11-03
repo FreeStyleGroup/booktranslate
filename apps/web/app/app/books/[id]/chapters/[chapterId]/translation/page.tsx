@@ -8,6 +8,7 @@ import {
   type BookStructure,
   type ChapterBlock,
   type ChapterBlockPage,
+  type ChapterTranslation,
 } from "../../../../../../lib/work";
 import {
   KIND_ONE,
@@ -23,6 +24,7 @@ import { CopyId } from "../../../../../ui/copy-id";
 import { Pager } from "../../../../../ui/pager";
 import { paramsOf, wholeNumber } from "../../../../../ui/query";
 import { DataTable, type Column } from "../../../../../ui/table";
+import { ExportLinks } from "../../../../export-links";
 
 export const metadata: Metadata = {
   title: "Перевод главы — BookTranslate",
@@ -56,13 +58,15 @@ export default async function ChapterTranslationPage({
   const here = `${chapterPath}/translation`;
   const offset = wholeNumber(query.get("offset"), 0, OFFSET_MAX);
 
-  const [book, structure, page] = await Promise.all([
+  const [book, structure, page, state] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterBlockPage>(
       `/chapters/${chapterId}/translation/blocks?limit=${PER_PAGE}&offset=${offset}`,
       here,
     ),
+    // Счёт по всей главе, а не по открытой странице: непереведённое может быть дальше.
+    load<ChapterTranslation>(`/chapters/${chapterId}/translation`, here),
   ]);
 
   const chapter = structure.data?.chapters.find((item) => item.id === chapterId);
@@ -101,6 +105,21 @@ export default async function ChapterTranslationPage({
           </p>
         </div>
       </header>
+
+      {state.data !== undefined && state.data.translated > 0 && (
+        <section className="tile">
+          <h3>Черновая выгрузка</h3>
+          <p className="tile__note">
+            Текущие редакции одним файлом: показать середину работы, отдать главу на вычитку. Это не
+            выпуск — он появится отдельно, с закреплёнными версиями.
+          </p>
+          <ExportLinks
+            path={`/api/chapters/${chapterId}/export`}
+            formats={["docx", "markdown", "text"]}
+            draft={state.data.pending > 0}
+          />
+        </section>
+      )}
 
       <section className="tile">
         <DataTable

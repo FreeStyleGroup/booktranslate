@@ -1,32 +1,3 @@
-/* Подписи к состояниям, которые приходят с API.
-
-   Ключи API отдаёт как есть — переводить их там значило бы вшить язык
-   интерфейса в данные. Подписи же собраны в одном месте намеренно: одно и
-   то же состояние показывают обзор, список документов и карточка, и три
-   набора слов для одного состояния — это интерфейс, в котором «на вычитке»
-   и «ждёт редактора» выглядят как разные вещи. */
-
-export const DOCUMENT_LABEL: Record<string, string> = {
-  uploaded: "Загружен",
-  parsing: "Разбирается",
-  parsed: "Разобран",
-  translating: "Переводится",
-  review: "На вычитке",
-  done: "Готов",
-  failed: "Ошибка",
-};
-
-/** Каким значком помечать состояние документа в списке. */
-export const DOCUMENT_CHIP: Record<string, string> = {
-  uploaded: "chip chip--info",
-  parsing: "chip chip--info",
-  parsed: "chip chip--ok",
-  translating: "chip chip--info",
-  review: "chip chip--warn",
-  done: "chip chip--ok",
-  failed: "chip chip--danger",
-};
-
 /** Где книга в конвейере. */
 export const BOOK_STATUS_LABEL: Record<string, string> = {
   draft: "Черновик",
@@ -104,25 +75,7 @@ export function whereIs(locator: Record<string, string | number>): string | null
   return null;
 }
 
-export const SEGMENT_LABEL: Record<string, string> = {
-  new: "Не переведено",
-  machine: "Перевод модели",
-  memory: "Из памяти",
-  flagged: "С замечаниями",
-  edited: "Правка человека",
-  approved: "Принято",
-};
-
-export const SEGMENT_COLOR: Record<string, string> = {
-  approved: "#2f6bff",
-  edited: "#12b981",
-  memory: "#0ea5a5",
-  machine: "#8b5cf6",
-  flagged: "#f0a63a",
-  new: "#94a3b8",
-};
-
-/** Роль сегмента в книге: по раскладу видно, что за файл принесли.
+/** Роль блока в книге: по раскладу видно, что за файл принесли.
  *
  * Два набора, потому что подписи стоят в разных местах: в разбивке речь
  * о множестве («Абзацы — 10»), а в списке — об одной строке, и «Абзацы»
@@ -167,6 +120,13 @@ export const REVISION_STAGE_LABEL: Record<string, string> = {
   draft: "черновик",
   working: "рабочая",
   final_candidate: "кандидат в выпуск",
+};
+
+export const REVISION_ORIGIN_COLOR: Record<string, string> = {
+  model: "#4f6ef7",
+  memory: "#2bb673",
+  human: "#f0a63a",
+  copy: "#94a3b8",
 };
 
 export const JOB_LABEL: Record<string, string> = {
@@ -227,7 +187,7 @@ export const GLOSSARY_STATUS: Record<string, string> = {
 };
 
 export const GLOSSARY_STATUS_HINT: Record<string, string> = {
-  proposed: "уходит модели подсказкой, сегмент не помечает",
+  proposed: "уходит модели подсказкой, блок не помечает",
   confirmed: "применяется как требование — и проверяется",
   needs_review: "решение под вопросом, подсказкой пока идёт",
   needs_unification: "в разных главах названо по-разному",
@@ -289,24 +249,6 @@ export function glossarySource(source: string): string {
 
   return source.startsWith("import:") ? `загрузка: ${source.slice(7)}` : source;
 }
-
-export const CHECK_LABEL: Record<string, string> = {
-  numbers: "Числа",
-  placeholders: "Подстановки",
-  glossary: "Термин",
-  first_use: "Раскрытие",
-  untranslated: "Не переведено",
-  empty: "Пусто",
-};
-
-export const CHECK_CHIP: Record<string, string> = {
-  numbers: "chip chip--danger",
-  placeholders: "chip chip--danger",
-  glossary: "chip chip--warn",
-  first_use: "chip chip--info",
-  untranslated: "chip chip--warn",
-  empty: "chip chip--danger",
-};
 
 /** Роль в рабочем пространстве. */
 export const ROLE_LABEL: Record<string, string> = {

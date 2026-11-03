@@ -12,6 +12,7 @@ import {
   type BookKit,
   type BookObject,
   type BookStructure,
+  type ChapterEstimate,
   type ChapterMaster,
   type ChapterTranslation,
   type TerminologyGate,
@@ -86,13 +87,14 @@ export default async function ChapterPage({
   const query = paramsOf(await searchParams);
   const here = `/app/books/${id}/chapters/${chapterId}`;
 
-  const [book, structure, versions, kit, gate, translation, me, organization] = await Promise.all([
+  const [book, structure, versions, kit, gate, translation, estimate, me, organization] = await Promise.all([
     load<Book>(`/books/${id}`, here),
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<ChapterMaster[]>(`/chapters/${chapterId}/masters`, here),
     load<BookKit>(`/books/${id}/sources`, here),
     load<TerminologyGate>(`/chapters/${chapterId}/terminology/gate`, here),
     load<ChapterTranslation>(`/chapters/${chapterId}/translation`, here),
+    load<ChapterEstimate>(`/chapters/${chapterId}/translation/estimate`, here),
     currentUser(here),
     organizationId(),
   ]);
@@ -196,6 +198,7 @@ export default async function ChapterPage({
           bookId={id}
           chapterId={chapterId}
           state={translation.data}
+          estimate={estimate.data ?? null}
           canTranslate={canManage}
           canBypass={canBypass}
         />

@@ -4,15 +4,7 @@ import { redirect } from "next/navigation";
 import { apiFetch, unauthorized } from "../lib/api";
 import { currentUser } from "../lib/current-user";
 import { accessToken, organizationId, renewUrl } from "../lib/session";
-import {
-  CHECK_CHIP,
-  CHECK_LABEL,
-  DOCUMENT_LABEL,
-  SEGMENT_COLOR,
-  SEGMENT_LABEL,
-  plural,
-  thousands,
-} from "./labels";
+import { REVISION_ORIGIN_COLOR, REVISION_ORIGIN_LABEL, plural, thousands } from "./labels";
 
 /* Обзор кабинета.
 
@@ -26,10 +18,12 @@ import {
 
 type Overview = {
   projects: number;
+  books: number;
   documents: number;
-  segments: number;
-  segments_by_status: Record<string, number>;
-  flagged: number;
+  blocks: number;
+  translated: number;
+  by_origin: Record<string, number>;
+  live_runs: number;
   undecided_terms: number;
   glossary_terms: number;
   catalog_entries: number;
@@ -39,123 +33,75 @@ type Overview = {
     output_tokens: number;
     cached_input_tokens: number;
     estimated_usd: number | null;
-    translated_by: string | null;
   };
-  recent_documents: {
+  recent_books: {
     id: string;
+    code: string;
     title: string;
-    status: string;
-    segments: number;
-    done: number;
+    blocks: number;
+    translated: number;
     ready_percent: number;
   }[];
-  recent_findings: {
-    segment_id: string;
-    document_id: string;
-    document_title: string;
-    position: number;
-    source_text: string;
-    target_text: string | null;
-    checks: string[];
+  attention: {
+    run_id: string;
+    book_id: string;
+    chapter_id: string;
+    title: string;
+    problem: string;
   }[];
 };
 
 const DEMO: Overview = {
   projects: 3,
+  books: 4,
   documents: 7,
-  segments: 12480,
-  segments_by_status: { approved: 5840, machine: 3120, memory: 2460, flagged: 1060 },
-  flagged: 1060,
-  undecided_terms: 24,
-  glossary_terms: 318,
-  catalog_entries: 63,
-  memory_units: 2460,
+  blocks: 12480,
+  translated: 9620,
+  by_origin: { model: 6980, memory: 2460, copy: 180 },
+  live_runs: 1,
+  undecided_terms: 14,
+  glossary_terms: 420,
+  catalog_entries: 96,
+  memory_units: 5840,
   usage: {
-    input_tokens: 4120000,
-    output_tokens: 1980000,
-    cached_input_tokens: 1900000,
-    estimated_usd: 19.7,
-    translated_by: "claude-opus-5",
+    input_tokens: 4_200_000,
+    output_tokens: 1_900_000,
+    cached_input_tokens: 2_100_000,
+    estimated_usd: 86.4,
   },
-  recent_documents: [
+  recent_books: [
     {
-      id: "1",
-      title: "api-reference-v4.docx",
-      status: "review",
-      segments: 1240,
-      done: 967,
-      ready_percent: 78,
+      id: "a",
+      code: "BK01",
+      title: "API Reference v4",
+      blocks: 1240,
+      translated: 1240,
+      ready_percent: 100,
     },
     {
-      id: "2",
-      title: "kubernetes-handbook.epub",
-      status: "review",
-      segments: 8910,
-      done: 4098,
-      ready_percent: 46,
+      id: "b",
+      code: "BK02",
+      title: "Kubernetes Handbook",
+      blocks: 8910,
+      translated: 6680,
+      ready_percent: 75,
     },
     {
-      id: "3",
-      title: "admin-guide.html",
-      status: "review",
-      segments: 740,
-      done: 681,
-      ready_percent: 92,
-    },
-    {
-      id: "4",
-      title: "security-policy.docx",
-      status: "translating",
-      segments: 2180,
-      done: 262,
-      ready_percent: 12,
+      id: "c",
+      code: "BK03",
+      title: "Admin Guide",
+      blocks: 740,
+      translated: 222,
+      ready_percent: 30,
     },
   ],
-  recent_findings: [
+  attention: [
     {
-      segment_id: "a",
-      document_id: "1",
-      document_title: "api-reference-v4.docx",
-      position: 218,
-      source_text: "The access token expires after 3600 seconds.",
-      target_text: "Токен доступа истекает через 360 секунд.",
-      checks: ["numbers"],
-    },
-    {
-      segment_id: "b",
-      document_id: "1",
-      document_title: "api-reference-v4.docx",
-      position: 216,
-      source_text: "The primary node must be restarted together with its replica set.",
-      target_text: "Главный узел перезапускается вместе с группой копий.",
-      checks: ["glossary"],
-    },
-    {
-      segment_id: "c",
-      document_id: "2",
-      document_title: "kubernetes-handbook.epub",
-      position: 604,
-      source_text: "Enable TLS before exposing the service.",
-      target_text: "Включите TLS, прежде чем открывать службу наружу.",
-      checks: ["first_use"],
-    },
-    {
-      segment_id: "d",
-      document_id: "2",
-      document_title: "kubernetes-handbook.epub",
-      position: 712,
-      source_text: "Timeout: 30 s ± 5 s.",
-      target_text: "Таймаут: 30 с ± 3 с.",
-      checks: ["numbers"],
-    },
-    {
-      segment_id: "e",
-      document_id: "3",
-      document_title: "admin-guide.html",
-      position: 903,
-      source_text: "Refer to {0} for the full configuration example.",
-      target_text: "Полный пример настройки приведён в разделе.",
-      checks: ["placeholders"],
+      run_id: "a",
+      book_id: "b",
+      chapter_id: "c",
+      title: "CH04 · Scheduling",
+      problem: "Без перевода осталось блоков: 3",
     },
   ],
 };
@@ -181,7 +127,7 @@ async function load(): Promise<Loaded> {
       live: true,
     };
   } catch (error) {
-    // Токен отвергнут — сеанс кончился раньше печенья; продление либо
+    // Токен отвергнут — сеанс кончился раньше печенья. Продление либо
     // выдаст новый, либо выведет ко входу.
     if (unauthorized(error)) {
       redirect(renewUrl("/app"));
@@ -194,7 +140,7 @@ async function load(): Promise<Loaded> {
   }
 }
 
-/** API не ответил при живом сеансе: экран говорит об этом, а не подменяет
+/** API не ответил при живом сеансе: экран говорит об этом, а не показывает
     числа. */
 function Unavailable({ reason }: { reason: string }) {
   return (
@@ -204,15 +150,15 @@ function Unavailable({ reason }: { reason: string }) {
       </span>
       <h2>Сводка сейчас недоступна</h2>
       <p className="lead">
-        Сервер не ответил на запрос сводки: {reason}. Обновите страницу через
-        минуту; книги и очередь замечаний открываются из меню.
+        Сервер не ответил на запрос сводки: {reason}. Обновите страницу через минуту; книги и
+        словарь открываются отдельно.
       </p>
     </section>
   );
 }
 
-/* Вошедший без организации. Демонстрацию ему показывать нельзя: он вошёл
-   и примет чужие числа за свои. Администратор площадки к организациям не
+/* Вошедший без организации. Демонстрацию ему показывать нельзя: он её увидит
+   и примет чужие числа за свои. Администратор площадки к организации не
    привязан по замыслу — его место в управлении доступом. */
 function NoWorkspace({ superuser }: { superuser: boolean }) {
   return (
@@ -223,8 +169,8 @@ function NoWorkspace({ superuser }: { superuser: boolean }) {
       <h2>У вас нет рабочего пространства</h2>
       <p className="lead">
         {superuser
-          ? "Учётная запись администратора площадки не состоит ни в одной организации, и кабинету нечего показать. Учётные записи и рабочие пространства заводятся в управлении доступом."
-          : "Учётная запись не состоит ни в одной организации. Попросите администратора добавить вас в рабочее пространство."}
+          ? "Учётная запись администратора площадки не привязана к организации: её дело — доступ, а не книги."
+          : "Учётная запись не состоит ни в одной организации. Попросите администратора прислать приглашение."}
       </p>
       {superuser && (
         <Link className="btn btn--primary" href="/root">
@@ -250,10 +196,9 @@ export default async function DashboardPage() {
 
   const { data, live } = loaded;
 
-  const approved = data.segments_by_status.approved ?? 0;
-  const ready = data.segments === 0 ? 0 : Math.round((approved * 100) / data.segments);
-  const fromMemory = data.segments_by_status.memory ?? 0;
-  const empty = live && data.documents === 0;
+  const ready = data.blocks === 0 ? 0 : Math.round((data.translated * 100) / data.blocks);
+  const fromMemory = data.by_origin.memory ?? 0;
+  const empty = live && data.books === 0;
 
   return (
     <>
@@ -263,17 +208,17 @@ export default async function DashboardPage() {
             <h2>Добрый день 👋</h2>
             <p>
               {empty
-                ? "Рабочее пространство готово. Заведите проект и загрузите первую книгу."
-                : `Готовность работ — ${ready}%, в очереди ${thousands(data.flagged)} замечаний.`}
+                ? "Рабочее пространство готово. Заведите книгу — главы, термины и перевод дальше идут по шагам."
+                : `Переведено ${ready}% блоков${data.live_runs > 0 ? `, сейчас идёт прогонов: ${thousands(data.live_runs)}` : ""}.`}
             </p>
             <div className="welcome__stats">
               <div className="welcome__stat">
-                <b>{thousands(data.flagged)}</b>
-                <span>замечаний в очереди</span>
+                <b>{ready}%</b>
+                <span>блоков переведено</span>
               </div>
               <div className="welcome__stat">
-                <b>{ready}%</b>
-                <span>принято человеком</span>
+                <b>{thousands(data.live_runs)}</b>
+                <span>{plural(data.live_runs, "прогон идёт", "прогона идут", "прогонов идут")}</span>
               </div>
             </div>
           </div>
@@ -284,14 +229,13 @@ export default async function DashboardPage() {
 
         <section className="stat stat--blue">
           <span className="stat__mark" aria-hidden="true">
-            📚
+            📕
           </span>
-          <div className="stat__value">{thousands(data.documents)}</div>
-          {/* Два счёта через точку, а не одной фразой: «1 книга в 2
-              проектах» грамматически верно, но по смыслу ложно — книга
-              лежит в одном проекте, а проектов всего два. */}
+          <div className="stat__value">{thousands(data.books)}</div>
+          {/* Два счёта через точку, а не одной фразой: «семь книг в трёх
+              проектах» грамматически верно, но читается как раскладка. */}
           <div className="stat__label">
-            {plural(data.documents, "книга", "книги", "книг")} · {thousands(data.projects)}{" "}
+            {plural(data.books, "книга", "книги", "книг")} · {thousands(data.projects)}{" "}
             {plural(data.projects, "проект", "проекта", "проектов")}
           </div>
         </section>
@@ -303,7 +247,7 @@ export default async function DashboardPage() {
           <div className="stat__value">{thousands(data.undecided_terms)}</div>
           <div className="stat__label">
             {data.undecided_terms === 0
-              ? "Все термины решены"
+              ? "Нерешённых терминов нет"
               : "Терминов без решения — перевод ждёт"}
           </div>
         </section>
@@ -314,8 +258,8 @@ export default async function DashboardPage() {
           <span className="stat__mark" aria-hidden="true">
             ✅
           </span>
-          <div className="stat__value">{thousands(approved)}</div>
-          <div className="stat__label">Принято человеком</div>
+          <div className="stat__value">{thousands(data.translated)}</div>
+          <div className="stat__label">Блоков переведено</div>
         </section>
 
         <section className="stat stat--blue">
@@ -323,15 +267,15 @@ export default async function DashboardPage() {
             🧠
           </span>
           <div className="stat__value">{thousands(fromMemory)}</div>
-          <div className="stat__label">Закрыто памятью переводов</div>
+          <div className="stat__label">Закрыто готовым переводом</div>
         </section>
 
         <section className="stat stat--amber">
           <span className="stat__mark" aria-hidden="true">
             🧪
           </span>
-          <div className="stat__value">{thousands(data.flagged)}</div>
-          <div className="stat__label">Сегментов с замечаниями</div>
+          <div className="stat__value">{thousands(data.attention.length)}</div>
+          <div className="stat__label">Глав ждут решения</div>
         </section>
 
         <section className="stat stat--violet">
@@ -339,14 +283,10 @@ export default async function DashboardPage() {
             💸
           </span>
           <div className="stat__value">
-            {data.usage.estimated_usd === null
-              ? "—"
-              : `$${data.usage.estimated_usd.toFixed(2)}`}
+            {data.usage.estimated_usd === null ? "—" : `$${data.usage.estimated_usd.toFixed(2)}`}
           </div>
           <div className="stat__label">
-            {data.usage.translated_by === null
-              ? "Перевод ещё не запускался"
-              : `Оценка расхода · ${data.usage.translated_by}`}
+            {data.translated === 0 ? "Перевод ещё не запускался" : "Оценка расхода"}
           </div>
         </section>
       </div>
@@ -354,29 +294,27 @@ export default async function DashboardPage() {
       <div className="cab__row cab__row--split">
         <section className="tile">
           <div className="tile__head">
-            <h3>Документы в работе</h3>
-            <span className="tile__note">готовность по принятым сегментам</span>
+            <h3>Книги в работе</h3>
+            <span className="tile__note">готовность по переведённым блокам</span>
           </div>
 
-          {data.recent_documents.length === 0 ? (
+          {data.recent_books.length === 0 ? (
             <>
               <p className="tile__empty">
-                Пока пусто. Загрузите книгу — разбор, терминология и перевод
-                дальше идут сами.
+                Пока пусто. Заведите книгу и загрузите её текст — дальше сервис предложит главы.
               </p>
               <div className="tile__foot">
-                <Link className="btn btn--primary btn--small" href="/app/documents">
-                  Загрузить книгу
+                <Link className="btn btn--primary btn--small" href="/app/books">
+                  Завести книгу
                 </Link>
               </div>
             </>
           ) : (
             <div className="docs">
-              {data.recent_documents.map((document) => (
-                /* Карточка ведёт к документу только у своих данных:
-                   у демонстрационных номера выдуманы, и ссылка по ним
-                   привела бы в «не найдено». */
-                <Doc key={document.id} document={document} live={live} />
+              {data.recent_books.map((book) => (
+                /* Карточка ведёт к книге только у своих данных: у демонстрационных
+                   номера выдуманы, и ссылка привела бы в «не найдено». */
+                <BookRow key={book.id} book={book} live={live} />
               ))}
             </div>
           )}
@@ -384,25 +322,25 @@ export default async function DashboardPage() {
 
         <section className="tile">
           <div className="tile__head">
-            <h3>Состояние сегментов</h3>
-            <span className="tile__note">{thousands(data.segments)}</span>
+            <h3>Откуда перевод</h3>
+            <span className="tile__note">{thousands(data.translated)}</span>
           </div>
-          <Donut parts={data.segments_by_status} ready={ready} />
+          <Donut parts={data.by_origin} ready={ready} />
           <div className="legend">
-            {Object.entries(data.segments_by_status)
+            {Object.entries(data.by_origin)
               .filter(([, amount]) => amount > 0)
               .sort(([, first], [, second]) => second - first)
-              .map(([status, amount]) => (
-                <div key={status}>
+              .map(([origin, amount]) => (
+                <div key={origin}>
                   <span
                     className="dot"
-                    style={{ background: SEGMENT_COLOR[status] ?? "#94a3b8" }}
+                    style={{ background: REVISION_ORIGIN_COLOR[origin] ?? "#94a3b8" }}
                   />
-                  <span>{SEGMENT_LABEL[status] ?? status}</span>
+                  <span>{REVISION_ORIGIN_LABEL[origin] ?? origin}</span>
                   <b>{thousands(amount)}</b>
                 </div>
               ))}
-            {data.segments === 0 && <div>Сегментов пока нет</div>}
+            {data.translated === 0 && <div>Переведённых блоков пока нет</div>}
           </div>
         </section>
       </div>
@@ -410,30 +348,35 @@ export default async function DashboardPage() {
       <div className="cab__row cab__row--split">
         <section className="tile">
           <div className="tile__head">
-            <h3>Очередь замечаний</h3>
-            <span className="tile__note">сначала худшее</span>
+            <h3>Что ждёт решения</h3>
+            <span className="tile__note">сорвавшиеся прогоны и блоки без перевода</span>
           </div>
 
-          {data.recent_findings.length === 0 ? (
+          {data.attention.length === 0 ? (
             <p className="tile__empty">
-              Замечаний нет: всё, что переведено, прошло проверки.
+              {data.translated === 0
+                ? "Перевод ещё не запускался: ждать решения нечему."
+                : "Всё, что запускали, дошло до конца."}
             </p>
           ) : (
             <div className="rows">
-              {data.recent_findings.map((finding) => (
-                <div className="row" key={finding.segment_id}>
-                  <span className="row__no">{finding.position}</span>
-                  <span className="row__src">{finding.source_text}</span>
-                  <span>{finding.target_text ?? "—"}</span>
-                  <span>
-                    {finding.checks.slice(0, 1).map((check) => (
-                      <span key={check} className={CHECK_CHIP[check] ?? "chip chip--warn"}>
-                        {CHECK_LABEL[check] ?? check}
-                      </span>
-                    ))}
-                  </span>
-                </div>
-              ))}
+              {data.attention.map((card) =>
+                live ? (
+                  <Link
+                    className="row"
+                    key={card.run_id}
+                    href={`/app/books/${card.book_id}/chapters/${card.chapter_id}`}
+                  >
+                    <span className="row__src">{card.title}</span>
+                    <span>{card.problem}</span>
+                  </Link>
+                ) : (
+                  <div className="row" key={card.run_id}>
+                    <span className="row__src">{card.title}</span>
+                    <span>{card.problem}</span>
+                  </div>
+                ),
+              )}
             </div>
           )}
         </section>
@@ -474,34 +417,27 @@ export default async function DashboardPage() {
 
       {!live && (
         <p className="demo-badge">
-          <span aria-hidden="true">👀</span> Демонстрационные данные: войдите,
-          чтобы увидеть свои
+          <span aria-hidden="true">👀</span> Демонстрационные данные. Войдите, чтобы увидеть свои
         </p>
       )}
     </>
   );
 }
 
-/** Строка документа с полосой готовности — ссылкой на его карточку. */
-function Doc({
-  document,
-  live,
-}: {
-  document: Overview["recent_documents"][number];
-  live: boolean;
-}) {
+/** Строка книги с полосой готовности — ссылкой, если данные свои. */
+function BookRow({ book, live }: { book: Overview["recent_books"][number]; live: boolean }) {
   const body = (
     <>
       <div className="doc__top">
-        <b>{document.title}</b>
-        <span>{document.ready_percent}%</span>
+        <b>{book.title}</b>
+        <span>{book.ready_percent}%</span>
       </div>
       <div className="bar">
-        <i style={{ width: `${document.ready_percent}%` }} />
+        <i style={{ width: `${book.ready_percent}%` }} />
       </div>
       <span className="tile__note">
-        {thousands(document.segments)} сегментов ·{" "}
-        {DOCUMENT_LABEL[document.status] ?? document.status}
+        {book.code} · {thousands(book.translated)} из {thousands(book.blocks)}{" "}
+        {plural(book.blocks, "блока", "блоков", "блоков")}
       </span>
     </>
   );
@@ -511,31 +447,31 @@ function Doc({
   }
 
   return (
-    <Link className="doc doc--link" href={`/app/documents/${document.id}`}>
+    <Link className="doc doc--link" href={`/app/books/${book.id}`}>
       {body}
     </Link>
   );
 }
 
-/* Кольцо состояний: доли откладываются штрихом по окружности — так дуги не
-   надо считать тригонометрией и они всегда сходятся. */
+/* Кольцо долей: откладываются штрихом по окружности — не надо считать
+   тригонометрией, и они всегда сходятся. */
 function Donut({ parts, ready }: { parts: Record<string, number>; ready: number }) {
   const entries = Object.entries(parts).filter(([, amount]) => amount > 0);
   const total = entries.reduce((sum, [, amount]) => sum + amount, 0);
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
 
-  // Дуги считаются до отрисовки: копить смещение по ходу разметки значит
+  // Дуги считаются до отрисовки: копить смещение прямо в разметке значило бы
   // менять переменную во время построения дерева.
   const arcs = entries.reduce<{ color: string; dash: number; offset: number }[]>(
-    (drawn, [status, amount]) => {
+    (drawn, [origin, amount]) => {
       const previous = drawn.at(-1);
       const dash = total === 0 ? 0 : (amount / total) * circumference;
 
       return [
         ...drawn,
         {
-          color: SEGMENT_COLOR[status] ?? "#94a3b8",
+          color: REVISION_ORIGIN_COLOR[origin] ?? "#94a3b8",
           dash,
           offset: previous === undefined ? 0 : previous.offset + previous.dash,
         },
@@ -546,13 +482,7 @@ function Donut({ parts, ready }: { parts: Record<string, number>; ready: number 
 
   return (
     <div className="donut">
-      <svg
-        width="190"
-        height="190"
-        viewBox="0 0 190 190"
-        role="img"
-        aria-label="Состояние сегментов"
-      >
+      <svg width="190" height="190" viewBox="0 0 190 190" role="img" aria-label="Откуда перевод">
         <g transform="rotate(-90 95 95)">
           <circle
             cx="95"
@@ -581,7 +511,7 @@ function Donut({ parts, ready }: { parts: Record<string, number>; ready: number 
       </svg>
       <div className="donut__value">
         <b>{ready}%</b>
-        <span>принято</span>
+        <span>переведено</span>
       </div>
     </div>
   );

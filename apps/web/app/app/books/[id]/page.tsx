@@ -19,6 +19,7 @@ import "../../ui/ui.css";
 import "../books.css";
 import { CopyId } from "../../ui/copy-id";
 import { AddSource } from "../add-source";
+import { ExportLinks } from "../export-links";
 import { Kit } from "../kit";
 
 export const metadata: Metadata = {
@@ -212,6 +213,22 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
           Открыть
         </Link>
       </section>
+
+      {/* Пока ничего не переведено, выгружать нечего: получилась бы копия исходника. */}
+      {kit.data !== undefined && kit.data.export_formats.length > 0 && kit.data.translated > 0 && (
+        <section className="tile">
+          <h3>Черновая выгрузка книги</h3>
+          <p className="tile__note">
+            Текущие редакции одним файлом. Это не выпуск — он появится отдельно, с закреплёнными
+            версиями глав.
+          </p>
+          <ExportLinks
+            path={`/api/books/${edition.id}/export`}
+            formats={kit.data.export_formats}
+            draft={kit.data.translated < kit.data.blocks}
+          />
+        </section>
+      )}
     </>
   );
 }

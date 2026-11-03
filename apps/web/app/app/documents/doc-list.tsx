@@ -1,6 +1,6 @@
 "use client";
 
-/* Список загруженных книг с поиском.
+/* Список исходных файлов с поиском.
 
    Поиск идёт по уже загруженному списку, а не запросом к API. Причина в
    размере: список приходит целиком (потолок — 200 книг), и гонять запрос
@@ -15,7 +15,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { DOCUMENT_CHIP, DOCUMENT_LABEL, plural, thousands } from "../labels";
+import { plural, thousands } from "../labels";
 import { DeleteButton } from "./actions-ui";
 
 export type Row = {
@@ -23,7 +23,8 @@ export type Row = {
   title: string;
   project: string;
   about: string;
-  status: string;
+  // Книга, в комплект которой входит файл. Файл без книги открыть негде.
+  bookId: string | null;
   updated: string;
 };
 
@@ -45,15 +46,15 @@ export function DocumentList({ rows }: { rows: Row[] }) {
   return (
     <section className="tile">
       <div className="tile__head">
-        <h3>Загруженные книги</h3>
+        <h3>Загруженные файлы</h3>
 
         <label className="wk-find">
           <span aria-hidden="true">🔍</span>
           <input
             type="search"
             value={query}
-            placeholder="Поиск по книгам"
-            aria-label="Поиск по книгам"
+            placeholder="Поиск по файлам"
+            aria-label="Поиск по файлам"
             onChange={(event) => setQuery(event.target.value)}
           />
         </label>
@@ -71,22 +72,7 @@ export function DocumentList({ rows }: { rows: Row[] }) {
         <div className="wk-list">
           {found.map((row) => (
             <div className="wk-item" key={row.id}>
-              <Link className="wk-row" href={`/app/documents/${row.id}`}>
-                <span className="wk-row__mark" aria-hidden="true">
-                  📄
-                </span>
-
-                <span className="wk-row__name">
-                  <b>{row.title}</b>
-                  <span className="tile__note">{row.about}</span>
-                </span>
-
-                <span className={DOCUMENT_CHIP[row.status] ?? "chip chip--info"}>
-                  {DOCUMENT_LABEL[row.status] ?? row.status}
-                </span>
-
-                <span className="wk-row__when tile__note">{row.updated}</span>
-              </Link>
+              <Row row={row} />
 
               <DeleteButton id={row.id} title={row.title} icon />
             </div>
@@ -99,9 +85,34 @@ export function DocumentList({ rows }: { rows: Row[] }) {
       {query.trim() !== "" && found.length > 0 && (
         <p className="tile__note wk-seg__foot">
           Нашлось {thousands(found.length)}{" "}
-          {plural(found.length, "книга", "книги", "книг")} из {thousands(rows.length)}
+          {plural(found.length, "файл", "файла", "файлов")} из {thousands(rows.length)}
         </p>
       )}
     </section>
+  );
+}
+
+function Row({ row }: { row: Row }) {
+  const body = (
+    <>
+      <span className="wk-row__mark" aria-hidden="true">
+        📄
+      </span>
+
+      <span className="wk-row__name">
+        <b>{row.title}</b>
+        <span className="tile__note">{row.about}</span>
+      </span>
+
+      <span className="wk-row__when tile__note">{row.updated}</span>
+    </>
+  );
+
+  return row.bookId === null ? (
+    <div className="wk-row">{body}</div>
+  ) : (
+    <Link className="wk-row" href={`/app/books/${row.bookId}`}>
+      {body}
+    </Link>
   );
 }
