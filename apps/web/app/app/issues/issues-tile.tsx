@@ -15,7 +15,7 @@ export function IssuesTile({ stats, href, scope }: { stats: IssueStats; href: st
     <section className={blocking ? "tile wk-call bk-gate" : "tile wk-call bk-next"}>
       <div>
         <h3>Реестр ошибок</h3>
-        <p>
+        <p className="tile__note">
           {stats.total === 0
             ? `По ${scope} замечаний нет.`
             : `Незакрытых критичных: ${thousands(stats.open_critical)}, серьёзных: ${thousands(stats.open_major)}, всего записей: ${thousands(stats.total)}.`}

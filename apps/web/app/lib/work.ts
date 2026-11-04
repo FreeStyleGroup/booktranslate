@@ -794,6 +794,31 @@ export type CatalogEntry = {
 /** Чем отвечает справочник сейчас. */
 export type CatalogSource = { name: string; online: boolean };
 
+/* Автоматический режим. */
+
+export type AutopilotRun = {
+  id: string;
+  book_id: string;
+  status: "running" | "waiting_human" | "done" | "cancelled";
+  stage: string;
+  stages: { code: string; title: string; state: "done" | "current" | "pending" }[];
+  waiting: {
+    code: string;
+    message: string;
+    chapter_id: string | null;
+    issue_id: string | null;
+    figures: boolean;
+    release_id: string | null;
+  }[];
+  chapters_total: number;
+  chapters_done: number;
+  release_id: string | null;
+  finished_at: string | null;
+  created_at: string;
+};
+
+export type AutopilotState = { run: AutopilotRun | null };
+
 /* Перевод надписей на рисунках. */
 
 export type FigureStatus = "draft" | "approved" | "kept_original" | "no_text";
@@ -851,6 +876,7 @@ export type ChapterRelease = {
   code: string;
   version: string;
   status: "draft" | "approved";
+  automatic: boolean;
   manifest_hash: string;
   blocks: number;
   objects: number;
@@ -925,7 +951,7 @@ export type ReleaseFiles = {
 
 export type PageAudit = {
   page_no: number;
-  status: "unreviewed" | "pass" | "issue" | "stale";
+  status: "unreviewed" | "pass" | "auto_pass" | "issue" | "stale";
   issue_id: string | null;
   checked_at: string | null;
 };
@@ -935,6 +961,8 @@ export type ReleaseControl = {
   code: string;
   status: "built" | "passed";
   ready: boolean;
+  // Подтверждён автоматическим режимом: глазами выпуск никто не смотрел.
+  automatic: boolean;
   checks: { code: string; title: string; passed: boolean }[];
   blockers: {
     check: string;
@@ -962,6 +990,8 @@ export type ReviewRun = {
   chapter_title: string | null;
   kind: ReviewKind;
   status: "open" | "completed";
+  // Завершена автоматическим режимом: человек текст не смотрел.
+  automatic: boolean;
   reviewer: string | null;
   base_revision_set_hash: string;
   completed_revision_set_hash: string | null;
@@ -1313,7 +1343,8 @@ export async function load<T>(path: string, returnTo: string): Promise<Loaded<T>
   const token = await accessToken();
 
   if (token === undefined) {
-    redirect("/login");
+    // Печенье доступа истекло раньше обновляющего: продлить сеанс и вернуться на это же место.
+    redirect(renewUrl(returnTo));
   }
 
   try {

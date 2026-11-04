@@ -130,6 +130,7 @@ export function ReleasePanel({
                 {item.working_differs && (
                   <span className="chip chip--warn">рабочий текст новее</span>
                 )}
+                {item.automatic && <span className="chip chip--info">создана автоматически</span>}
               </div>
 
               <p className="tile__note">
