@@ -705,6 +705,29 @@ async def test_roles_and_isolation(db_client: AsyncClient, session: AsyncSession
 
 
 @requires_database
+async def test_issue_mark_needs_a_real_issue(db_client: AsyncClient, session: AsyncSession) -> None:
+    """«Посмотрели и завели замечание» без замечания засчитало бы место, ничего не сказав."""
+    account = await register(db_client)
+    chapter_id, rows = await translated(db_client, session, account)
+    run = await start(db_client, account, chapter_id, "technical")
+    block = row_of(rows, PARAGRAPH)
+    mark = {"block_id": block["id"], "revision_id": block["current"]["id"], "result": "issue"}
+
+    refused = await db_client.post(
+        f"/review-runs/{run['id']}/blocks", headers=account.headers, json=mark
+    )
+    assert refused.status_code == 409
+    assert "замечание" in refused.json()["detail"]
+
+    issue = await registered(db_client, account, block)
+    accepted = await db_client.post(
+        f"/review-runs/{run['id']}/blocks", headers=account.headers, json=mark
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert issue["id"]
+
+
+@requires_database
 async def test_no_bulk_mark_exists(db_client: AsyncClient, session: AsyncSession) -> None:
     """Отметка «сверено» ставится по одному месту: кнопки «принять всё» нет и в API."""
     account = await register(db_client)

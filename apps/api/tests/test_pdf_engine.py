@@ -97,6 +97,19 @@ def test_book_is_rendered_with_russian_text_and_pages() -> None:
     assert scan(text) == []
 
 
+def test_planted_service_code_is_found_in_the_text_layer() -> None:
+    """Иначе чистый результат проверки выше ничего бы не значил."""
+    rendered = _render_with_weasyprint(
+        PublicationDocument(
+            title="Т",
+            language="ru",
+            elements=[TextElement("p", BlockKind.PARAGRAPH, "Смотрите CH03-B0042 ниже.")],
+        )
+    )
+
+    assert scan(text_layer(rendered.content))
+
+
 def test_page_map_knows_where_blocks_stand() -> None:
     rendered = _render_with_weasyprint(book())
     placed = {block for page in rendered.page_map for block in page}

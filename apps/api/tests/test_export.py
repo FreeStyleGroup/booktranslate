@@ -241,6 +241,38 @@ async def test_docx_comes_back_as_docx_with_styles(
 
 
 @requires_database
+async def test_chapter_from_word_file_holds_only_this_chapter(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Весь исходный файл с одной главой на русском выглядел бы переводом, которым не является."""
+    document = docx.Document()
+    document.add_heading("Safety instructions", level=1)
+    document.add_paragraph("Open the valve before start.")
+    document.add_heading("Maintenance", level=1)
+    document.add_paragraph("Grease the bearing monthly.")
+    buffer = io.BytesIO()
+    document.save(buffer)
+
+    account = await register(db_client)
+    book = await translated_book(
+        db_client, session, account, data=buffer.getvalue(), name="manual.docx", media=DOCX_MEDIA
+    )
+
+    def text_of(content: bytes) -> str:
+        return "\n".join(row.text for row in docx.Document(io.BytesIO(content)).paragraphs)
+
+    whole = await db_client.get(f"/books/{book.book_id}/export", headers=account.headers)
+    assert "Grease the bearing" in text_of(whole.content)
+
+    chapter = await db_client.get(
+        f"/chapters/{book.chapter}/export?format=docx", headers=account.headers
+    )
+    assert chapter.status_code == 200, chapter.text
+    assert "Safety instructions" in text_of(chapter.content)
+    assert "Grease the bearing" not in text_of(chapter.content)
+
+
+@requires_database
 async def test_docx_from_other_sources_is_a_fresh_document(
     db_client: AsyncClient, session: AsyncSession
 ) -> None:

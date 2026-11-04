@@ -7,7 +7,8 @@
 Строка, которая есть в самом исходнике, служебной не считается: номер детали в книге может
 выглядеть как код блока, и запрещать его значило бы никогда не выпустить эту книгу. Заметка
 считается совпадением только целой длинной фразой: короткая заметка («Радиус») совпадёт с обычным
-текстом, а отказ здесь останавливает выпуск."""
+текстом, а отказ здесь останавливает выпуск.
+"""
 
 import io
 import re
@@ -16,6 +17,7 @@ from collections.abc import Iterable, Sequence
 
 from bs4 import BeautifulSoup
 from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 from app.services.export.base import ExportError, Rendered
 
@@ -104,7 +106,10 @@ def _text_of_zip(content: bytes, wanted: re.Pattern[str], read: object) -> str:
 def _xml_text(content: bytes) -> str:
     # Куски одного слова лежат в разных узлах, поэтому склеиваем без разделителя: код, разорванный
     # на два фрагмента, тоже код.
-    return "".join(ElementTree.fromstring(content).itertext())
+    try:
+        return "".join(ElementTree.fromstring(content).itertext())
+    except (ElementTree.ParseError, DefusedXmlException) as error:
+        raise ExportError("Готовый файл не читается для проверки") from error
 
 
 def _markup_text(content: bytes) -> str:

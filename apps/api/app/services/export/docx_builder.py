@@ -18,10 +18,10 @@ from typing import Any
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches
-from PIL import Image, UnidentifiedImageError
+from docx.table import _Cell
 
 from app.models.block import BlockKind
-from app.services.export.base import Rendered, TranslatedBlock
+from app.services.export.base import ExportError, Rendered, TranslatedBlock
 from app.services.export.document import (
     FigureElement,
     PublicationDocument,
@@ -30,6 +30,7 @@ from app.services.export.document import (
     TextElement,
 )
 from app.services.export.docx_writer import MEDIA_TYPE
+from app.services.export.overlay import BAD_IMAGE, checked_image
 
 # Уровень заголовка известен только там, где его записал разборщик. Для
 # остальных — первый: у книги из PDF иерархия заголовков не восстановлена,
@@ -65,7 +66,8 @@ class DocxBuilder:
             elif block.kind is BlockKind.LIST_ITEM:
                 document.add_paragraph(text, style="List Bullet")
             elif block.kind is BlockKind.CODE:
-                run = document.add_paragraph().add_run(text)
+                # В коде начальные пробелы — это содержание: отступ первой строки снимать нельзя.
+                run = document.add_paragraph().add_run(block.text.strip("\r\n"))
                 run.font.name = MONOSPACE
             elif block.kind is BlockKind.WARNING:
                 document.add_paragraph().add_run(text).bold = True
@@ -113,8 +115,9 @@ def _heading_level(block: TranslatedBlock) -> int:
 
 
 def _add_text(document: Any, kind: BlockKind, text: str, level: int = 1) -> None:
-    clean = text.strip()
-    if not clean:
+    # В коде начальные пробелы — это содержание: отступ первой строки снимать нельзя.
+    clean = text.strip("\r\n") if kind is BlockKind.CODE else text.strip()
+    if not clean.strip():
         return
 
     if kind is BlockKind.HEADING:
@@ -157,12 +160,17 @@ def _add_table(document: Any, element: TableElement) -> None:
     table = document.add_table(rows=height, cols=width)
     table.style = "Table Grid"
 
+    # Ячейки берутся снимком: `table.cell()` пересобирает всю таблицу на каждый вызов, и таблица
+    # 200 на 200 из чужой книги заняла бы часы и весь рабочий процесс.
+    grid = [row.tc_lst for row in table._tbl.tr_lst]
+
     for row_no, column, cell in placed:
-        target = table.cell(row_no, column)
-        if cell.rowspan > 1 or cell.colspan > 1:
-            target = target.merge(table.cell(row_no + cell.rowspan - 1, column + cell.colspan - 1))
-        run = target.paragraphs[0].add_run(cell.text)
+        run = _Cell(grid[row_no][column], table).paragraphs[0].add_run(cell.text)
         run.bold = cell.header
+
+    for row_no, column, cell in placed:
+        if cell.rowspan > 1 or cell.colspan > 1:
+            grid[row_no][column].merge(grid[row_no + cell.rowspan - 1][column + cell.colspan - 1])
 
 
 def _add_figure(document: Any, element: FigureElement, source: PublicationDocument) -> None:
@@ -184,10 +192,10 @@ def _add_figure(document: Any, element: FigureElement, source: PublicationDocume
 
 def _as_png(content: bytes) -> bytes | None:
     try:
-        with Image.open(io.BytesIO(content)) as image:
+        with checked_image(content) as image:
             buffer = io.BytesIO()
             image.convert("RGB").save(buffer, format="PNG")
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+    except (*BAD_IMAGE, ExportError):
         return None
 
     return buffer.getvalue()
@@ -195,5 +203,8 @@ def _as_png(content: bytes) -> bytes | None:
 
 def _width_inches(content: bytes) -> float:
     """Ширина на странице: как есть при 96 точках на дюйм, но не шире текста."""
-    with Image.open(io.BytesIO(content)) as image:
-        return float(min(image.size[0] / 96, PAGE_TEXT_WIDTH_INCHES))
+    try:
+        with checked_image(content) as image:
+            return float(min(image.size[0] / 96, PAGE_TEXT_WIDTH_INCHES))
+    except (*BAD_IMAGE, ExportError):
+        return PAGE_TEXT_WIDTH_INCHES

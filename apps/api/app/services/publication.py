@@ -4,13 +4,15 @@
 рабочего текста файл выпуска не меняет. Сумма каждой редакции сверяется с манифестом: если база и
 манифест разошлись, файла не будет. Служебное остаётся в базе, а готовый файл перед выдачей
 проверяется на коды, заменители и заметки проверяющих. Комментарии из исходного Word в такой файл
-не идут."""
+не идут.
+"""
 
 import asyncio
 import hashlib
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import func, select
 
@@ -28,7 +30,13 @@ from app.services.assembly import TOC_LEVELS
 from app.services.book_objects import ObjectService, PlacedObject
 from app.services.chapter_releases import sha256_text
 from app.services.errors import ConflictError, NotFoundError, UnsupportedFormatError
-from app.services.export import ExportError, ExportFormat, Rendered, TranslatedBlock, renderer_for
+from app.services.export import (
+    ExportError,
+    ExportFormat,
+    Rendered,
+    TranslatedBlock,
+    renderer_for,
+)
 from app.services.export.document import (
     FigureElement,
     FormulaElement,
@@ -85,7 +93,9 @@ class PublicationService(ExportService):
         if release.status is not ReleaseStatus.APPROVED:
             raise ConflictError(f"{release.code} не утверждена: читательской версии у неё нет")
 
-        return await self._publish([release], stem=release.code, export_format=export_format)
+        return await self._publish(
+            [release], stem=release.code, export_format=export_format, whole_book=False
+        )
 
     async def book_release(self, release_id: uuid.UUID, *, export_format: ExportFormat) -> Export:
         self._context.require(*EXPORT_ROLES)
@@ -110,16 +120,23 @@ class PublicationService(ExportService):
         }
         ordered = [rows[item] for item in ids]
 
-        return await self._publish(ordered, stem=release.code, export_format=export_format)
+        return await self._publish(
+            ordered, stem=release.code, export_format=export_format, whole_book=True
+        )
 
     async def _publish(
-        self, releases: Sequence[ChapterRelease], *, stem: str, export_format: ExportFormat
+        self,
+        releases: Sequence[ChapterRelease],
+        *,
+        stem: str,
+        export_format: ExportFormat,
+        whole_book: bool,
     ) -> Export:
         chapter = await self._session.get_one(Chapter, releases[0].chapter_id)
         document = await self._document(chapter.source_document_id)
 
         try:
-            renderer = renderer_for(export_format, document.source_format)
+            renderer = renderer_for(export_format, document.source_format, whole_book=whole_book)
         except ExportError as error:
             raise UnsupportedFormatError(str(error)) from error
 
@@ -132,26 +149,27 @@ class PublicationService(ExportService):
         else:
             rendered = await self._render(renderer, view.blocks, document)
 
-        try:
-            if rendered.suffix == ".docx":
-                rendered = Rendered(
-                    content=without_comments(rendered.content),
-                    media_type=rendered.media_type,
-                    suffix=rendered.suffix,
-                )
+        # Разбор архива и сверка текста долгие: в потоке событий они остановили бы всех остальных.
+        def finish(ready: Rendered) -> tuple[Rendered, list[str]]:
+            content = ready.content
+
+            if ready.suffix == ".docx":
+                content = without_comments(content)
 
             # Формат оригинала несёт исходные картинки: переведённые встают на их место.
-            if rendered.suffix in ZIP_SUFFIXES and not isinstance(renderer, DocxBuilder):
-                rendered = Rendered(
-                    content=replace_images(
-                        rendered.content,
-                        {key: asset for key, (asset, _, _) in translated.by_source.items()},
-                    ),
-                    media_type=rendered.media_type,
-                    suffix=rendered.suffix,
+            if ready.suffix in ZIP_SUFFIXES and not isinstance(renderer, DocxBuilder):
+                content = replace_images(
+                    content, {key: asset for key, (asset, _, _) in translated.by_source.items()}
                 )
 
-            found = scan(readable_text(rendered), source_texts=view.source_texts, notes=view.notes)
+            final = Rendered(content=content, media_type=ready.media_type, suffix=ready.suffix)
+
+            return final, scan(
+                readable_text(final), source_texts=view.source_texts, notes=view.notes
+            )
+
+        try:
+            rendered, found = await asyncio.to_thread(finish, rendered)
         except ExportError as error:
             raise ConflictError(str(error)) from error
 
@@ -219,7 +237,7 @@ class PublicationService(ExportService):
                 raise ConflictError("Манифест расходится с базой: текст редакции изменён")
 
             blocks.append(
-                TranslatedBlock(text=revision.text, kind=block.kind, location=block.source_location)
+                TranslatedBlock(text=revision.text, kind=block.kind, location=entry["location"])
             )
             source_texts.append(block.source_text)
 
@@ -296,13 +314,16 @@ class PublicationService(ExportService):
             uuid.UUID(row["id"]): uuid.UUID(row["revision_id"])
             for row in release.manifest["blocks"]
         }
+        # Порядок и место из манифеста: новая версия мастера перезаписывает их в блоке, а выпуск
+        # должен выглядеть так же, как в день утверждения.
+        locations = {uuid.UUID(row["id"]): row["location"] for row in release.manifest["blocks"]}
         wanted_objects = {uuid.UUID(row["id"]) for row in release.manifest["objects"]}
 
-        blocks = list(
-            await self._session.scalars(
-                self.scoped(Block).where(Block.id.in_(kept)).order_by(Block.ordinal)
-            )
-        )
+        found = {
+            row.id: row
+            for row in await self._session.scalars(self.scoped(Block).where(Block.id.in_(kept)))
+        }
+        blocks = [found[uuid.UUID(row["id"])] for row in release.manifest["blocks"]]
         texts = {
             row.id: row.text
             for row in await self._session.scalars(
@@ -338,12 +359,12 @@ class PublicationService(ExportService):
 
             table = tables.get(block.id)
             if table is not None:
-                document.elements.append(_table(table, kept, texts))
+                document.elements.append(_table(table, kept, texts, locations))
                 continue
             if block.id in cells:
                 continue
 
-            level = block.source_location.get("level")
+            level = locations[block.id].get("level")
             level = level if isinstance(level, int) else 1
             text = texts[kept[block.id]]
             document.elements.append(
@@ -435,31 +456,51 @@ class PublicationService(ExportService):
 
 
 def _table(
-    item: PlacedObject, kept: dict[uuid.UUID, uuid.UUID], texts: dict[uuid.UUID, str]
+    item: PlacedObject,
+    kept: dict[uuid.UUID, uuid.UUID],
+    texts: dict[uuid.UUID, str],
+    locations: dict[uuid.UUID, dict[str, Any]],
 ) -> TableElement:
-    """Таблица по её сетке: объединённые ячейки как в книге, текст из манифеста."""
-    by_place = {
-        (block.source_location.get("row"), block.source_location.get("column")): block
-        for block in item.content
-    }
+    """Таблица по её сетке: объединённые ячейки как в книге, текст из манифеста.
+
+    В одной ячейке бывает несколько блоков: два абзаца это два блока с одним местом. Ни один не
+    должен пропасть, поэтому текст ячейки собирается из всех, а блок без места в сетке идёт
+    отдельной строкой.
+    """
+    by_place: dict[tuple[Any, Any], list[Block]] = {}
+    for block in item.content:
+        if block.id in kept:
+            location = locations[block.id]
+            by_place.setdefault((location.get("row"), location.get("column")), []).append(block)
+
     grid = item.object.payload
     rows: list[list[TableCell]] = [[] for _ in range(int(grid.get("rows") or 0))]
 
     for meta in grid.get("cells", []):
-        block = by_place.get((meta.get("row"), meta.get("col")))
         row_no = int(meta.get("row") or 0)
         if not 0 <= row_no < len(rows):
             continue
 
-        revision = kept.get(block.id) if block is not None else None
+        blocks = by_place.pop((meta.get("row"), meta.get("col")), [])
         rows[row_no].append(
             TableCell(
-                text=texts.get(revision, "") if revision is not None else "",
+                text="\n".join(texts.get(kept[block.id], "") for block in blocks),
                 rowspan=int(meta.get("rowspan") or 1),
                 colspan=int(meta.get("colspan") or 1),
                 header=bool(meta.get("header")),
-                block_id=str(block.id) if block is not None else None,
+                block_id=str(blocks[0].id) if blocks else None,
             )
         )
+
+    width = max(int(grid.get("cols") or 1), 1)
+    for leftovers in by_place.values():
+        for block in leftovers:
+            rows.append(
+                [
+                    TableCell(
+                        text=texts.get(kept[block.id], ""), colspan=width, block_id=str(block.id)
+                    )
+                ]
+            )
 
     return TableElement(rows=rows)

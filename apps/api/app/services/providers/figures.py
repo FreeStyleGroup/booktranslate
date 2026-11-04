@@ -6,16 +6,20 @@
 
 Координаты в тысячных долях стороны, а не в точках: изображение перед отправкой уменьшается, и в
 тысячных пересчитывать их не нужно. Точность координат зависит от модели и от картинки, поэтому
-результат всегда проверяется рядом с оригиналом."""
+результат всегда проверяется рядом с оригиналом.
+"""
 
 import base64
 import io
 import json
+import math
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeGuard
 
-from PIL import Image, UnidentifiedImageError
+import anthropic
 
+from app.services.export.base import ExportError
+from app.services.export.overlay import BAD_IMAGE, checked_image
 from app.services.providers.base import ProviderError, Usage
 from app.services.providers.claude import ClaudeSettings, _text_of, _usage_of
 
@@ -81,6 +85,8 @@ class ReadRegion:
 class FigureReading:
     regions: list[ReadRegion]
     usage: Usage = Usage()
+    # Сколько надписей модель назвала, но принять их нельзя: без них картинка «как будто готова».
+    dropped: int = 0
 
 
 class FigureReader(Protocol):
@@ -146,7 +152,12 @@ class ClaudeFigureReader:
         if self._settings.effort:
             payload["output_config"]["effort"] = self._settings.effort
 
-        message = await self._client.messages.create(**payload)
+        # Сетевой сбой и отказ сервиса модели сюда доходят чужими типами и по-английски.
+        try:
+            message = await self._client.messages.create(**payload)
+        except anthropic.APIError as error:
+            raise ProviderError("Модель сейчас недоступна") from error
+
         usage = _usage_of(message)
         stop = getattr(message, "stop_reason", None)
 
@@ -156,7 +167,9 @@ class ClaudeFigureReader:
             raise ProviderError("На рисунке слишком много надписей для одного ответа", spent=usage)
 
         try:
-            return FigureReading(regions=parse_regions(_text_of(message)), usage=usage)
+            regions, dropped = parse_regions(_text_of(message))
+
+            return FigureReading(regions=regions, usage=usage, dropped=dropped)
         except ProviderError as error:
             raise ProviderError(str(error), spent=usage) from error
 
@@ -164,9 +177,9 @@ class ClaudeFigureReader:
 def prepare_image(content: bytes) -> tuple[bytes, str]:
     """Уменьшить до нужного модели размера. Только растр: вектор сюда не передаётся."""
     try:
-        with Image.open(io.BytesIO(content)) as opened:
+        with checked_image(content) as opened:
             image = opened.convert("RGB")
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+    except (*BAD_IMAGE, ExportError) as error:
         raise ProviderError("Изображение не читается") from error
 
     image.thumbnail((LONG_EDGE_PX, LONG_EDGE_PX))
@@ -176,8 +189,17 @@ def prepare_image(content: bytes) -> tuple[bytes, str]:
     return buffer.getvalue(), "image/png"
 
 
-def parse_regions(raw: str) -> list[ReadRegion]:
-    """Разобрать ответ. Надпись с прямоугольником за пределами картинки не принимается."""
+def _is_number(value: object) -> TypeGuard[int | float]:
+    """Настоящее число. NaN из ответа иначе превратился бы в полную уверенность."""
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def parse_regions(raw: str) -> tuple[list[ReadRegion], int]:
+    """Разобрать ответ: принятые надписи и сколько отброшено.
+
+    Выступ за край обрезается: модель часто округляет край картинки. Надпись без прямоугольника
+    или текста не принимается, но считается: такой рисунок нельзя выдать за прочитанный.
+    """
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as error:
@@ -188,25 +210,36 @@ def parse_regions(raw: str) -> list[ReadRegion]:
         raise ProviderError("Модель вернула ответ в неверном виде")
 
     regions: list[ReadRegion] = []
+    dropped = max(0, len(items) - MAX_REGIONS)
 
     for item in items[:MAX_REGIONS]:
         if not isinstance(item, dict):
+            dropped += 1
             continue
 
         text = str(item.get("text", "")).strip()[:TEXT_LIMIT]
         numbers = [item.get(name) for name in ("x", "y", "w", "h")]
 
-        if not text or not all(isinstance(value, int | float) for value in numbers):
+        if not text or not all(_is_number(value) for value in numbers):
+            dropped += 1
             continue
 
         x, y, w, h = (int(value) for value in numbers)  # type: ignore[arg-type]
-        if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > SCALE or y + h > SCALE:
+        if x < 0 or y < 0 or x >= SCALE or y >= SCALE or w <= 0 or h <= 0:
+            dropped += 1
             continue
 
-        confidence = item.get("confidence")
-        confidence = float(confidence) if isinstance(confidence, int | float) else 0.0
+        raw_confidence = item.get("confidence")
+        confidence = float(raw_confidence) if _is_number(raw_confidence) else 0.0
         regions.append(
-            ReadRegion(x=x, y=y, w=w, h=h, text=text, confidence=max(0.0, min(1.0, confidence)))
+            ReadRegion(
+                x=x,
+                y=y,
+                w=min(w, SCALE - x),
+                h=min(h, SCALE - y),
+                text=text,
+                confidence=max(0.0, min(1.0, confidence)),
+            )
         )
 
-    return regions
+    return regions, dropped

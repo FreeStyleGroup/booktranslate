@@ -5,7 +5,8 @@
 и внутрь исходного DOCX или EPUB, не меняя описания файла.
 
 Русский текст обычно длиннее подписи на исходном языке. Если он не помещается даже мелким шрифтом,
-это не прячется: надпись помечается, и такой перевод без человека не пройдёт."""
+это не прячется: надпись помечается, и такой перевод без человека не пройдёт.
+"""
 
 import io
 from collections import Counter
@@ -17,9 +18,15 @@ from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 from app.services.export.base import ExportError
 
-# Предел размера картинки. Сверх него разбор заголовка мог бы занять всю память: файл чужой.
-MAX_PIXELS = 80_000_000
-Image.MAX_IMAGE_PIXELS = MAX_PIXELS
+# Предел размера картинки: файл чужой, и маленький PNG распаковывается в гигабайты. Проверяется по
+# заголовку, до распаковки. Страница A4 при 600 точках на дюйм — 35 млн точек.
+MAX_PIXELS = 40_000_000
+
+# Чем падает разбор чужой картинки: у Pillow это не только его собственная ошибка.
+BAD_IMAGE = (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError)
+
+# Только растровые форматы, которые мы сами умеем сохранить обратно.
+FORMATS = ("PNG", "JPEG", "WEBP", "GIF")
 
 FONT_PATHS = (
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -27,6 +34,8 @@ FONT_PATHS = (
     "C:/Windows/Fonts/arial.ttf",
 )
 FONT_MIN_PX = 8
+# Кегль сверху: подбор идёт сверху вниз, а высота области приходит из ответа модели или формы.
+FONT_MAX_PX = 96
 LINE_SPACING = 1.15
 PADDING_PX = 1
 
@@ -62,22 +71,34 @@ class Overlaid:
     overflow: list[str]
 
 
+def checked_image(content: bytes) -> Image.Image:
+    """Открыть картинку и проверить размер. Распаковка начнётся только после этой проверки."""
+    try:
+        image = Image.open(io.BytesIO(content), formats=FORMATS)
+    except BAD_IMAGE as error:
+        raise ExportError("Изображение не читается") from error
+
+    width, height = image.size
+    if width * height > MAX_PIXELS:
+        image.close()
+        raise ExportError(f"Изображение слишком большое: {width}×{height} точек")
+
+    return image
+
+
 def image_size(content: bytes) -> tuple[int, int]:
     """Размер изображения. Заголовок читается без разбора всей картинки."""
-    try:
-        with Image.open(io.BytesIO(content)) as image:
-            return image.size
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
-        raise ExportError("Изображение не читается") from error
+    with checked_image(content) as image:
+        return image.size
 
 
 def overlay(content: bytes, items: list[OverlayText]) -> Overlaid:
     """Новый файл с надписями поверх копии. Оригинальные байты не меняются."""
     try:
-        with Image.open(io.BytesIO(content)) as opened:
+        with checked_image(content) as opened:
             original_format = opened.format or "PNG"
             image = opened.convert("RGB")
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+    except BAD_IMAGE as error:
         raise ExportError("Изображение не читается") from error
 
     if original_format not in SAVE_OPTIONS:
@@ -161,7 +182,7 @@ def _write(
     left, top, right, bottom = box
     width = right - left - 2 * PADDING_PX
     height = bottom - top - 2 * PADDING_PX
-    size = max(FONT_MIN_PX, height)
+    size = max(FONT_MIN_PX, min(height, FONT_MAX_PX))
     lines: list[str] = []
     fits = False
     font = ImageFont.truetype(font_path, FONT_MIN_PX)

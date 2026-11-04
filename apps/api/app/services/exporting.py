@@ -100,6 +100,7 @@ class ExportService(TenantService):
             export_format=export_format,
             allow_untranslated=allow_untranslated,
             codes=codes,
+            whole_book=False,
         )
 
     async def book(
@@ -145,9 +146,10 @@ class ExportService(TenantService):
         export_format: ExportFormat,
         allow_untranslated: bool,
         codes: bool = False,
+        whole_book: bool = True,
     ) -> Export:
         try:
-            renderer = renderer_for(export_format, document.source_format)
+            renderer = renderer_for(export_format, document.source_format, whole_book=whole_book)
         except ExportError as error:
             raise UnsupportedFormatError(str(error)) from error
 

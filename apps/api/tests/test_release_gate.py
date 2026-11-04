@@ -1,7 +1,11 @@
 """Файлы выпуска, постраничный аудит и контроль выпуска."""
 
+import io
+import time
+import uuid
 from pathlib import Path
 
+import docx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select, text
@@ -11,13 +15,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import worker
 from app.models.block import BlockKind
 from app.models.issue import IssueAttachment
+from app.services.export import TranslatedBlock
+from app.services.export.base import ExportError
 from app.services.export.document import (
     FigureElement,
     PublicationDocument,
     TableCell,
     TableElement,
     TextElement,
+    TocEntry,
 )
+from app.services.export.docx_builder import DocxBuilder
 from app.services.export.pdf import (
     build_html,
     page_count,
@@ -28,9 +36,11 @@ from app.services.storage import LocalStorage
 from app.worker import once
 from tests.conftest import requires_database
 from tests.factories import Account, register
-from tests.test_chapter_translation import STOP
-from tests.test_issues import act
+from tests.test_chapter_translation import STOP, blocks
+from tests.test_fixes import edit
+from tests.test_issues import act, registered
 from tests.test_releases import approved, prepared
+from tests.test_reviews import row_of
 from tests.test_team import accept_as_new, invite, token_of
 
 
@@ -79,6 +89,71 @@ def test_table_keeps_merged_cells() -> None:
     assert 'rowspan="2"' in built
     assert 'colspan="3"' in built
     assert "<th" in built
+
+
+def test_file_carries_no_ids_from_the_database() -> None:
+    heading, cell = str(uuid.uuid4()), str(uuid.uuid4())
+    built = build_html(
+        PublicationDocument(
+            title="T",
+            language="ru",
+            elements=[
+                TextElement(heading, BlockKind.HEADING, "Глава", 1),
+                TableElement(rows=[[TableCell("Ячейка", block_id=cell)]]),
+            ],
+            toc=[TocEntry(1, "Глава", heading)],
+        )
+    )
+
+    assert heading not in built
+    assert cell not in built
+    assert 'href="#p0"' in built
+    assert 'id="p0"' in built
+
+
+def test_cell_with_two_paragraphs_keeps_the_line_break() -> None:
+    built = build_html(
+        PublicationDocument(
+            title="T",
+            language="ru",
+            elements=[TableElement(rows=[[TableCell("Первый\nВторой")]])],
+        )
+    )
+
+    assert "Первый<br>Второй" in built
+
+
+def test_code_keeps_the_indent_of_its_first_line() -> None:
+    fresh = DocxBuilder().render_document(
+        PublicationDocument(
+            title="T",
+            language="ru",
+            elements=[TextElement("c", BlockKind.CODE, "    open(relief)\n        wait(5)\n")],
+        )
+    )
+    assert (
+        docx.Document(io.BytesIO(fresh.content)).paragraphs[-1].text
+        == "    open(relief)\n        wait(5)"
+    )
+
+    working = DocxBuilder().render(
+        [TranslatedBlock(text="    open(relief)\n", kind=BlockKind.CODE, location={})]
+    )
+    assert docx.Document(io.BytesIO(working.content)).paragraphs[-1].text == "    open(relief)"
+
+
+def test_big_table_is_built_in_reasonable_time() -> None:
+    size = 200
+    rows = [[TableCell(f"{row}:{column}") for column in range(size)] for row in range(size)]
+    rows[0] = [TableCell("Шапка", colspan=2), *rows[0][2:]]
+
+    started = time.monotonic()
+    rendered_file = DocxBuilder().render_document(
+        PublicationDocument(title="T", language="ru", elements=[TableElement(rows=rows)])
+    )
+
+    assert time.monotonic() - started < 120
+    assert len(docx.Document(io.BytesIO(rendered_file.content)).tables[0].rows) == size
 
 
 def test_figure_uses_only_given_address() -> None:
@@ -173,7 +248,13 @@ async def test_gate_lists_missing_files_and_pass_is_refused(
     assert body["ready"] is False
     assert "artifact_missing" in codes(body)
     assert "pages_unreviewed" in codes(body)
-    assert {row["code"] for row in body["checks"]} >= {"artifacts_current", "pages_audited"}
+    assert "scan_missing" in codes(body)
+    assert {row["code"] for row in body["checks"]} >= {
+        "artifacts_current",
+        "pages_audited",
+        "reader_scan_clean",
+        "no_pending_regression",
+    }
 
     refused = await db_client.post(f"/releases/{release['id']}/pass", headers=account.headers)
     assert refused.status_code == 409
@@ -237,6 +318,9 @@ async def test_full_audit_opens_pass_and_everything_freezes(
     assert result["passed_at"] is not None
     assert result["snapshot"]["ready"] is True
 
+    book = (await db_client.get(f"/books/{release['book_id']}", headers=account.headers)).json()
+    assert book["status"] == "released"
+
     twice = await db_client.post(f"/releases/{release['id']}/pass", headers=account.headers)
     assert twice.status_code == 409
 
@@ -244,6 +328,9 @@ async def test_full_audit_opens_pass_and_everything_freezes(
         f"/book-releases/{release['id']}/artifacts", headers=account.headers
     )
     assert again.status_code == 409
+
+    page = await db_client.post(f"/artifacts/{pdf['id']}/pages/1", headers=account.headers)
+    assert page.status_code == 409
 
     for statement in (
         "UPDATE book_releases SET status = 'BUILT' WHERE id = :id",
@@ -262,6 +349,81 @@ async def test_full_audit_opens_pass_and_everything_freezes(
                 text("UPDATE page_audits SET status = 'UNREVIEWED' WHERE artifact_id = :id"),
                 {"id": pdf["id"]},
             )
+
+
+@requires_database
+async def test_deleted_person_leaves_the_passed_release_frozen(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Удалить человека можно, а охрана записей от этого не слабеет."""
+    account = await register(db_client)
+    _, release = await built_release(db_client, session, account)
+    pdf = await rendered(db_client, session, account, release["id"])
+    await audit_all(db_client, account, pdf)
+    passed = await db_client.post(f"/releases/{release['id']}/pass", headers=account.headers)
+    assert passed.status_code == 200, passed.text
+
+    await session.execute(text("DELETE FROM users WHERE id = :id"), {"id": account.user_id})
+
+    actor = await session.scalar(
+        text("SELECT actor_id FROM release_passes WHERE release_id = :id"), {"id": release["id"]}
+    )
+    assert actor is None
+
+    with pytest.raises(DBAPIError):
+        async with session.begin_nested():
+            await session.execute(
+                text("UPDATE book_releases SET status = 'BUILT' WHERE id = :id"),
+                {"id": release["id"]},
+            )
+
+
+@requires_database
+async def test_open_regression_holds_the_release(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    account = await register(db_client)
+    book_id, release = await built_release(db_client, session, account)
+    pdf = await rendered(db_client, session, account, release["id"])
+    await audit_all(db_client, account, pdf)
+
+    structure = await db_client.get(f"/books/{book_id}/chapters", headers=account.headers)
+    chapter = structure.json()["chapters"][0]["id"]
+    block = row_of(await blocks(db_client, account, chapter), "Check the relief valve daily.")
+    issue = await registered(db_client, account, block)
+    await act(db_client, account, issue["id"], "confirm")
+    await edit(db_client, account, issue["id"], block, "Исправленный текст.")
+
+    body = await gate(db_client, account, release["id"])
+    assert "regression_pending" in codes(body)
+    check = next(row for row in body["checks"] if row["code"] == "no_pending_regression")
+    assert check["passed"] is False
+
+
+@requires_database
+async def test_unexpected_failure_is_reported_without_its_text(
+    db_client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    account = await register(db_client)
+    _, release = await built_release(db_client, session, account)
+
+    def broken(document: object) -> object:
+        raise ValueError("секретный путь /srv/app/storage")
+
+    monkeypatch.setattr("app.services.artifacts.render_stub", broken)
+
+    started = await db_client.post(
+        f"/book-releases/{release['id']}/artifacts", headers=account.headers
+    )
+    assert started.status_code == 202, started.text
+    assert await once(session, "test", STOP) is True
+
+    files = (
+        await db_client.get(f"/book-releases/{release['id']}/artifacts", headers=account.headers)
+    ).json()
+    assert files["job_state"] == "failed"
+    assert "секретный" not in files["job_error"]
+    assert "журнале сервера" in files["job_error"]
 
 
 @requires_database
@@ -349,6 +511,41 @@ async def test_rerender_makes_old_audit_stale(
         await db_client.get(f"/book-releases/{release['id']}/artifacts", headers=account.headers)
     ).json()
     assert first["id"] in {row["id"] for row in files["previous"]}
+
+
+@requires_database
+async def test_failed_render_is_reported_and_can_be_retried(
+    db_client: AsyncClient,
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    storage_root: Path,
+) -> None:
+    account = await register(db_client)
+    _, release = await built_release(db_client, session, account)
+
+    def broken(document: object) -> object:
+        raise ExportError("PDF не собрался: сверстать файл не удалось")
+
+    monkeypatch.setattr("app.services.artifacts.render_stub", broken)
+
+    started = await db_client.post(
+        f"/book-releases/{release['id']}/artifacts", headers=account.headers
+    )
+    assert started.status_code == 202, started.text
+    assert await once(session, "test", STOP) is True
+
+    files = (
+        await db_client.get(f"/book-releases/{release['id']}/artifacts", headers=account.headers)
+    ).json()
+    assert files["job_state"] == "failed"
+    assert "не собрался" in files["job_error"]
+    assert files["artifacts"] == []
+    assert "artifact_missing" in codes(await gate(db_client, account, release["id"]))
+
+    monkeypatch.undo()
+    monkeypatch.setattr(worker, "get_storage", lambda: LocalStorage(storage_root))
+    pdf = await rendered(db_client, session, account, release["id"])
+    assert pdf["page_count"] > 0
 
 
 @requires_database
