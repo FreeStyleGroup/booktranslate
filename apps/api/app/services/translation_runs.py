@@ -330,6 +330,8 @@ class ChapterTranslationService(TenantService):
         version = readiness.gate.version
         run = TranslationRun(
             id=uuid.uuid4(),
+            # Прогоны показываются от последнего, а время базы внутри транзакции одно.
+            created_at=datetime.now(UTC),
             organization_id=self.organization_id,
             book_id=chapter.book_id,
             chapter_id=chapter.id,
@@ -639,6 +641,8 @@ class ChapterTranslationService(TenantService):
                 content_hash=digest,
                 verified_by_id=self._context.user.id,
                 verified_at=now,
+                # Действует последняя отметка, а время базы внутри транзакции одно.
+                created_at=now,
             )
         )
         AuditService(self._session, self._context).record(

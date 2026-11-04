@@ -19,6 +19,7 @@
 import uuid
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
@@ -157,6 +158,8 @@ class TerminologyService(TenantService):
                 actor_id=self._context.user.id,
                 min_frequency=min_frequency,
                 found=found,
+                # Действует последний проход, а время базы внутри транзакции одно.
+                created_at=datetime.now(UTC),
             )
         )
         await self._session.commit()
