@@ -345,7 +345,7 @@ ANTHROPIC_MODEL=claude-opus-5                   # умолчание площа�
 
 `ANTHROPIC_MODEL` — умолчание для пространств, которые ничего не
 выбирали. Само пространство выбирает модель в «Настройках» из каталога
-(`app/services/models.py`: Opus 5, Sonnet 5, Haiku 4.5) — с ценой из
+(`app/services/models.py`: Fable 5.1, Opus 5.5 и 5, Sonnet 5.5 и 5, Haiku 5.5 и 4.5) — с ценой из
 прейскуранта. Умолчание площадки в списке всегда, даже если у шлюза оно
 называется по-своему. После смены переменных контейнеры API и рабочего
 перезапускаются: настройки читаются при старте.
@@ -358,6 +358,13 @@ ANTHROPIC_MODEL=claude-opus-5                   # умолчание площа�
   У шлюза для неё своя форма запроса, и анthropic'овскую он отвергает
   целиком: на AITunnel это `400` с текстом «поле fallbacks должно быть
   массивом объектов». Оставленная включённой, она валила бы каждую пачку.
+
+Принимает ли шлюз каждую модель и все виды запросов к ней, показывает одна команда. Она платная, но
+это копейки: по три коротких запроса на модель.
+
+```bash
+docker compose -f docker-compose.prod.yml exec api python -m app.cli check-provider --all-models
+```
 
 **Что через шлюз работает** (проверено на AITunnel 08.09.2026,
 `claude-opus-5`): перевод со структурированным ответом по схеме, кэш
@@ -419,11 +426,14 @@ Pango лежат в образе, отдельно их ставить не ну
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \
-    pg_dump -U booktranslate booktranslate | gzip > db-$(date +%F).sql.gz
+    pg_dump -U booktranslate booktranslate </dev/null | gzip > db-$(date +%F).sql.gz
 
 docker run --rm -v booktranslate_api_storage:/data -v "$PWD":/backup alpine \
     tar czf /backup/storage-$(date +%F).tar.gz -C /data .
 ```
+
+`</dev/null` здесь нужен: `exec -T` читает ввод терминала и при вставке блока забрал бы следующие
+строки себе, и они не выполнились бы.
 
 Проверять восстановлением, а не наличием файла: непроверенная копия — это
 не копия.
