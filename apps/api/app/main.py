@@ -13,6 +13,7 @@ from app.api.routes import (
     admin,
     admin_glossary,
     auth,
+    autopilot,
     books,
     catalog,
     chapter_translation,
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(reviews.router)
     app.include_router(releases.router)
     app.include_router(figures.router)
+    app.include_router(autopilot.router)
     app.include_router(chapters.router)
     app.include_router(masters.router)
     app.include_router(objects.router)

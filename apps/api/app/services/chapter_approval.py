@@ -26,6 +26,7 @@ from typing import Any
 
 from sqlalchemy import update
 
+from app.models.book import BookEdition, BookStatus
 from app.models.chapter import BoundaryStatus, Chapter, ChapterOrigin
 from app.models.coding import CodeKind
 from app.models.document import Document, SourceRole
@@ -317,6 +318,11 @@ class ChapterApprovalService(TenantService):
         chapter.boundary_status = BoundaryStatus.APPROVED
         chapter.approved_by_id = self._context.user.id
         chapter.approved_at = datetime.now(UTC)
+
+        # Границы утверждены: комплект собран, дальше над книгой идёт работа.
+        book = await self._session.get_one(BookEdition, chapter.book_id)
+        if book.status is BookStatus.DRAFT:
+            book.status = BookStatus.IN_PROGRESS
 
         self._audit().record(
             kind="chapter.approved",

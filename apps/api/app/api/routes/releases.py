@@ -1,13 +1,15 @@
 """Финальные версии глав и выпуски книги.
 
 Рабочая выгрузка живёт отдельно, в `chapter_translation`. Здесь только то, что опирается на
-манифест: читательская версия выдаётся только из утверждённого выпуска."""
+манифест: читательская версия выдаётся только из утверждённого выпуска.
+"""
 
 import uuid
 from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import APIRouter, Path, Query, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import ContextDep, SessionDep, StorageDep
 from app.models.release import BookRelease, ExportArtifact
@@ -60,6 +62,7 @@ def _chapter_release(view: ReleaseView) -> ChapterReleasePublic:
         code=release.code,
         version=_version(release.version_major, release.version_minor),
         status=release.status,
+        automatic=bool(release.manifest.get("automatic")),
         manifest_hash=release.manifest_hash,
         blocks=len(release.manifest["blocks"]),
         objects=len(release.manifest["objects"]),
@@ -334,6 +337,7 @@ def _gate(result: GateResult) -> GatePublic:
         code=release.code,
         status=release.status,
         ready=result.ready,
+        automatic=bool(result.passed is not None and result.passed.gate_snapshot.get("automatic")),
         checks=[
             GateCheckPublic(
                 code=code,
@@ -400,13 +404,15 @@ async def download_artifact(
     artifact = await service.artifact(artifact_id)
     release = await service.release_of(artifact)
 
-    return Response(
-        content=await service.read(artifact),
+    # Потоком: файл книги не должен лежать в памяти API на время скачивания.
+    return StreamingResponse(
+        service.stream(artifact),
         media_type=MEDIA_TYPES[artifact.format],
         headers={
             "Content-Disposition": (
                 f"attachment; filename*=UTF-8''{quote(service.filename(release, artifact))}"
             ),
+            "Content-Length": str(artifact.size),
             "X-Checksum-Sha256": artifact.checksum,
         },
     )

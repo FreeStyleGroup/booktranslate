@@ -16,7 +16,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ from app.models.block import Block
 from app.models.book import BookEdition
 from app.models.book_object import BookObject, ObjectReference
 from app.models.chapter import Chapter
-from app.models.issue import Issue, IssueCategory, IssueSeverity
+from app.models.issue import Issue, IssueCategory, IssueSeverity, IssueStatus
 from app.models.master import ChapterMaster
 from app.models.organization import Role, User
 from app.models.qa import QAKind
@@ -324,6 +324,8 @@ class ReviewService(TenantService):
             raise ConflictError("Блок больше не входит в текущую версию мастера")
         if block.current_revision_id != revision_id:
             raise ConflictError("Текст блока изменился: посмотрите его заново")
+        if result is ReviewResult.ISSUE:
+            await self._require_issue(Issue.block_id == block.id)
 
         await self._mark(run, block_id=block.id, revision_id=revision_id, result=result, note=note)
 
@@ -349,6 +351,8 @@ class ReviewService(TenantService):
             raise NotFoundError("Такого объекта в этой главе нет")
         if content_hash(placed.object, own_blocks(placed)) != digest:
             raise ConflictError("Объект или его текст изменились: посмотрите его заново")
+        if result is ReviewResult.ISSUE:
+            await self._require_issue(Issue.object_id == object_id)
 
         await self._mark(run, object_id=object_id, digest=digest, result=result, note=note)
 
@@ -377,6 +381,8 @@ class ReviewService(TenantService):
             self.scoped(Block)
             .where(Block.id == block_id, Block.chapter_id == run.chapter_id)
             .with_for_update()
+            # Перечитать под блокировкой: за это время текст мог сменить другой редактор.
+            .execution_options(populate_existing=True)
         )
         if block is None:
             raise NotFoundError("Такого блока в этой главе нет")
@@ -503,7 +509,74 @@ class ReviewService(TenantService):
 
         return view
 
+    async def complete_automatically(self, chapter_id: uuid.UUID, kind: ReviewKind) -> RunView:
+        """Работа без человека: для автоматического режима.
+
+        Условия завершения те же: покрытие и незакрытые замечания проверяет `complete`. Отметки
+        без исполнителя, а прогон помечен: в манифесте и на экране видно, что человек не смотрел.
+        """
+        self._context.require(*REVIEWING_ROLES)
+
+        chapter = await self._chapter(chapter_id)
+        found = await self._session.scalar(
+            self.scoped(ReviewRun).where(
+                ReviewRun.chapter_id == chapter.id,
+                ReviewRun.kind == kind,
+                ReviewRun.status == ReviewStatus.OPEN,
+            )
+        )
+        # Открытую работу человека автомат не перенимает: её отметки значили бы другое.
+        if found is not None and not found.automatic:
+            raise ConflictError(
+                "Эту работу ведёт человек: завершите её или дождитесь, прежде чем продолжать"
+            )
+
+        run = found if found is not None else (await self.start(chapter.id, kind)).run
+        run.automatic = True
+
+        done = await self._covered_blocks(run.id)
+        for block in await self._active_blocks(chapter.id):
+            pair = (block.id, block.current_revision_id)
+            if block.current_revision_id is not None and pair not in done:
+                self._session.add(
+                    ReviewCoverage(
+                        organization_id=self.organization_id,
+                        run_id=run.id,
+                        block_id=block.id,
+                        revision_id=block.current_revision_id,
+                        result=ReviewResult.OK,
+                    )
+                )
+
+        objects_done = await self._covered_objects(run.id)
+        for placed in await self._placed(chapter.id):
+            digest = content_hash(placed.object, own_blocks(placed))
+            if (placed.object.id, digest) not in objects_done:
+                self._session.add(
+                    ReviewCoverage(
+                        organization_id=self.organization_id,
+                        run_id=run.id,
+                        object_id=placed.object.id,
+                        content_hash=digest,
+                        result=ReviewResult.OK,
+                    )
+                )
+
+        await self._session.flush()
+
+        return await self.complete(run.id)
+
     # ── внутреннее ──
+
+    async def _require_issue(self, subject: ColumnElement[bool]) -> None:
+        """«Посмотрели и завели замечание» без замечания засчитало бы место, ничего не сказав."""
+        found = await self._session.scalar(
+            self.scoped(Issue)
+            .where(subject, Issue.status != IssueStatus.REJECTED, Issue.archived_at.is_(None))
+            .limit(1)
+        )
+        if found is None:
+            raise ConflictError("Сначала зарегистрируйте замечание по этому месту")
 
     async def _violations(
         self, run: ReviewRun, block: Block, base: TranslationRevision, text: str

@@ -14,14 +14,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block import Block
 from app.models.book import BookEdition
+from app.models.book_object import BookObject
 from app.models.chapter import BoundaryStatus, Chapter
-from app.models.issue import Issue
 from app.models.job import LIVE, TranslationJob
 from app.models.master import ChapterMaster
 from app.models.organization import Role, User
@@ -223,7 +223,9 @@ class ChapterReleaseService(TenantService):
             await self._figures(release.chapter_id),
         )
 
-    async def create(self, chapter_id: uuid.UUID, *, major: bool = False) -> ReleaseView:
+    async def create(
+        self, chapter_id: uuid.UUID, *, major: bool = False, automatic: bool = False
+    ) -> ReleaseView:
         """Создать версию. Глава блокируется: две сразу получили бы один номер."""
         self._context.require(*CREATING_ROLES)
 
@@ -257,7 +259,17 @@ class ChapterReleaseService(TenantService):
         terminology = await TerminologyGate(self._session, self._context).effective(
             chapter.book_id, chapter.id
         )
-        manifest = await self._manifest(chapter, gate.master, terminology)
+        # Выпуск честно говорит о своём происхождении, кто бы ни нажал кнопку: если хоть одну работу
+        # завершил автомат, человек видел не всё.
+        automatic = automatic or any(
+            run.automatic
+            for run in (
+                gate.reviews.technical,
+                gate.reviews.literary,
+                gate.reviews.final_compare,
+            )
+        )
+        manifest = await self._manifest(chapter, gate.master, terminology, automatic=automatic)
         digest = hash_manifest(manifest)
 
         latest = await self._session.scalar(
@@ -396,7 +408,7 @@ class ChapterReleaseService(TenantService):
     # ── внутреннее ──
 
     async def _manifest(
-        self, chapter: Chapter, master: ChapterMaster, terminology: Any
+        self, chapter: Chapter, master: ChapterMaster, terminology: Any, *, automatic: bool
     ) -> dict[str, Any]:
         blocks = list(
             await self._session.scalars(
@@ -418,6 +430,7 @@ class ChapterReleaseService(TenantService):
 
         return {
             "schema": MANIFEST_SCHEMA,
+            "automatic": automatic,
             "book_id": str(chapter.book_id),
             "chapter_id": str(chapter.id),
             "chapter_code": chapter.code,
@@ -435,6 +448,8 @@ class ChapterReleaseService(TenantService):
                     "revision_id": str(block.current_revision_id),
                     "revision_no": revisions[block.current_revision_id].revision_no,  # type: ignore[index]
                     "text_sha256": sha256_text(revisions[block.current_revision_id].text),  # type: ignore[index]
+                    # Новая версия мастера перезаписывает место в блоке, а выпуск не меняется.
+                    "location": block.source_location,
                 }
                 for block in blocks
             ],
@@ -544,13 +559,16 @@ class ChapterReleaseService(TenantService):
             select(func.count())
             .select_from(RegressionItem)
             .join(RegressionRun, RegressionRun.id == RegressionItem.run_id)
-            .join(Issue, Issue.id == RegressionRun.issue_id)
+            .outerjoin(Block, Block.id == RegressionItem.block_id)
+            .outerjoin(BookObject, BookObject.id == RegressionItem.object_id)
             .where(
                 RegressionRun.organization_id == self.organization_id,
                 RegressionRun.status == RegressionStatus.OPEN,
                 RegressionItem.required.is_(True),
                 RegressionItem.decision == RegressionDecision.PENDING,
-                Issue.chapter_id == chapter_id,
+                # Важно, где стоит само место: повтор в этой главе держит её, откуда бы ни пришло
+                # исправление.
+                or_(Block.chapter_id == chapter_id, BookObject.chapter_id == chapter_id),
             )
         )
 
