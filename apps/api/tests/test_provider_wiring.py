@@ -13,8 +13,10 @@ from collections.abc import Iterator
 
 import pytest
 
+from app import cli
 from app.core.config import get_settings
 from app.services import providers
+from app.services.providers import ProviderError, Usage
 
 
 @pytest.fixture(autouse=True)
@@ -79,3 +81,68 @@ def test_direct_call_keeps_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert isinstance(provider, providers.ClaudeProvider)
     assert provider._settings.use_fallbacks is True
+
+
+def test_models_with_a_lower_default_get_the_same_depth_as_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "anthropic_effort", "")
+
+    assert providers._settings_for("claude-opus-5-5").effort == "high"
+    assert providers._settings_for("claude-haiku-5-5").effort == "high"
+    assert providers._settings_for("claude-opus-5").effort is None
+
+
+def test_platform_setting_wins_but_not_where_the_model_refuses_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "anthropic_effort", "max")
+
+    assert providers._settings_for("claude-opus-5-5").effort == "max"
+    assert providers._settings_for("claude-haiku-4-5").effort is None
+
+
+def test_fallback_only_goes_directly_and_only_where_it_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "anthropic_use_fallbacks", True)
+    monkeypatch.setattr(settings, "anthropic_base_url", "")
+
+    assert providers._settings_for("claude-opus-5-5").use_fallbacks is True
+    assert providers._settings_for("claude-haiku-5-5").use_fallbacks is False
+    assert providers._settings_for("claude-opus-5-5", fallbacks=False).use_fallbacks is False
+
+    monkeypatch.setattr(settings, "anthropic_base_url", "https://api.aitunnel.ru")
+    assert providers._settings_for("claude-opus-5-5").use_fallbacks is False
+
+
+async def test_check_of_all_models_reports_each_and_does_not_stop_at_a_refusal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(get_settings(), "translation_provider", "claude")
+
+    async def works(model: str) -> tuple[str, Usage]:
+        return "готово", Usage(input_tokens=1000, output_tokens=100)
+
+    async def refuses(model: str) -> tuple[str, Usage]:
+        if model == "claude-sonnet-5":
+            raise ProviderError("шлюз не знает эту модель")
+
+        return "готово", Usage()
+
+    monkeypatch.setattr(cli, "_probe_translation", works)
+    monkeypatch.setattr(cli, "_probe_review", works)
+    monkeypatch.setattr(cli, "_probe_figure", refuses)
+
+    assert await cli.check_all_models() is False
+
+    printed = capsys.readouterr().out
+    assert "claude-fable-5-1" in printed
+    assert "claude-haiku-4-5" in printed
+    assert "рисунок: ОТКАЗ" in printed
+    assert "шлюз не знает эту модель" in printed
+
+
+def test_probe_picture_is_a_real_image() -> None:
+    assert cli._probe_picture().startswith(b"\x89PNG")

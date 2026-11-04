@@ -21,10 +21,15 @@ def test_platform_default_is_always_in_the_catalogue_and_first() -> None:
         assert choices[0].id == "gateway-special-model"
         assert choices[0].price is None
         assert [choice.id for choice in choices[1:]] == [
+            "claude-fable-5-1",
+            "claude-opus-5-5",
             "claude-opus-5",
+            "claude-sonnet-5-5",
             "claude-sonnet-5",
+            "claude-haiku-5-5",
             "claude-haiku-4-5",
         ]
+        assert all(choice.price is not None for choice in choices[1:])
 
         settings.anthropic_model = "claude-sonnet-5"
         assert [choice.id for choice in available_models()][0] == "claude-sonnet-5"

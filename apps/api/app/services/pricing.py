@@ -14,7 +14,7 @@
 from dataclasses import dataclass
 from math import ceil
 
-# Цены в долларах за миллион токенов. Сверено 07.09.2026; при смене модели
+# Цены в долларах за миллион токенов. Сверено 04.11.2026; при смене модели
 # или тарифа таблицу надо обновить — молча устаревшая цена хуже её
 # отсутствия, потому что выглядит как знание.
 PRICES: dict[str, "Price"] = {}
@@ -38,12 +38,19 @@ class Price:
 
     input_usd: float
     output_usd: float
+    # У новейших моделей чтение из кэша дешевле обычной десятой части ввода.
+    cache_read_usd: float | None = None
 
 
 PRICES.update(
     {
+        "claude-fable-5-1": Price(input_usd=10.00, output_usd=50.00, cache_read_usd=0.25),
+        "claude-opus-5-5": Price(input_usd=4.00, output_usd=20.00, cache_read_usd=0.20),
         "claude-opus-5": Price(input_usd=5.00, output_usd=25.00),
+        "claude-sonnet-5-5": Price(input_usd=2.00, output_usd=10.00),
         "claude-sonnet-5": Price(input_usd=2.00, output_usd=10.00),
+        # Для запросов до 100 тысяч токенов, дальше впятеро дороже. Пачка столько не занимает.
+        "claude-haiku-5-5": Price(input_usd=0.10, output_usd=0.50),
         "claude-haiku-4-5": Price(input_usd=1.00, output_usd=5.00),
     }
 )
@@ -131,9 +138,14 @@ def estimate_usd(
     if price is None:
         return None
 
+    cache_read_usd = (
+        price.cache_read_usd
+        if price.cache_read_usd is not None
+        else price.input_usd * CACHE_READ_RATIO
+    )
     tokens = (
         input_tokens * price.input_usd
-        + cached_input_tokens * price.input_usd * CACHE_READ_RATIO
+        + cached_input_tokens * cache_read_usd
         + cache_write_tokens * price.input_usd * CACHE_WRITE_RATIO
         + output_tokens * price.output_usd
     )
