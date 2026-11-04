@@ -25,6 +25,7 @@ import os
 import signal
 import socket
 import sys
+import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ from app.models.organization import Membership, Role, User
 from app.models.qa import QAKind, QARun
 from app.models.translation import TranslationRun
 from app.services.artifacts import ArtifactService
+from app.services.autopilot import AutopilotService, claim_next
 from app.services.context import RequestContext
 from app.services.errors import DomainError
 from app.services.export.base import ExportError
@@ -62,6 +64,8 @@ from app.services.workspace import model_for
 
 logger = logging.getLogger("app.worker")
 
+_GENERIC_FAILURE = "Сбой при обработке: подробности в журнале сервера"
+
 
 @dataclass(slots=True)
 class Outcome:
@@ -80,6 +84,12 @@ class Outcome:
 
 
 async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | None:
+    return await _acting_as(session, job.organization_id, job.requested_by_id)
+
+
+async def _acting_as(
+    session: AsyncSession, organization_id: uuid.UUID, user_id: uuid.UUID | None
+) -> RequestContext | None:
     """От чьего имени рабочий действует по этому заданию.
 
     От имени того, кто книгу и поставил: его права и есть ответ на вопрос,
@@ -87,14 +97,14 @@ async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | 
     владельца пространства: работа заказана организацией, а не человеком, и
     уволившийся сотрудник не повод бросить оплаченную книгу.
     """
-    if job.requested_by_id is not None:
+    if user_id is not None:
         row = (
             await session.execute(
                 select(User, Membership.role)
                 .join(Membership, Membership.user_id == User.id)
                 .where(
-                    User.id == job.requested_by_id,
-                    Membership.organization_id == job.organization_id,
+                    User.id == user_id,
+                    Membership.organization_id == organization_id,
                 )
             )
         ).first()
@@ -102,14 +112,14 @@ async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | 
         if row is not None:
             user, role = row
 
-            return RequestContext(user=user, organization_id=job.organization_id, role=role)
+            return RequestContext(user=user, organization_id=organization_id, role=role)
 
     owner = (
         await session.execute(
             select(User)
             .join(Membership, Membership.user_id == User.id)
             .where(
-                Membership.organization_id == job.organization_id,
+                Membership.organization_id == organization_id,
                 Membership.role == Role.OWNER,
             )
             .limit(1)
@@ -119,7 +129,7 @@ async def actor(session: AsyncSession, job: TranslationJob) -> RequestContext | 
     if owner is None:
         return None
 
-    return RequestContext(user=owner, organization_id=job.organization_id, role=Role.OWNER)
+    return RequestContext(user=owner, organization_id=organization_id, role=Role.OWNER)
 
 
 async def run_job(
@@ -142,6 +152,12 @@ async def run_job(
     return await run_translation(session, queue, job, context, stop)
 
 
+async def _forget_unsaved(session: AsyncSession, job: TranslationJob) -> None:
+    """Откатить несохранённое. Откат сбрасывает загруженные объекты, а задание нужно дальше."""
+    await session.rollback()
+    await session.refresh(job)
+
+
 class WorkCancelledError(Exception):
     """Человек отменил работу, пока она шла."""
 
@@ -162,11 +178,11 @@ async def run_render(
     try:
         done = await service.render(job.book_release_id, tick=beat)
     except WorkCancelledError:
-        await session.rollback()
+        await _forget_unsaved(session, job)
 
         return Outcome(JobState.CANCELLED, done=0)
     except (DomainError, ExportError) as error:
-        await session.rollback()
+        await _forget_unsaved(session, job)
 
         return Outcome(JobState.FAILED, done=0, error=str(error))
 
@@ -195,11 +211,11 @@ async def run_figures(
             tick=beat,
         )
     except WorkCancelledError:
-        await session.rollback()
+        await _forget_unsaved(session, job)
 
         return Outcome(JobState.CANCELLED, done=job.items_done)
     except (DomainError, ExportError) as error:
-        await session.rollback()
+        await _forget_unsaved(session, job)
 
         return Outcome(JobState.FAILED, done=job.items_done, error=str(error))
 
@@ -309,12 +325,13 @@ async def _drive(
             await session.refresh(job)
 
             return Outcome(JobState.FAILED, done=done, error=str(error))
-        except Exception as error:  # noqa: BLE001 — причина уходит в задание
+        except Exception:  # noqa: BLE001 — причина уходит в журнал
             logger.exception("Задание %s: порция сорвалась", job.id)
             await session.rollback()
             await session.refresh(job)
 
-            return Outcome(JobState.FAILED, done=done, error=str(error), retry=True)
+            # Текст исключения остаётся в журнале: в нём бывают запрос к базе и пути на сервере.
+            return Outcome(JobState.FAILED, done=done, error=_GENERIC_FAILURE, retry=True)
 
         done += step.processed
 
@@ -413,7 +430,16 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
 
         return True
 
-    outcome = await run_job(session, queue, job, context, stop)
+    try:
+        outcome = await run_job(session, queue, job, context, stop)
+    except (SQLAlchemyError, OSError):
+        # База или диск: задание вернёт в очередь проверка живости, обработает внешний цикл.
+        raise
+    except Exception:  # noqa: BLE001 — чужой файл не должен ронять рабочий для всех заказчиков
+        logger.exception("Задание %s сорвалось", job.id)
+        await session.rollback()
+        await session.refresh(job)
+        outcome = Outcome(JobState.FAILED, done=job.items_done, error=_GENERIC_FAILURE)
 
     if outcome.state is JobState.WAITING:
         await queue.release(job, done=outcome.done)
@@ -447,6 +473,34 @@ async def once(session: AsyncSession, worker: str, stop: asyncio.Event) -> bool:
             logger.exception("Задание %s: не удалось сообщить о готовности", job.id)
 
     return True
+
+
+async def advance_autopilot(session: AsyncSession) -> None:
+    """Один заход автоматического режима: следующий шаг книги, которая давно не двигалась."""
+    claimed = await claim_next(session)
+
+    if claimed is None:
+        return
+
+    run_id, organization_id, user_id = claimed
+    context = await _acting_as(session, organization_id, user_id)
+
+    if context is None:
+        logger.warning("Автоматический режим %s: не от чьего имени работать", run_id)
+        return
+
+    model = await model_for(session, organization_id)
+    service = AutopilotService(session, context, get_storage())
+
+    try:
+        await service.advance(run_id, provider=get_provider(model))
+    except (SQLAlchemyError, OSError):
+        # База или диск: срок прогона истечёт, и следующий заход попробует снова.
+        await session.rollback()
+        logger.exception("Автоматический режим %s: заход сорвался", run_id)
+    except Exception:  # noqa: BLE001 — неожиданный сбой останавливает прогон, а не рабочий
+        logger.exception("Автоматический режим %s: неожиданный сбой", run_id)
+        await service.stop_after_failure(run_id)
 
 
 def _listen_for_stop(stop: asyncio.Event) -> None:
@@ -498,6 +552,9 @@ async def serve() -> None:
             # все задания за сутки работы и объекты, которых давно нет.
             async with get_sessionmaker()() as session:
                 busy = await once(session, worker, stop)
+
+                if not busy:
+                    await advance_autopilot(session)
         except (SQLAlchemyError, OSError):
             # База недоступна — не повод падать: рабочий ждёт и пробует
             # снова. Перезапуск контейнера в цикле недоступную базу не

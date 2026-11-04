@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import func, select
 
+from app.models.autopilot import AutopilotRun
 from app.models.book import BookEdition
 from app.models.figure import FigureTranslation
 from app.models.project import Project
@@ -161,10 +162,12 @@ class UsageService(TenantService):
             *await self._rows_of(TranslationRun),
             *await self._rows_of(QARun),
             *await self._rows_of(FigureTranslation),
+            *await self._rows_of(AutopilotRun),
         ]
 
     async def _rows_of(
-        self, source: type[TranslationRun] | type[QARun] | type[FigureTranslation]
+        self,
+        source: type[TranslationRun] | type[QARun] | type[FigureTranslation] | type[AutopilotRun],
     ) -> list[_Row]:
         month = func.to_char(source.created_at, "YYYY-MM")
         spent = (

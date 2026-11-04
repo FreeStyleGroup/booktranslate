@@ -37,6 +37,7 @@ class ChapterReleasePublic(BaseModel):
     code: str
     version: str
     status: ReleaseStatus
+    automatic: bool
     manifest_hash: str
     blocks: int
     objects: int
@@ -183,6 +184,8 @@ class GatePublic(BaseModel):
     code: str
     status: BookReleaseStatus
     ready: bool
+    # Подтверждён автоматическим режимом: глазами выпуск никто не смотрел.
+    automatic: bool
     checks: list[GateCheckPublic]
     blockers: list[GateBlockerPublic]
     passed_at: datetime | None

@@ -6,6 +6,7 @@
 """
 
 from app.models.audit import AuditEvent
+from app.models.autopilot import AutopilotRun, AutopilotStatus
 from app.models.block import Block, BlockKind, SegmentChunk
 from app.models.book import BookEdition, BookStatus, SourceValidationResult
 from app.models.book_object import BookObject, ObjectReference, ObjectType, ReferenceKind
@@ -148,6 +149,8 @@ __all__ = [
     "BookReleaseChapter",
     "BookReleaseStatus",
     "ChapterRelease",
+    "AutopilotRun",
+    "AutopilotStatus",
     "EditReason",
     "FigureStatus",
     "FigureTranslation",

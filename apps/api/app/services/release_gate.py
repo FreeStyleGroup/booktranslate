@@ -19,9 +19,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.book import BookEdition, BookStatus
 from app.models.issue import Issue, IssueSeverity
 from app.models.job import LIVE, TranslationJob
 from app.models.organization import Role
+from app.models.regression import (
+    RegressionDecision,
+    RegressionItem,
+    RegressionRun,
+    RegressionStatus,
+)
 from app.models.release import (
     ArtifactFormat,
     BookRelease,
@@ -57,8 +64,10 @@ CHECKS = (
     ("no_open_critical", "Нет незакрытых критичных замечаний"),
     ("no_open_major", "Нет незакрытых серьёзных замечаний"),
     ("no_open_minor", "Незначительные замечания по правилам пространства"),
+    ("no_pending_regression", "Регрессия решена"),
     ("artifacts_current", "Файлы DOCX и PDF собраны из этого манифеста"),
     ("pages_audited", "У каждой страницы PDF есть результат аудита"),
+    ("reader_scan_clean", "В файлах нет служебных кодов и заметок"),
 )
 
 
@@ -113,11 +122,12 @@ class ReleaseGateService(TenantService):
 
         await self._check_chapters(result)
         await self._check_issues(result)
+        await self._check_regression(result)
         await self._check_artifacts(result)
 
         return result
 
-    async def pass_release(self, release_id: uuid.UUID) -> GateResult:
+    async def pass_release(self, release_id: uuid.UUID, *, automatic: bool = False) -> GateResult:
         """Выставить PASS. Те же проверки, что на экране, плюс сверка файлов в хранилище."""
         self._context.require(*PASSING_ROLES)
 
@@ -138,13 +148,16 @@ class ReleaseGateService(TenantService):
         artifacts = await self._current(release.id)
         await self._verify_files(release, artifacts)
 
+        # Подтверждение честно говорит о своём происхождении, кто бы ни нажал кнопку.
+        automatic = automatic or await self._was_automatic(release, artifacts)
+
         record = ReleasePass(
             id=uuid.uuid4(),
             organization_id=self.organization_id,
             release_id=release.id,
             actor_id=self._context.user.id,
             manifest_hash=release.manifest_hash,
-            gate_snapshot=gate.snapshot(),
+            gate_snapshot={**gate.snapshot(), "automatic": automatic},
             artifacts=[
                 {
                     "id": str(row.id),
@@ -166,6 +179,8 @@ class ReleaseGateService(TenantService):
             raise ConflictError(f"{release.code} уже прошёл контроль") from error
 
         release.status = BookReleaseStatus.PASSED
+        book = await self._session.get_one(BookEdition, release.book_id)
+        book.status = BookStatus.RELEASED
         AuditService(self._session, self._context).record(
             kind="book_release.passed",
             subject_type="book_release",
@@ -174,6 +189,7 @@ class ReleaseGateService(TenantService):
                 "code": release.code,
                 "manifest_hash": release.manifest_hash,
                 "artifacts": record.artifacts,
+                "automatic": automatic,
             },
         )
         await self._session.commit()
@@ -265,6 +281,47 @@ class ReleaseGateService(TenantService):
                     )
                 )
 
+    async def _check_regression(self, result: GateResult) -> None:
+        """Обязательное место регрессии держит выпуск, откуда бы ни пришло исправление."""
+        count = await self._session.scalar(
+            select(func.count())
+            .select_from(RegressionItem)
+            .join(RegressionRun, RegressionRun.id == RegressionItem.run_id)
+            .join(Issue, Issue.id == RegressionRun.issue_id)
+            .where(
+                RegressionRun.organization_id == self.organization_id,
+                RegressionRun.status == RegressionStatus.OPEN,
+                RegressionItem.required.is_(True),
+                RegressionItem.decision == RegressionDecision.PENDING,
+                Issue.book_id == result.release.book_id,
+            )
+        )
+        if count:
+            result.blockers.append(
+                GateBlocker(
+                    "no_pending_regression",
+                    "regression_pending",
+                    f"Не решено мест в регрессии: {count}",
+                    count=int(count),
+                )
+            )
+
+    async def _was_automatic(self, release: BookRelease, artifacts: list[ExportArtifact]) -> bool:
+        ids = [uuid.UUID(row["release_id"]) for row in release.manifest["chapters"]]
+        chapters = await self._session.scalars(
+            self.scoped(ChapterRelease).where(ChapterRelease.id.in_(ids))
+        )
+        if any(row.manifest.get("automatic") for row in chapters):
+            return True
+
+        pdf = next((row for row in artifacts if row.format is ArtifactFormat.PDF), None)
+        if pdf is None:
+            return False
+
+        found = await self._first_page(pdf.id, PageStatus.AUTO_PASS)
+
+        return found is not None
+
     async def _check_artifacts(self, result: GateResult) -> None:
         release = result.release
         job = await self._session.scalar(
@@ -278,6 +335,17 @@ class ReleaseGateService(TenantService):
             )
 
         current = {row.format: row for row in await self._current(release.id)}
+
+        # Файл сохраняется только чистым, поэтому собранный файл и есть проверенный. Перед самим
+        # подтверждением файлы перечитываются и проверяются ещё раз.
+        if set(current) != set(ArtifactFormat):
+            result.blockers.append(
+                GateBlocker(
+                    "reader_scan_clean",
+                    "scan_missing",
+                    "Файлы ещё не проверены на служебное: их нет",
+                )
+            )
 
         for kind in ArtifactFormat:
             artifact = current.get(kind)

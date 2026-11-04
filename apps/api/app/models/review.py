@@ -13,7 +13,17 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -78,6 +88,8 @@ class ReviewRun(UUIDPrimaryKey, TenantMixin, TimestampMixin, Base):
     reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
+    # Работу завершил автоматический режим: отметки ставил сервис, человек текст не смотрел.
+    automatic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # С какого текста начали и на каком закончили: сумма набора «блок → редакция».
     base_revision_set_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     completed_revision_set_hash: Mapped[str | None] = mapped_column(String(64))

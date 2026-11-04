@@ -44,6 +44,7 @@ def _run(view: RunView) -> ReviewRunPublic:
         chapter_title=view.chapter_title,
         kind=run.kind,
         status=run.status,
+        automatic=run.automatic,
         reviewer=view.reviewer,
         base_revision_set_hash=run.base_revision_set_hash,
         completed_revision_set_hash=run.completed_revision_set_hash,

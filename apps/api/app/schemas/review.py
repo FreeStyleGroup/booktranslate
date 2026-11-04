@@ -75,6 +75,8 @@ class ReviewRunPublic(BaseModel):
     chapter_title: str | None
     kind: ReviewKind
     status: ReviewStatus
+    # Завершена автоматическим режимом: человек текст не смотрел.
+    automatic: bool
     reviewer: str | None
     base_revision_set_hash: str
     completed_revision_set_hash: str | None

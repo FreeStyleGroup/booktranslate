@@ -51,11 +51,15 @@ LAYOUT_VERSION = "2026.11.1"
 STUB_RENDERER = "stub"
 
 RENDER_TIMEOUT_SECONDS = 15 * 60
-MEMORY_LIMIT_BYTES = 3 * 1024 * 1024 * 1024
+# Ниже предела контейнера рабочего: иначе память кончится у всего контейнера, а не у этой сборки.
+MEMORY_LIMIT_BYTES = 1536 * 1024 * 1024
 TICK_SECONDS = 15
 
 # Страница для глаза: около 115 точек на дюйм, хватает, чтобы читать и заметить сбитую таблицу.
 PAGE_SCALE = 1.6
+
+BLANK_CHECK_SCALE = 0.5
+BLANK_LEVEL = 245
 
 STUB_ELEMENTS_PER_PAGE = 3
 STUB_PAGE_SIZE = (595, 842)
@@ -108,10 +112,27 @@ class RenderedPdf:
     renderer: str
 
 
+def _anchors(document: PublicationDocument) -> dict[str, str]:
+    """Адреса блоков внутри файла. Порядковые: идентификаторы из базы в файл читателя не идут."""
+    names: dict[str, str] = {}
+
+    for element in document.elements:
+        if isinstance(element, TextElement):
+            names[element.block_id] = f"p{len(names)}"
+        elif isinstance(element, TableElement):
+            for row in element.rows:
+                for cell in row:
+                    if cell.block_id is not None:
+                        names[cell.block_id] = f"p{len(names)}"
+
+    return names
+
+
 def build_html(document: PublicationDocument) -> str:
     """Разметка книги. Всё из книги экранируется: сырой разметки исходника здесь нет."""
     language = document.language if _LANGUAGE.match(document.language) else "ru"
     title = html.escape(document.title)
+    anchors = _anchors(document)
     parts = [
         f'<!doctype html><html lang="{language}"><head><meta charset="utf-8">',
         f"<title>{title}</title><style>{_CSS}</style></head><body>",
@@ -123,21 +144,21 @@ def build_html(document: PublicationDocument) -> str:
         for entry in document.toc:
             parts.append(
                 f'<li class="level-{min(entry.level, 2)}">'
-                f'<a href="#b-{entry.block_id}">{html.escape(entry.text)}</a></li>'
+                f'<a href="#{anchors[entry.block_id]}">{html.escape(entry.text)}</a></li>'
             )
         parts.append("</ul></nav>")
 
     parts.append("<main>")
     for element in document.elements:
-        parts.append(_element(element))
+        parts.append(_element(element, anchors))
     parts.append("</main></body></html>")
 
     return "".join(parts)
 
 
-def _element(element: Element) -> str:
+def _element(element: Element, anchors: dict[str, str]) -> str:
     if isinstance(element, TableElement):
-        return _table(element)
+        return _table(element, anchors)
     if isinstance(element, FigureElement):
         images = "".join(
             f'<img src="{html.escape(url, quote=True)}" alt="{html.escape(alt, quote=True)}">'
@@ -147,7 +168,7 @@ def _element(element: Element) -> str:
     if isinstance(element, FormulaElement):
         return f'<p class="formula">{html.escape(element.text)}</p>'
 
-    anchor = f'id="b-{element.block_id}"'
+    anchor = f'id="{anchors[element.block_id]}"'
     text = html.escape(element.text)
 
     if element.kind is BlockKind.HEADING:
@@ -165,7 +186,7 @@ def _element(element: Element) -> str:
     return f"<p {anchor}>{text}</p>"
 
 
-def _table(element: TableElement) -> str:
+def _table(element: TableElement, anchors: dict[str, str]) -> str:
     rows: list[str] = []
 
     for row in element.rows:
@@ -177,8 +198,9 @@ def _table(element: TableElement) -> str:
                 spans += f' rowspan="{cell.rowspan}"'
             if cell.colspan > 1:
                 spans += f' colspan="{cell.colspan}"'
-            anchor = f' id="b-{cell.block_id}"' if cell.block_id is not None else ""
-            cells.append(f"<{tag}{spans}{anchor}>{html.escape(cell.text)}</{tag}>")
+            anchor = f' id="{anchors[cell.block_id]}"' if cell.block_id is not None else ""
+            text = html.escape(cell.text).replace("\n", "<br>")
+            cells.append(f"<{tag}{spans}{anchor}>{text}</{tag}>")
         rows.append(f"<tr>{''.join(cells)}</tr>")
 
     return f"<table>{''.join(rows)}</table>"
@@ -203,9 +225,9 @@ def _render_with_weasyprint(document: PublicationDocument) -> RenderedPdf:
             return URLFetcherResponse(url, found[0], {"Content-Type": found[1]})
 
     rendered = weasyprint.HTML(string=build_html(document), url_fetcher=ClosedFetcher()).render()
+    blocks = {name: block_id for block_id, name in _anchors(document).items()}
     page_map = [
-        sorted(name[2:] for name in page.anchors if name.startswith("b-"))
-        for page in rendered.pages
+        sorted(blocks[name] for name in page.anchors if name in blocks) for page in rendered.pages
     ]
 
     return RenderedPdf(
@@ -313,12 +335,13 @@ def page_count(content: bytes) -> int:
         pdf.close()
 
 
-def page_png(content: bytes, page_no: int) -> bytes:
+def page_png(content: bytes | Path, page_no: int) -> bytes:
     """Страница картинкой, нумерация с единицы. Только наши собственные PDF."""
     pdf = pypdfium2.PdfDocument(content)
     try:
         page = pdf[page_no - 1]
         try:
+            # Страница из чужих рисунков бывает любой: файл наш, а содержимое нет.
             bitmap = page.render(scale=PAGE_SCALE)
             image = bitmap.to_pil()
             buffer = io.BytesIO()
@@ -329,6 +352,21 @@ def page_png(content: bytes, page_no: int) -> bytes:
         pdf.close()
 
     return buffer.getvalue()
+
+
+def page_is_blank(content: bytes, page_no: int) -> bool:
+    """Пустая ли страница. Мелкого масштаба хватает: важно, есть ли на ней хоть что-то тёмное."""
+    pdf = pypdfium2.PdfDocument(content)
+    try:
+        page = pdf[page_no - 1]
+        try:
+            darkest = page.render(scale=BLANK_CHECK_SCALE).to_pil().convert("L").getextrema()[0]
+        finally:
+            page.close()
+    finally:
+        pdf.close()
+
+    return bool(darkest > BLANK_LEVEL)
 
 
 def text_layer(content: bytes) -> str:
