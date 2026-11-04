@@ -172,6 +172,8 @@ class AutopilotService(TenantService):
             output_tokens=0,
             cached_input_tokens=0,
             cache_write_tokens=0,
+            # Экран показывает последний прогон, а время базы внутри транзакции одно.
+            created_at=datetime.now(UTC),
         )
         try:
             async with self._session.begin_nested():

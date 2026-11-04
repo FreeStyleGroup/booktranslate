@@ -97,6 +97,8 @@ class ArtifactService(TenantService):
             state=JobState.WAITING,
             requested_by_id=self._context.user.id,
             items_total=len(ArtifactFormat),
+            # Экран показывает последнее задание, а время базы внутри транзакции одно.
+            created_at=datetime.now(UTC),
         )
 
         try:
