@@ -759,6 +759,41 @@
   color: var(--ink-soft);
 }
 
+/* ---------- автоматический режим ---------- */
+
+.bk-stages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.bk-stages li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--ink-faint);
+}
+
+.bk-stages .is-done {
+  color: var(--ink-soft);
+}
+
+.bk-stages .is-done > span:first-child {
+  color: var(--ok);
+}
+
+.bk-stages .is-current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.bk-stages .is-current > span:first-child {
+  color: var(--brand);
+}
+
 /* ---------- рисунки ---------- */
 
 .bk-figure {
@@ -828,6 +863,12 @@
   font: 12px var(--mono);
   text-align: center;
   color: var(--ink-soft);
+}
+
+.bk-pages a.is-auto_pass {
+  border-style: dashed;
+  border-color: var(--ok);
+  color: var(--ok);
 }
 
 .bk-pages a.is-pass {
@@ -909,5 +950,9 @@
 
   .bk-region__box {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bk-stages {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

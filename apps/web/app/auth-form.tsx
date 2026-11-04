@@ -27,7 +27,16 @@ export type AuthTexts = {
 
 // Метод нужен на случай нажатия до загрузки скриптов: без него браузер отправит форму методом GET,
 // и пароль окажется в адресе, истории и журналах сервера.
-export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: AuthTexts }) {
+export function AuthForm({
+  mode,
+  texts,
+  next = null,
+}: {
+  mode: "login" | "register";
+  texts: AuthTexts;
+  /** Куда вернуть после входа: сверено на сервере, здесь только свой путь. */
+  next?: string | null;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
@@ -79,7 +88,7 @@ export function AuthForm({ mode, texts }: { mode: "login" | "register"; texts: A
       // без сброса кеша отрисовался бы по старому — без сеанса. Адрес
       // назначения приходит от сервера: администратора площадки ведут в
       // управление доступом, остальных — в кабинет.
-      router.push(payload.home ?? "/app");
+      router.push(next ?? payload.home ?? "/app");
       router.refresh();
     } catch {
       setError(t.offline);

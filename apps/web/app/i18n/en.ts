@@ -63,7 +63,7 @@ export const en: Dictionary = {
   meta: {
     title: "BookTranslate — professional translation of technical books",
     description:
-      "Professional translation of technical books and documentation: terminology is settled before translation, unfamiliar words get a sourced reference, every segment is checked, and the book is rebuilt into its original file. For students and for companies.",
+      "Professional translation of technical books and documentation: terminology is settled before translation, unfamiliar words get a sourced reference, every block is checked, and the book is rebuilt into its original file. For students and for companies.",
     ogDescription:
       "Terms are settled before translation, numbers and notation do not drift, and the book is rebuilt into its own format with all of its formatting.",
     tagline: "professional translation of technical books and documentation",
@@ -110,7 +110,7 @@ export const en: Dictionary = {
       numbers: "Numbers",
     },
     segments: SEGMENTS,
-    foot: "The edit to segment 216 propagated to 39 identical places",
+    foot: "After the edit to block 216 you see 39 more such places: you decide",
   },
 
   outcomes: {
@@ -130,7 +130,7 @@ export const en: Dictionary = {
       {
         icon: "🧪",
         title: "You can see what to re-read",
-        text: "Every segment passes six checks. Anything doubtful is flagged and collected into its own queue — there is no need to proofread the book front to back.",
+        text: "Every block is checked. Findings become issues with permanent codes in one registry, and before release a person compares the text with the original.",
       },
     ],
   },
@@ -143,7 +143,7 @@ export const en: Dictionary = {
       {
         icon: "📥",
         title: "You upload the book",
-        text: "PDF, DOCX, EPUB, HTML, Markdown or plain text. The document is broken into segments — headings, paragraphs, list items, table cells — and its structure is remembered.",
+        text: "PDF, DOCX, EPUB, HTML, Markdown or plain text. The document is broken into blocks — headings, paragraphs, list items, table cells — and its structure is remembered.",
       },
       {
         icon: "🗂",
@@ -158,12 +158,12 @@ export const en: Dictionary = {
       {
         icon: "🤖",
         title: "Translation under constraints",
-        text: "The model receives the segment, the paragraphs around it, the section heading and the glossary terms — as a requirement, not as a hint. Repetitions and memory matches are not translated again.",
+        text: "The model receives the block, the paragraphs around it, the section heading and the glossary terms — as a requirement, not as a hint. Repetitions and memory matches are not translated again.",
       },
       {
         icon: "🧪",
         title: "Checks and edits",
-        text: "Numbers, units, placeholders, glossary usage, abbreviation expansion. An edit to one segment propagates to all of its repetitions; a human signs the work off.",
+        text: "Numbers, units, placeholders, glossary usage, abbreviation expansion. An edit creates a new revision, and repetitions change only when you decide so; a human signs the work off.",
       },
       {
         icon: "📦",
@@ -242,7 +242,7 @@ export const en: Dictionary = {
 
   quality: {
     eyebrow: "Quality",
-    title: "Six checks on every segment",
+    title: "Checks on every block",
     lead: "The checks do not judge style — they catch what is expensive in a technical book and invisible while reading it.",
     checks: [
       "Numbers, units and notation — both the lost and the invented",
@@ -260,8 +260,8 @@ export const en: Dictionary = {
       },
       {
         icon: "✍️",
-        title: "One edit reaches every repetition",
-        text: "Fix a warning once and you have fixed it in all forty places — except the ones a human has already accepted.",
+        title: "An edit does not spread by itself",
+        text: "Fix a warning and you see all forty such places, then apply the edit to the ones you choose. Approved text is not overwritten without a separate decision.",
       },
       {
         icon: "🔗",
@@ -287,10 +287,10 @@ export const en: Dictionary = {
   price: {
     eyebrow: "Cost",
     title: "You can see what you paid for",
-    lead: "Every run reports back: how many segments were covered by memory and repetitions, how many went to the model and what that came to. Tokens are stored, not money: prices change, and what was spent on this book is a historical fact.",
+    lead: "Every run reports back: how many blocks were covered by memory and repetitions, how many went to the model and what that came to. Tokens are stored, not money: prices change, and what was spent on this book is a historical fact.",
     note: "The same warning occurring forty times is translated once — not to save money, but so that it reads the same way throughout the book. Paying for it once is a pleasant consequence.",
     bill: [
-      { name: "Segments in the book", value: "12,480" },
+      { name: "Blocks in the book", value: "12,480" },
       { name: "Covered by memory and repetitions", value: "3,902" },
       { name: "Sent to the model", value: "8,578" },
       { name: "Read from cache — a tenth of the price", value: "1.9M tokens" },
@@ -315,7 +315,7 @@ export const en: Dictionary = {
       },
       {
         q: "How long does a book take?",
-        a: "The longest part is not the translation, it is deciding on the terms — that is human work, and speeding it up at the cost of quality is pointless. The translation itself runs in batches of segments; repetitions and memory matches are not recomputed at all.",
+        a: "The longest part is not the translation, it is deciding on the terms — that is human work, and speeding it up at the cost of quality is pointless. The translation itself runs in batches of blocks; repetitions and memory matches are not recomputed at all.",
       },
       {
         q: "What about confidentiality?",
@@ -339,7 +339,7 @@ export const en: Dictionary = {
     promise: "Translation you can check line by line",
     points: [
       { icon: "🗂", text: "Terms are settled before translation and hold across the book" },
-      { icon: "🧪", text: "Six checks on every segment: numbers, units, terms" },
+      { icon: "🧪", text: "Checks on every block: numbers, units, terms" },
       { icon: "📦", text: "DOCX, EPUB and HTML come back in their own format" },
     ],
     isolation: "Workspace data is isolated between organisations.",

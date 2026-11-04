@@ -15,6 +15,8 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeReturnPath } from "../../../lib/return-path";
+
 import { apiFetch, type TokenPair } from "../../../lib/api";
 import { RENEWED_COOKIE, clearSession, refreshToken, saveSession } from "../../../lib/session";
 
@@ -29,17 +31,16 @@ const RENEWED_TTL = 30;
 /** Куда вернуть: только свой относительный путь, чтобы адрес не стал
     открытым перенаправлением на чужой сайт. */
 function returnPath(request: NextRequest): string {
-  const next = request.nextUrl.searchParams.get("next") ?? "/app";
-
-  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\")
-    ? next
-    : "/app";
+  return safeReturnPath(request.nextUrl.searchParams.get("next")) ?? "/app";
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const jar = await cookies();
   const refresh = await refreshToken();
-  const login = NextResponse.redirect(new URL("/login", request.url));
+  // Сеанс кончился посреди работы: после входа человек должен вернуться на то же место.
+  const signIn = new URL("/login", request.url);
+  signIn.searchParams.set("next", returnPath(request));
+  const login = NextResponse.redirect(signIn);
 
   if (refresh === undefined || jar.get(RENEWED_COOKIE) !== undefined) {
     await clearSession();

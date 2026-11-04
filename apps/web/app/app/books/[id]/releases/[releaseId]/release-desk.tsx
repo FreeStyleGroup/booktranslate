@@ -42,6 +42,7 @@ const POLL_MS = 4000;
 const PAGE_LABEL: Record<PageAudit["status"], string> = {
   unreviewed: "не проверена",
   pass: "верна",
+  auto_pass: "не пуста, глазами не смотрели",
   issue: "с ошибкой",
   stale: "устарела",
 };
@@ -97,7 +98,9 @@ export function GatePanel({
       <div className="tile__head">
         <h3>Чек-лист</h3>
         {passed ? (
-          <span className="chip chip--ok">выпуск подтверждён</span>
+          <span className="chip chip--ok">
+            {gate.automatic ? "подтверждён автоматически" : "выпуск подтверждён"}
+          </span>
         ) : (
           <span className={gate.ready ? "chip chip--ok" : "chip chip--danger"}>
             {gate.ready ? "можно выпускать" : `мешает: ${thousands(gate.blockers.length)}`}
@@ -109,6 +112,7 @@ export function GatePanel({
         <p className="tile__note">
           Контроль пройден {when(gate.passed_at)}. Выпуск, файлы и аудит больше не меняются. Сумма
           манифеста {shortHash(release.manifest_hash)}.
+          {gate.automatic && " Подтвердил автоматический режим: глазами текст и вёрстку никто не смотрел."}
         </p>
       )}
 
@@ -352,7 +356,7 @@ export function PageAuditPanel({
 
   const current = pages.find((item) => item.page_no === pageNo);
   const waiting = pages.filter((item) => item.status === "unreviewed");
-  const done = pages.filter((item) => item.status === "pass").length;
+  const done = pages.filter((item) => item.status === "pass" || item.status === "auto_pass").length;
   const next =
     waiting.find((item) => item.page_no > pageNo)?.page_no ??
     waiting.find((item) => item.page_no !== pageNo)?.page_no ??

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { currentUser } from "../../../lib/current-user";
 import { organizationId } from "../../../lib/session";
+import type { AutopilotState } from "../../../lib/work";
 import {
   load,
   type Book,
@@ -30,6 +31,7 @@ import { AddSource } from "../add-source";
 import { ExportLinks } from "../export-links";
 import { IssuesTile } from "../../issues/issues-tile";
 import { Kit } from "../kit";
+import { AutopilotPanel } from "./autopilot-panel";
 
 export const metadata: Metadata = {
   title: "Книга — BookTranslate",
@@ -79,7 +81,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
   }
 
   const edition = book.data;
-  const [kit, project, documents, me, organization, structure, terminology, issueStats] = await Promise.all([
+  const [kit, project, documents, me, organization, structure, terminology, issueStats, autopilot] = await Promise.all([
     load<BookKit>(`/books/${id}/sources`, here),
     load<Project>(`/projects/${edition.project_id}`, here),
     // Файлы проекта, чтобы предложить уже загруженные. Потолок тот же, что
@@ -91,11 +93,14 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
     load<BookStructure>(`/books/${id}/chapters`, here),
     load<BookTerminology>(`/books/${id}/terminology`, here),
     load<IssueStats>(`/issues/stats?book_id=${id}`, here),
+    load<AutopilotState>(`/books/${id}/autopilot`, here),
   ]);
 
   const membership =
     me?.memberships.find((item) => item.organization_id === organization) ?? me?.memberships[0];
   const canManage = membership !== undefined && MANAGING.has(membership.role);
+  // Те же роли, что в API: запустить автоматический режим значит потратить деньги пространства.
+  const canRun = membership !== undefined && ["owner", "admin", "manager"].includes(membership.role);
 
   const free = (documents.data ?? []).filter((document) => document.book_id === null);
   const hasPrimary = (kit.data?.sources ?? []).some(
@@ -230,6 +235,10 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
           href={`/app/issues?book=${id}&state=`}
           scope="этой книге"
         />
+      )}
+
+      {autopilot.data !== undefined && kit.data !== undefined && kit.data.sources.length > 0 && (
+        <AutopilotPanel bookId={edition.id} run={autopilot.data.run} canRun={canRun} />
       )}
 
       {/* Пока ничего не переведено, выгружать нечего: получилась бы копия исходника. */}

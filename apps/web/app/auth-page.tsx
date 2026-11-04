@@ -10,7 +10,15 @@ import { AuthShell } from "./auth-shell";
 import { dictionary } from "./i18n";
 import { localePath, type Locale } from "./i18n/config";
 
-export function AuthPage({ lang, mode }: { lang: Locale; mode: "login" | "register" }) {
+export function AuthPage({
+  lang,
+  mode,
+  next = null,
+}: {
+  lang: Locale;
+  mode: "login" | "register";
+  next?: string | null;
+}) {
   const t = dictionary(lang);
   const page = mode === "login" ? t.login : t.register;
 
@@ -28,6 +36,7 @@ export function AuthPage({ lang, mode }: { lang: Locale; mode: "login" | "regist
     >
       <AuthForm
         mode={mode}
+        next={next}
         texts={{
           form: t.form,
           submit: page.submit,

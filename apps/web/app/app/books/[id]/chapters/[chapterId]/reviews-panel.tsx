@@ -36,6 +36,7 @@ function Facts({ run }: { run: ReviewRun }) {
       {thousands(run.objects_done)} из {thousands(run.objects_total)} объектов
       {run.untranslated > 0 && ` · без перевода ${thousands(run.untranslated)}`}
       {run.completed_at !== null && ` · завершена ${when(run.completed_at)}`}
+      {run.automatic && " · автоматически, глазами не смотрели"}
       {run.reviewer !== null && ` · ${run.reviewer}`}
     </p>
   );
