@@ -69,7 +69,7 @@ export function Models({ settings }: { settings: WorkspaceSettings }) {
               <span className="st-model__price">
                 {model.input_usd === null || model.output_usd === null
                   ? "цена не в прейскуранте"
-                  : `$${model.input_usd} вход · $${model.output_usd} выход — за миллион токенов`}
+                  : `$${model.input_usd.toFixed(2)} вход · $${model.output_usd.toFixed(2)} выход — за миллион токенов`}
               </span>
             </label>
           ))}

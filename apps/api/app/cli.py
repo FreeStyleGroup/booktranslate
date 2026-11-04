@@ -14,19 +14,25 @@
 
     python -m app.cli create-superuser --email root@example.com
     python -m app.cli check-provider
+    python -m app.cli check-provider --model claude-opus-5-5
+    python -m app.cli check-provider --all-models
 """
 
 import argparse
 import asyncio
 import getpass
+import io
 import sys
+from collections.abc import Awaitable, Callable
 
+from PIL import Image, ImageDraw, ImageFont
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.security import generate_password, hash_password
 from app.db.session import get_sessionmaker
 from app.models.organization import User, UserStatus
+from app.services.models import available_models
 from app.services.pricing import estimate_usd
 from app.services.providers import (
     CLAUDE,
@@ -34,10 +40,13 @@ from app.services.providers import (
     ProviderError,
     TranslationRequest,
     Usage,
+    get_figure_reader,
     get_lookup,
     get_provider,
+    get_reviewer,
     keys_of,
 )
+from app.services.providers.semantic import SemanticRequest
 
 # Материал для пробного перевода. Две короткие строки с числом, единицей и
 # сокращением: этого хватает, чтобы увидеть, что модель отвечает по схеме и
@@ -90,7 +99,7 @@ def _masked(key: str) -> str:
     return f"{key[:8]}… ({len(key)} знаков)"
 
 
-async def check_provider(with_lookup: bool) -> bool:
+async def check_provider(with_lookup: bool, model: str | None = None) -> bool:
     """Пробный вызов модели. Возвращает признак «всё получилось».
 
     Проверяется именно то, что делает приложение: тот же провайдер, те же
@@ -98,9 +107,10 @@ async def check_provider(with_lookup: bool) -> bool:
     провайдера проверял бы сам себя.
     """
     settings = get_settings()
+    name = model or settings.anthropic_model
 
     print("Провайдер перевода: " + settings.translation_provider)
-    print("Модель:             " + settings.anthropic_model)
+    print("Модель:             " + name)
     print("Шлюз:               " + (settings.anthropic_base_url or "нет, напрямую в Anthropic"))
     print("Ключ:               " + _masked(settings.anthropic_api_key))
     print("Поиск справок:      " + settings.term_lookup_provider)
@@ -110,16 +120,8 @@ async def check_provider(with_lookup: bool) -> bool:
         print("Перевод идёт заглушкой: TRANSLATION_PROVIDER=claude включает модель.")
         return True
 
-    provider = get_provider()
-    requests = [
-        TranslationRequest(
-            source_text=text,
-            source_language="en",
-            target_language="ru",
-            kind=kind,
-        )
-        for text, kind in PROBE
-    ]
+    provider = get_provider(model)
+    requests = _probe_requests()
 
     print("Пробный перевод…")
 
@@ -135,7 +137,7 @@ async def check_provider(with_lookup: bool) -> bool:
     for (source, _), key in zip(PROBE, keys_of(requests), strict=True):
         print(f"  {source}\n  → {answer.items[key]}")
 
-    _report_usage(settings.anthropic_model, answer.usage)
+    _report_usage(name, answer.usage)
 
     if not with_lookup:
         return True
@@ -170,6 +172,104 @@ async def check_provider(with_lookup: bool) -> bool:
     _report_usage(settings.anthropic_model, explanation.usage, searches=explanation.searches)
 
     return True
+
+
+def _probe_requests() -> list[TranslationRequest]:
+    return [
+        TranslationRequest(
+            source_text=text,
+            source_language="en",
+            target_language="ru",
+            kind=kind,
+        )
+        for text, kind in PROBE
+    ]
+
+
+def _probe_picture() -> bytes:
+    """Схема с двумя надписями: рисунок, который есть что прочитать."""
+    image = Image.new("RGB", (640, 320), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=32)
+    draw.rectangle((40, 100, 280, 220), outline=(0, 0, 0), width=3)
+    draw.rectangle((360, 100, 600, 220), outline=(0, 0, 0), width=3)
+    draw.line((280, 160, 360, 160), fill=(0, 0, 0), width=3)
+    draw.text((70, 140), "Relief valve", fill=(0, 0, 0), font=font)
+    draw.text((430, 140), "Pump", fill=(0, 0, 0), font=font)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+
+    return buffer.getvalue()
+
+
+async def _probe_translation(model: str) -> tuple[str, Usage]:
+    answer = await get_provider(model).translate(_probe_requests())
+
+    return f"переведено строк: {len(answer.items)}", answer.usage
+
+
+async def _probe_review(model: str) -> tuple[str, Usage]:
+    answer = await get_reviewer(model).review(
+        [
+            SemanticRequest(
+                key="CH01-B0001",
+                source_text="Close the valve before removal.",
+                target_text="Перед демонтажом откройте клапан.",
+                source_language="en",
+                target_language="ru",
+            )
+        ]
+    )
+
+    return f"находок: {sum(len(items) for items in answer.items.values())}", answer.usage
+
+
+async def _probe_figure(model: str) -> tuple[str, Usage]:
+    reading = await get_figure_reader(model).read(_probe_picture(), "image/png")
+
+    return f"надписей: {len(reading.regions)}", reading.usage
+
+
+async def check_all_models() -> bool:
+    """Каждая модель каталога: перевод, смысловая сверка и чтение рисунка.
+
+    Имя в каталоге ещё не значит, что шлюз принимает модель и все виды запросов к ней. Запросы идут
+    через те же провайдеры, что и работа с книгой. Один отказ не прерывает проверку: нужен весь
+    список сразу. Это платно, хотя и копейки: по три коротких запроса на модель.
+    """
+    if get_settings().translation_provider != CLAUDE:
+        print("Перевод идёт заглушкой: TRANSLATION_PROVIDER=claude включает модель.")
+        return True
+
+    probes: tuple[tuple[str, Callable[[str], Awaitable[tuple[str, Usage]]]], ...] = (
+        ("перевод", _probe_translation),
+        ("сверка", _probe_review),
+        ("рисунок", _probe_figure),
+    )
+    all_good = True
+
+    for choice in available_models():
+        print(f"{choice.title} ({choice.id})")
+
+        for title, probe in probes:
+            try:
+                note, usage = await probe(choice.id)
+            except Exception as error:  # noqa: BLE001 — печатаем любую причину: это и есть проверка
+                all_good = False
+                print(f"  {title}: ОТКАЗ: {type(error).__name__}: {error}")
+                continue
+
+            spent = estimate_usd(
+                choice.id,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cached_input_tokens=usage.cached_input_tokens,
+                cache_write_tokens=usage.cache_write_tokens,
+            )
+            print(f"  {title}: работает, {note}" + (f", ${spent}" if spent is not None else ""))
+
+    return all_good
 
 
 def _report_usage(model: str, usage: Usage, searches: int = 0) -> None:
@@ -228,10 +328,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Заодно проверить поиск справок (ходит в интернет и стоит отдельно)",
     )
 
+    check.add_argument(
+        "--model", default=None, help="Проверить эту модель вместо умолчания площадки"
+    )
+    check.add_argument(
+        "--all-models",
+        action="store_true",
+        help="Проверить каждую модель каталога: перевод, сверку и рисунок (платно)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "check-provider":
-        return 0 if asyncio.run(check_provider(args.lookup)) else 1
+        if args.all_models:
+            return 0 if asyncio.run(check_all_models()) else 1
+
+        return 0 if asyncio.run(check_provider(args.lookup, args.model)) else 1
 
     if args.command == "create-superuser":
         password = args.password

@@ -17,6 +17,17 @@ def test_plain_tokens_are_counted_by_the_price_list() -> None:
     assert result == round(price.input_usd, 4)
 
 
+def test_model_with_its_own_cache_rate_is_counted_by_it() -> None:
+    def read_from_cache(model: str) -> float | None:
+        return estimate_usd(model, input_tokens=0, output_tokens=0, cached_input_tokens=1_000_000)
+
+    assert read_from_cache("claude-fable-5-1") == 0.25
+    assert read_from_cache("claude-opus-5-5") == 0.20
+    # Без своей ставки работает общая десятая часть ввода.
+    assert read_from_cache("claude-sonnet-5-5") == 0.20
+    assert read_from_cache("claude-opus-5") == 0.50
+
+
 def test_output_is_dearer_than_input() -> None:
     cheap = estimate_usd("claude-opus-5", input_tokens=100_000, output_tokens=0)
     dear = estimate_usd("claude-opus-5", input_tokens=0, output_tokens=100_000)

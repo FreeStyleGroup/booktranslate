@@ -16,6 +16,7 @@ from functools import lru_cache
 from typing import Any
 
 from app.core.config import get_settings
+from app.services.models import effort_for, has_server_fallback
 from app.services.providers.base import (
     EMPTY_CONTEXT,
     Neighbourhood,
@@ -94,6 +95,28 @@ def _client() -> Any:
     )
 
 
+def _settings_for(model: str | None, *, fallbacks: bool = True) -> ClaudeSettings:
+    """Настройки запроса к модели: одни для перевода, сверки и рисунков.
+
+    Запасная модель — возможность самой Anthropic, объявленная бета-заголовком. У шлюза для этого
+    своя форма запроса, и такую он отвергает целиком (проверено на AITunnel: 400 «поле fallbacks
+    должно быть массивом объектов»). Поэтому через шлюз она выключена независимо от настройки:
+    иначе падала бы каждая пачка, а виноватым выглядел бы ключ.
+    """
+    settings = get_settings()
+    name = model or settings.anthropic_model
+
+    return ClaudeSettings(
+        model=name,
+        max_tokens=settings.anthropic_max_tokens,
+        effort=effort_for(name, settings.anthropic_effort),
+        use_fallbacks=fallbacks
+        and settings.anthropic_use_fallbacks
+        and not settings.anthropic_base_url
+        and has_server_fallback(name),
+    )
+
+
 @lru_cache
 def get_provider(model: str | None = None) -> TranslationProvider:
     """Провайдер перевода — для модели, которую выбрало пространство.
@@ -109,18 +132,7 @@ def get_provider(model: str | None = None) -> TranslationProvider:
 
     return ClaudeProvider(
         _client(),
-        ClaudeSettings(
-            model=model or settings.anthropic_model,
-            max_tokens=settings.anthropic_max_tokens,
-            effort=settings.anthropic_effort or None,
-            # Запасная модель — возможность самой Anthropic, объявляемая
-            # бета-заголовком. У шлюза для этого своя форма запроса, и
-            # анthropic'овскую он отвергает целиком (проверено на AITunnel:
-            # 400 «поле fallbacks должно быть массивом объектов»). Поэтому
-            # через шлюз она выключена независимо от настройки — иначе
-            # падала бы каждая пачка, а виноватым выглядел бы ключ.
-            use_fallbacks=settings.anthropic_use_fallbacks and not settings.anthropic_base_url,
-        ),
+        _settings_for(model),
     )
 
 
@@ -199,12 +211,7 @@ def get_figure_reader(model: str | None = None) -> FigureReader:
 
     return ClaudeFigureReader(
         _client(),
-        ClaudeSettings(
-            model=model or settings.anthropic_model,
-            max_tokens=settings.anthropic_max_tokens,
-            effort=settings.anthropic_effort or None,
-            use_fallbacks=False,
-        ),
+        _settings_for(model, fallbacks=False),
     )
 
 
@@ -218,12 +225,7 @@ def get_reviewer(model: str | None = None) -> SemanticReviewer:
 
     return ClaudeReviewer(
         _client(),
-        ClaudeSettings(
-            model=model or settings.anthropic_model,
-            max_tokens=settings.anthropic_max_tokens,
-            effort=settings.anthropic_effort or None,
-            use_fallbacks=settings.anthropic_use_fallbacks and not settings.anthropic_base_url,
-        ),
+        _settings_for(model),
     )
 
 
