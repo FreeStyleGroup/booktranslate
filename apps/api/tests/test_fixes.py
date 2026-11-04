@@ -552,6 +552,29 @@ async def test_reopened_issue_gets_a_new_regression_for_the_new_fix(
 
 
 @requires_database
+async def test_same_fix_after_reopening_keeps_its_regression(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Открыли заново и признали ту же редакцию исправлением: это не сбой и не новый прогон."""
+    account = await register(db_client)
+    _, _, rows = await translated(db_client, session, account)
+    block = next(row for row in rows if row["source_text"] == REPEATED)
+    issue = await confirmed(db_client, account, block)
+
+    await edit(db_client, account, issue["id"], block, "Первая правка.")
+    first = await regression(db_client, account, issue["id"])
+    revision = (await read(db_client, account, issue["id"]))["fix_revision_id"]
+
+    await act(db_client, account, issue["id"], "reopen", note="Проверим ещё раз")
+    await act(db_client, account, issue["id"], "confirm")
+    await act(db_client, account, issue["id"], "fix", revision_id=revision)
+
+    again = await regression(db_client, account, issue["id"])
+    assert again["id"] == first["id"]
+    assert again["status"] == "open"
+
+
+@requires_database
 async def test_viewer_and_stranger_cannot_touch_regression(
     db_client: AsyncClient, session: AsyncSession
 ) -> None:

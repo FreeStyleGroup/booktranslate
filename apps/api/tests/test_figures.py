@@ -104,17 +104,34 @@ def test_replace_images_swaps_only_the_named_part() -> None:
         assert archive.read("word/document.xml") == b"<xml/>"
 
 
-def test_regions_outside_the_scale_are_dropped() -> None:
+def test_regions_are_cut_to_the_picture_or_counted_as_dropped() -> None:
     raw = (
         '{"regions": ['
         '{"x": 10, "y": 10, "w": 100, "h": 50, "text": "Valve", "confidence": 0.9},'
-        '{"x": 950, "y": 10, "w": 100, "h": 50, "text": "Out", "confidence": 0.9},'
-        '{"x": 10, "y": 10, "w": 100, "h": 50, "text": "   ", "confidence": 0.9}'
+        '{"x": 950, "y": 10, "w": 100, "h": 50, "text": "Edge", "confidence": 0.9},'
+        '{"x": 1200, "y": 10, "w": 100, "h": 50, "text": "Out", "confidence": 0.9},'
+        '{"x": 10, "y": 10, "w": 100, "h": 50, "text": "   ", "confidence": 0.9},'
+        '{"x": NaN, "y": 10, "w": 100, "h": 50, "text": "Bad", "confidence": 0.9}'
         "]}"
     )
 
-    regions = parse_regions(raw)
-    assert [row.text for row in regions] == ["Valve"]
+    regions, dropped = parse_regions(raw)
+    assert [row.text for row in regions] == ["Valve", "Edge"]
+    assert regions[1].w == 50
+    assert dropped == 3
+
+
+def test_not_a_number_is_no_confidence_at_all() -> None:
+    raw = '{"regions": [{"x": 1, "y": 1, "w": 9, "h": 9, "text": "Valve", "confidence": NaN}]}'
+
+    regions, dropped = parse_regions(raw)
+    assert regions[0].confidence == 0.0
+    assert dropped == 0
+
+
+def test_huge_picture_is_refused() -> None:
+    with pytest.raises(ExportError):
+        overlay(picture(size=(7000, 6000)), [])
 
 
 def test_broken_answer_is_a_provider_error() -> None:
@@ -137,14 +154,19 @@ class Reader:
 
     name = "test-reader"
 
-    def __init__(self, regions: list[ReadRegion] | Exception) -> None:
+    def __init__(self, regions: list[ReadRegion] | Exception, *, dropped: int = 0) -> None:
         self._regions = regions
+        self._dropped = dropped
 
     async def read(self, content: bytes, media_type: str) -> FigureReading:
         if isinstance(self._regions, Exception):
             raise self._regions
 
-        return FigureReading(regions=self._regions, usage=Usage(input_tokens=50, output_tokens=5))
+        return FigureReading(
+            regions=self._regions,
+            usage=Usage(input_tokens=50, output_tokens=5),
+            dropped=self._dropped,
+        )
 
 
 GOOD = [ReadRegion(x=25, y=33, w=500, h=200, text="Valve", confidence=0.95)]
@@ -223,6 +245,36 @@ async def read_figures(
     assert await worker.once(session, "test", STOP) is True
 
     return await state(client, account, chapter_id)
+
+
+@requires_database
+async def test_regions_that_were_not_accepted_are_not_called_no_text(
+    db_client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_reader(monkeypatch, Reader([], dropped=2))
+    account = await register(db_client)
+    _, chapter_id = await figure_chapter(db_client, account)
+
+    body = await read_figures(db_client, session, account, chapter_id)
+    current = body["images"][0]["current"]
+    assert current["status"] == "draft"
+    assert current["needs_human"] is True
+    assert "не приняты" in current["note"]
+    assert body["undecided"] == 1
+
+
+@requires_database
+async def test_partly_accepted_reading_needs_a_person(
+    db_client: AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_reader(monkeypatch, Reader(GOOD, dropped=1))
+    account = await register(db_client)
+    _, chapter_id = await figure_chapter(db_client, account)
+
+    body = await read_figures(db_client, session, account, chapter_id)
+    current = body["images"][0]["current"]
+    assert current["needs_human"] is True
+    assert "Не приняты надписи: 1" in current["note"]
 
 
 @requires_database

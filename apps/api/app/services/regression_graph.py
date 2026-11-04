@@ -25,6 +25,7 @@ from app.models.issue import Issue
 from app.models.master import ChapterMaster
 from app.models.regression import (
     DependencyKind,
+    RegressionDecision,
     RegressionItem,
     RegressionRun,
     RegressionStatus,
@@ -67,6 +68,28 @@ class RegressionGraph(TenantService):
         self, issue: Issue, block: Block, *, old_text: str, new_text: str, revision_id: uuid.UUID
     ) -> RegressionRun:
         """Завести прогон на это исправление; транзакцией управляет вызывающий."""
+        # Замечание открыли заново и исправили той же редакцией: решения по этим местам в силе.
+        earlier = await self._session.scalar(
+            self.scoped(RegressionRun).where(
+                RegressionRun.issue_id == issue.id, RegressionRun.fix_revision_id == revision_id
+            )
+        )
+        if earlier is not None:
+            pending = await self._session.scalar(
+                select(RegressionItem.id)
+                .where(
+                    RegressionItem.run_id == earlier.id,
+                    RegressionItem.required.is_(True),
+                    RegressionItem.decision == RegressionDecision.PENDING,
+                )
+                .limit(1)
+            )
+            earlier.status = (
+                RegressionStatus.OPEN if pending is not None else RegressionStatus.COMPLETED
+            )
+
+            return earlier
+
         book_id = await self._session.scalar(
             select(Chapter.book_id).where(Chapter.id == block.chapter_id)
         )

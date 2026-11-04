@@ -43,7 +43,9 @@ _RENDERERS: dict[ExportFormat, Renderer] = {
 }
 
 
-def renderer_for(export_format: ExportFormat, source_format: SourceFormat) -> Renderer:
+def renderer_for(
+    export_format: ExportFormat, source_format: SourceFormat, *, whole_book: bool = True
+) -> Renderer:
     """Сборщик под запрошенный формат.
 
     `source` означает «верни в том же виде, в каком приносили». Если для
@@ -52,7 +54,9 @@ def renderer_for(export_format: ExportFormat, source_format: SourceFormat) -> Re
     другое.
 
     `docx` из документа Word — та же сборка по месту; из всего остального —
-    новый документ с нуля, и в кабинете он так и подписан.
+    новый документ с нуля, и в кабинете он так и подписан. Для одной главы сборка
+    по месту не годится: это весь исходный файл, и остальные главы в нём остались
+    бы на языке оригинала.
     """
     if export_format is ExportFormat.SOURCE:
         renderer = _IN_PLACE.get(source_format)
@@ -66,7 +70,9 @@ def renderer_for(export_format: ExportFormat, source_format: SourceFormat) -> Re
         return renderer
 
     if export_format is ExportFormat.DOCX:
-        return _IN_PLACE[SourceFormat.DOCX] if source_format is SourceFormat.DOCX else DocxBuilder()
+        in_place = whole_book and source_format is SourceFormat.DOCX
+
+        return _IN_PLACE[SourceFormat.DOCX] if in_place else DocxBuilder()
 
     return _RENDERERS[export_format]
 

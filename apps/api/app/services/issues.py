@@ -569,8 +569,13 @@ class IssueService(TenantService):
         if block_id not in {entry.id for entry in subject}:
             raise ConflictError("Этот блок не относится к замечанию")
 
+        # Блок уже загружен выше, а под блокировкой нужны свежие значения: иначе второй редактор
+        # увидел бы прежнюю редакцию и затёр чужую правку.
         block = await self._session.scalar(
-            self.scoped(Block).where(Block.id == block_id).with_for_update()
+            self.scoped(Block)
+            .where(Block.id == block_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if block is None:
             raise NotFoundError("Блок не найден")

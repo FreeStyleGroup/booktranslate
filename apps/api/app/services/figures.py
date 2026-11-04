@@ -6,7 +6,8 @@
 сам и в автоматическом режиме.
 
 Решение по картинке нужно всегда: перевод утверждён, оставлен оригинал или надписей нет. Без него
-глава не выпускается, иначе в книге молча осталась бы непереведённая схема."""
+глава не выпускается, иначе в книге молча осталась бы непереведённая схема.
+"""
 
 import asyncio
 import hashlib
@@ -281,7 +282,11 @@ class FigureService(TenantService):
 
         chapter = await self._chapter(base.chapter_id)
         content = await self._read(picture_key(self.organization_id, base.source_sha256))
-        asset_key, digest, media_type, overflow = await self._draw(chapter, base, content, rows)
+
+        try:
+            asset_key, digest, media_type, overflow = await self._draw(chapter, base, content, rows)
+        except ExportError as error:
+            raise ConflictError(f"Рисунок не перерисовать: {error}") from error
 
         for row in rows:
             row["overflow"] = row["id"] in overflow
@@ -464,6 +469,11 @@ class FigureService(TenantService):
 
         _spend(row, reading.usage)
 
+        if not reading.regions and reading.dropped:
+            row.note = f"Надписи не приняты: {reading.dropped}. Посмотрите рисунок сами"
+            self._session.add(row)
+            return
+
         if not reading.regions:
             row.status = FigureStatus.NO_TEXT
             row.needs_human = False
@@ -506,6 +516,9 @@ class FigureService(TenantService):
 
         for region in regions:
             region["overflow"] = region["id"] in overflow
+
+        if reading.dropped:
+            note = f"Не приняты надписи: {reading.dropped}. {note or ''}".strip()
 
         row.regions = regions
         row.note = note

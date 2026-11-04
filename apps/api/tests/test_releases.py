@@ -1,7 +1,9 @@
 """Финальные версии глав, сборка книги и читательская версия."""
 
 import io
+import uuid
 import zipfile
+from types import SimpleNamespace
 
 import docx
 import pytest
@@ -10,9 +12,10 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.export.base import Rendered
+from app.services.export.base import ExportError, Rendered
 from app.services.export.docx_writer import MEDIA_TYPE, without_comments
 from app.services.export.scan import readable_text, scan
+from app.services.publication import _table
 from app.worker import once
 from tests.conftest import requires_database
 from tests.factories import Account, register
@@ -61,6 +64,47 @@ def word_file(*paragraphs: str, comment: str | None = None) -> bytes:
     document.save(buffer)
 
     return buffer.getvalue()
+
+
+def test_xml_with_entities_is_refused_instead_of_expanded() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", '<!DOCTYPE d [<!ENTITY a "много">]><d>&a;&a;&a;</d>')
+
+    with pytest.raises(ExportError):
+        readable_text(Rendered(buffer.getvalue(), MEDIA_TYPE, ".docx"))
+
+
+def test_cell_keeps_every_paragraph_and_the_block_outside_the_grid() -> None:
+    first, second, stray = (SimpleNamespace(id=uuid.uuid4()) for _ in range(3))
+    revisions = {row.id: uuid.uuid4() for row in (first, second, stray)}
+    texts = {
+        revisions[first.id]: "Первый абзац",
+        revisions[second.id]: "Второй абзац",
+        revisions[stray.id]: "Вне сетки",
+    }
+    item = SimpleNamespace(
+        content=[first, second, stray],
+        object=SimpleNamespace(
+            payload={
+                "rows": 1,
+                "cols": 2,
+                "cells": [{"row": 0, "col": 0}, {"row": 0, "col": 1}],
+            }
+        ),
+    )
+    locations = {
+        first.id: {"row": 0, "column": 0},
+        second.id: {"row": 0, "column": 0},
+        stray.id: {},
+    }
+
+    table = _table(item, revisions, texts, locations)
+
+    assert table.rows[0][0].text == "Первый абзац\nВторой абзац"
+    assert table.rows[0][1].text == ""
+    assert table.rows[1][0].text == "Вне сетки"
+    assert table.rows[1][0].colspan == 2
 
 
 def test_scan_reads_docx_split_into_runs() -> None:
@@ -142,6 +186,67 @@ async def approve_release(client: AsyncClient, account: Account, release_id: str
 
 async def approved(client: AsyncClient, account: Account, chapter_id: str) -> dict:
     return await approve_release(client, account, (await create(client, account, chapter_id))["id"])
+
+
+@requires_database
+async def test_new_place_of_a_block_does_not_change_the_release(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Новая версия мастера перезаписывает порядок и место, а выпуск остаётся как утверждён."""
+    account = await register(db_client)
+    _, chapters = await prepared(db_client, session, account)
+    release = await approved(db_client, account, chapters[0]["id"])
+    address = f"/chapter-releases/{release['id']}/export?format=docx"
+    markdown = f"/chapter-releases/{release['id']}/export?format=markdown"
+
+    def shape(content: bytes) -> list[tuple[str, str | None]]:
+        return [
+            (row.text, row.style.name if row.style is not None else None)
+            for row in docx.Document(io.BytesIO(content)).paragraphs
+        ]
+
+    before = await db_client.get(address, headers=account.headers)
+    assert before.status_code == 200, before.text
+    # Word берёт содержание по таблицам и порядку, Markdown уровень заголовка из места блока.
+    before_markdown = await db_client.get(markdown, headers=account.headers)
+    assert before_markdown.status_code == 200, before_markdown.text
+
+    await session.execute(
+        text(
+            "UPDATE blocks SET ordinal = 100000 - ordinal, "
+            "source_location = jsonb_build_object('level', 3) WHERE chapter_id = :id"
+        ),
+        {"id": chapters[0]["id"]},
+    )
+    session.expire_all()
+
+    after = await db_client.get(address, headers=account.headers)
+    assert after.status_code == 200, after.text
+    assert shape(after.content) == shape(before.content)
+    after_markdown = await db_client.get(markdown, headers=account.headers)
+    assert after_markdown.status_code == 200, after_markdown.text
+    assert after_markdown.content == before_markdown.content
+
+
+@requires_database
+async def test_regression_holds_the_chapter_where_the_repeat_stands(
+    db_client: AsyncClient, session: AsyncSession
+) -> None:
+    """Исправили в первой главе, а повтор стоит во второй: держать надо и её."""
+    account = await register(db_client)
+    _, chapters = await prepared(db_client, session, account)
+    block = row_of(
+        await blocks(db_client, account, chapters[0]["id"]), "Check the relief valve daily."
+    )
+    assert "regression_pending" not in await gate_codes(db_client, account, chapters[1]["id"])
+
+    issue = await registered(db_client, account, block)
+    await act(db_client, account, issue["id"], "confirm")
+    await edit(db_client, account, issue["id"], block, "Исправленный текст.")
+    assert "regression_pending" in await gate_codes(db_client, account, chapters[1]["id"])
+
+    await settle(db_client, account, await regression(db_client, account, issue["id"]))
+    assert "regression_pending" not in await gate_codes(db_client, account, chapters[1]["id"])
 
 
 async def gate_codes(client: AsyncClient, account: Account, chapter_id: str) -> set[str]:

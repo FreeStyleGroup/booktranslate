@@ -13,7 +13,7 @@ import io
 import os
 import tempfile
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -61,6 +61,9 @@ MEDIA_TYPES = {
     ArtifactFormat.PDF: "application/pdf",
 }
 SUFFIXES = {ArtifactFormat.DOCX: ".docx", ArtifactFormat.PDF: ".pdf"}
+
+# Сколько страниц рисуем одновременно: это работа процессора на всех заказчиков сразу.
+_PAGE_SLOTS = asyncio.Semaphore(2)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +227,9 @@ class ArtifactService(TenantService):
 
         return b"".join(parts)
 
+    def stream(self, artifact: ExportArtifact) -> AsyncIterator[bytes]:
+        return self._storage.stream(artifact.storage_key)
+
     def filename(self, release: BookRelease, artifact: ExportArtifact) -> str:
         return f"{release.code}{SUFFIXES[artifact.format]}"
 
@@ -245,9 +251,7 @@ class ArtifactService(TenantService):
         if not 1 <= page_no <= (artifact.page_count or 0):
             raise NotFoundError("Такой страницы нет")
 
-        content = await self.read(artifact)
-
-        return await asyncio.to_thread(page_png, content, page_no)
+        return await self._page_png(artifact, page_no)
 
     async def mark_page(self, artifact_id: uuid.UUID, page_no: int) -> PageAudit:
         """Страница верна. Страницу с незакрытым замечанием так не отметить."""
@@ -302,7 +306,7 @@ class ArtifactService(TenantService):
         await self._session.refresh(audit)
         await self._session.refresh(issue)
 
-        png = await asyncio.to_thread(page_png, await self.read(artifact), page_no)
+        png = await self._page_png(artifact, page_no)
         await IssueAttachments(self._session, self._context, self._storage).accept(
             issue.id,
             file=UploadFile(file=io.BytesIO(png), filename=f"page-{page_no}.png"),
@@ -312,6 +316,21 @@ class ArtifactService(TenantService):
         return audit, issue
 
     # ── внутреннее ──
+
+    async def _page_png(self, artifact: ExportArtifact, page_no: int) -> bytes:
+        """Страница картинкой. Файл читается с диска: книга в память на каждую страницу не идёт."""
+        descriptor, name = tempfile.mkstemp(prefix="booktranslate-page-")
+        path = Path(name)
+
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                async for chunk in self._storage.stream(artifact.storage_key):
+                    await asyncio.to_thread(handle.write, chunk)
+
+            async with _PAGE_SLOTS:
+                return await asyncio.to_thread(page_png, path, page_no)
+        finally:
+            path.unlink(missing_ok=True)
 
     def _anchor(self, artifact: ExportArtifact, page_no: int) -> uuid.UUID | None:
         """Блок этой страницы; если на ней их нет — ближайший выше, иначе первый после."""
@@ -372,6 +391,10 @@ class ArtifactService(TenantService):
     async def _page(self, artifact: ExportArtifact, page_no: int) -> PageAudit:
         if artifact.superseded_at is not None:
             raise ConflictError("Этот файл пересобран: проверять нужно новый")
+
+        release = await self._release(artifact.release_id)
+        if release.status is BookReleaseStatus.PASSED:
+            raise ConflictError(f"{release.code} подтверждён: аудит страниц больше не меняется")
 
         audit = await self._session.scalar(
             self.scoped(PageAudit)

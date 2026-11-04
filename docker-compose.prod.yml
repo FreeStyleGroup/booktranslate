@@ -90,7 +90,8 @@ services:
       WEB_URL: ${WEB_URL:-https://${WEB_DOMAIN}}
     volumes:
       - api_storage:/var/booktranslate/storage
-    mem_limit: 1g
+    # Сборка PDF идёт в отдельном процессе рабочего с пределом 1,5 ГБ.
+    mem_limit: 2g
     # Миграции здесь не накатываются: их накатывает API, и два процесса,
     # делающие это одновременно при старте, — это гонка на схеме базы.
     command: python -m app.worker
