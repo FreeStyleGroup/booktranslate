@@ -110,7 +110,7 @@ class QARunner(TenantService):
                 revision.text,
                 glossary=glossary,
                 kind=block.kind,
-                protected=_protected_of(block),
+                protected=protected_of(block),
                 first_use=[terms[name] for name in ruled.get(block.id, ())],
             )
 
@@ -233,7 +233,7 @@ class QARunner(TenantService):
 
         reviewed = await self._already_reviewed(list(revisions))
         book = await self._session.get(BookEdition, run.book_id)
-        neighbours = _neighbours(order)
+        neighbours = neighbourhoods(order)
         prefix = await self._prefix(run)
 
         chosen = [
@@ -355,7 +355,8 @@ class QARunner(TenantService):
         return f"{chapter.code}-" if chapter is not None and chapter.code is not None else ""
 
 
-def _protected_of(block: Block) -> list[str]:
+def protected_of(block: Block) -> list[str]:
+    """Формулы и код внутри абзаца, как они стоят в исходнике: перевод обязан их сохранить."""
     return [
         block.source_text[span.start : span.end] for span in stored_spans(block.source_location)
     ]
@@ -375,7 +376,8 @@ def _is_risky(block: Block, glossary: Glossary) -> bool:
     return any(term.mandatory for term in glossary.match(block.source_text))
 
 
-def _neighbours(order: Sequence[Block]) -> dict[uuid.UUID, Neighbourhood]:
+def neighbourhoods(order: Sequence[Block]) -> dict[uuid.UUID, Neighbourhood]:
+    """Соседи каждого блока главы и заголовок его раздела — контекст для модели."""
     context: dict[uuid.UUID, Neighbourhood] = {}
     heading: str | None = None
 

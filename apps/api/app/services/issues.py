@@ -13,7 +13,7 @@
 
 import enum
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -162,6 +162,19 @@ class FixCandidate:
 class LinkedObject:
     object: BookObject
     chapter_code: str | None
+
+
+# Решение автоматического режима видно в ленте замечания по началу записи.
+AUTOMATIC_NOTE = "Автоматический режим: "
+AUTOMATIC_CHECKED = "Автоматический режим: исправление прошло проверки. Человек его не смотрел"
+
+
+@dataclass(frozen=True, slots=True)
+class AutoResolved:
+    """Что автоматический режим решил по блоку: коды исправленных и отклонённых замечаний."""
+
+    fixed: list[str]
+    rejected: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -743,6 +756,200 @@ class IssueService(TenantService):
 
         return await self._saved(issue)
 
+    # ── автоматический режим ──
+
+    async def resolve_automatically(
+        self,
+        block_id: uuid.UUID,
+        *,
+        base_revision_id: uuid.UUID,
+        text: str | None,
+        fixed: Mapping[uuid.UUID, str],
+        rejected: Mapping[uuid.UUID, str],
+    ) -> AutoResolved:
+        """Решения автоматического режима по замечаниям одного блока.
+
+        Транзакцией управляет вызывающий. Исправленные проходят весь путь замечания: подтверждено,
+        исправлено новой редакцией, регрессия, проверено, закрыто. Отклонённые получают отказ с
+        причиной модели. Вызывающий держит это в одной точке сохранения: отказ посередине
+        откатывает блок целиком, и замечание не остаётся в промежуточном состоянии.
+
+        Решает только то, что нашла проверка и чего человек не касался: замечание, заведённое или
+        переоткрытое человеком, — его решение. Переходы те же, что у людей, и условия закрытия
+        те же. Исправление автомата в память переводов не идёт: его никто не смотрел.
+        """
+        self._context.require(*DECIDING_ROLES)
+
+        if not fixed and not rejected:
+            return AutoResolved(fixed=[], rejected=[])
+        if fixed and text is None:
+            raise InvalidInputError("Исправление без текста")
+
+        ids = sorted({*fixed, *rejected})
+        issues = {
+            issue.id: issue
+            for issue in await self._session.scalars(
+                self.scoped(Issue).where(Issue.id.in_(ids)).order_by(Issue.id).with_for_update()
+            )
+        }
+        if len(issues) != len(ids):
+            raise NotFoundError("Замечание не найдено")
+
+        for issue in issues.values():
+            self._require_live(issue)
+            if not issue.automatic or issue.status is not IssueStatus.NEW:
+                raise ConflictError(f"Замечание {issue.code} решает человек")
+            if issue.block_id != block_id:
+                raise ConflictError(f"Замечание {issue.code} относится к другому блоку")
+
+        mark = {"automatic": True}
+        user_id = self._context.user.id
+
+        for issue_id in sorted(rejected, key=lambda item: issues[item].code):
+            issue = issues[issue_id]
+            issue.reviewed_by_id = user_id
+            self._move(
+                issue,
+                IssueStatus.REJECTED,
+                note=f"{AUTOMATIC_NOTE}{_required(rejected[issue_id], 'отказа')}",
+                payload=mark,
+            )
+
+        if fixed:
+            await self._fix_automatically(
+                [
+                    issues[issue_id]
+                    for issue_id in sorted(fixed, key=lambda item: issues[item].code)
+                ],
+                {issue_id: _required(reason, "исправления") for issue_id, reason in fixed.items()},
+                block_id=block_id,
+                base_revision_id=base_revision_id,
+                text=text or "",
+                mark=mark,
+            )
+
+        await self._session.flush()
+
+        return AutoResolved(
+            fixed=sorted(issues[item].code for item in fixed),
+            rejected=sorted(issues[item].code for item in rejected),
+        )
+
+    async def _fix_automatically(
+        self,
+        targets: list[Issue],
+        reasons: Mapping[uuid.UUID, str],
+        *,
+        block_id: uuid.UUID,
+        base_revision_id: uuid.UUID,
+        text: str,
+        mark: dict[str, Any],
+    ) -> None:
+        # Сервис не может быть вторым человеком: где пространство требует двоих, решает человек.
+        if any(issue.severity is IssueSeverity.CRITICAL for issue in targets) and (
+            await self._two_person_review()
+        ):
+            raise ConflictError(
+                "Критичное замечание по настройке пространства проверяет второй человек"
+            )
+
+        block = await self._session.scalar(
+            self.scoped(Block)
+            .where(Block.id == block_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if block is None:
+            raise NotFoundError("Блок не найден")
+        if not block.active:
+            raise ConflictError("Блок больше не входит в текущую версию мастера")
+        if is_protected(block.kind, block.source_text):
+            raise ConflictError("Этот блок переносится знак в знак: править в нём нечего")
+        if block.current_revision_id != base_revision_id:
+            raise ConflictError("Текст блока изменился: исправление считалось по прежнему")
+
+        clean = text.strip()
+        if not clean:
+            raise InvalidInputError("Исправленный текст пуст")
+        if "⟦" in clean:
+            raise InvalidInputError("В тексте остался заменитель объекта")
+
+        base = await self._session.get(TranslationRevision, base_revision_id)
+        if base is None:
+            raise NotFoundError("Редакция не найдена")
+
+        if base.text == clean:
+            # Текст уже тот (например, повтор получил это исправление раньше): исправлением служит
+            # текущая редакция — если только замечание не поставлено на неё саму.
+            if any(str(base.id) in issue.discovered_revisions for issue in targets):
+                raise ConflictError("Текст не изменился: исправлять нечем")
+            revision = base
+            old_texts = {issue.id: issue.target_snapshot or "" for issue in targets}
+        else:
+            number = await self._session.scalar(
+                select(func.max(TranslationRevision.revision_no)).where(
+                    TranslationRevision.block_id == block.id
+                )
+            )
+            revision = TranslationRevision(
+                id=uuid.uuid4(),
+                organization_id=self.organization_id,
+                block_id=block.id,
+                revision_no=int(number or 0) + 1,
+                stage=RevisionStage.WORKING,
+                origin=RevisionOrigin.MODEL,
+                text=clean,
+                supersedes_id=base.id,
+                issue_id=targets[0].id,
+                created_by_id=self._context.user.id,
+            )
+            self._session.add(revision)
+            await self._session.flush()
+            block.current_revision_id = revision.id
+            old_texts = {issue.id: base.text for issue in targets}
+
+        graph = RegressionGraph(self._session, self._context, self._storage)
+        user_id = self._context.user.id
+
+        for issue in targets:
+            note = f"{AUTOMATIC_NOTE}{reasons[issue.id]}"
+
+            issue.reviewed_by_id = user_id
+            self._move(issue, IssueStatus.CONFIRMED, note=note, payload=mark)
+
+            issue.fix_revision_id = revision.id
+            issue.fixed_by_id = user_id
+            self._move(issue, IssueStatus.FIXED, revision_id=revision.id, payload=mark)
+
+            run = await graph.open_for(
+                issue,
+                block,
+                old_text=old_texts[issue.id],
+                new_text=revision.text,
+                revision_id=revision.id,
+            )
+            await graph.settle_automatically(run)
+
+            issue.fix_checked_by_id = user_id
+            self._move(
+                issue,
+                IssueStatus.VERIFIED,
+                note=AUTOMATIC_CHECKED,
+                revision_id=revision.id,
+                payload=mark,
+            )
+
+            # Условия закрытия — те же, что у людей.
+            unresolved = [
+                child.code for child in await self._children(issue.id) if child.status in OPEN
+            ]
+            if unresolved:
+                raise ConflictError("Сначала решите дочерние замечания: " + ", ".join(unresolved))
+            if await self._regression_pending(issue):
+                raise ConflictError("Регрессия по исправлению не завершена")
+
+            self._move(issue, IssueStatus.CLOSED, revision_id=revision.id, payload=mark)
+
     async def _regression_pending(self, issue: Issue) -> int:
         """Сколько обязательных мест не решено в прогоне нынешнего исправления."""
         amount = await self._session.scalar(
@@ -1062,6 +1269,7 @@ class IssueService(TenantService):
         *,
         note: str | None = None,
         revision_id: uuid.UUID | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> None:
         """Единственное место, где меняется статус."""
         self._require_live(issue)
@@ -1076,6 +1284,7 @@ class IssueService(TenantService):
             to_status=target,
             note=note,
             revision_id=revision_id,
+            payload=payload,
         )
 
     def _event(

@@ -1,5 +1,7 @@
 """Автоматический режим: тот же конвейер, остановка там, где нужен человек."""
 
+import re
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -10,20 +12,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import worker
 from app.models.audit import AuditEvent
 from app.models.autopilot import AutopilotRun
+from app.models.issue import Issue, IssueEvent, IssueEventKind, IssueStatus
+from app.models.memory import TranslationUnit
+from app.models.translation import RevisionOrigin, TranslationRevision
 from app.services.autopilot import claim_next
-from app.services.providers.base import ProviderError
+from app.services.providers.base import ProviderError, Usage
+from app.services.providers.resolver import (
+    ProblemVerdict,
+    Resolution,
+    Resolved,
+    ResolveRequest,
+    Verdict,
+)
 from app.services.providers.semantic import SemanticRequest, StubReviewer
 from app.services.source_validation import FileFacts
 from app.services.storage import LocalStorage
 from tests.conftest import requires_database
 from tests.factories import Account, create_project, epub_bytes, register
-from tests.test_chapter_translation import CHAPTER, SECOND, STOP, ready, translate
+from tests.test_chapter_translation import (
+    CHAPTER,
+    SECOND,
+    STOP,
+    Scripted,
+    ready,
+    scripted,
+    translate,
+)
 from tests.test_figures import GOOD, UNSURE, Reader, picture
 from tests.test_issues import act, registered
 from tests.test_release_gate import audit_all, rendered
 from tests.test_releases import approved, prepared
 from tests.test_reviews import start
 from tests.test_team import accept_as_new, invite, token_of
+
+# Приспособление pytest из соседнего модуля: импортировано, чтобы им пользоваться.
+__all__ = ["scripted"]
 
 STEP_LIMIT = 120
 
@@ -235,10 +258,91 @@ async def test_reviews_say_that_no_human_looked(
         assert reviews[kind]["status"] == "completed", kind
 
 
+# ── замечания проверок решает сам сервис ──
+
+
+def drop_section_numbers(items: dict[str, str]) -> dict[str, str]:
+    """Перевод теряет номер раздела в заголовке: «1 Pumps» → «Pumps». Проверка чисел это видит."""
+    return {key: re.sub(r"^(\[\w+\]) \d+ ", r"\1 ", text) for key, text in items.items()}
+
+
+class Resolver:
+    """Модель-заглушка для решения замечаний: отвечает по сценарию и запоминает запросы."""
+
+    def __init__(self, answer: Callable[[ResolveRequest], Resolution]) -> None:
+        self.calls: list[list[ResolveRequest]] = []
+        self._answer = answer
+
+    @property
+    def name(self) -> str:
+        return "test-resolver"
+
+    async def resolve(self, requests: list[ResolveRequest]) -> Resolved:
+        self.calls.append(list(requests))
+
+        return Resolved(
+            items={request.key: self._answer(request) for request in requests},
+            usage=Usage(input_tokens=10, output_tokens=5),
+        )
+
+
+@pytest.fixture
+def resolver(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Resolver]:
+    def install(answer: Callable[[ResolveRequest], Resolution]) -> Resolver:
+        model = Resolver(answer)
+        monkeypatch.setattr(worker, "get_resolver", lambda _model=None: model)
+
+        return model
+
+    return install
+
+
+def _all(request: ResolveRequest, verdict: Verdict, reason: str, text: str | None) -> Resolution:
+    return Resolution(
+        text=text,
+        verdicts={problem.key: ProblemVerdict(verdict, reason) for problem in request.problems},
+    )
+
+
+def restore(request: ResolveRequest) -> Resolution:
+    return _all(
+        request,
+        Verdict.FIX,
+        "Номер раздела восстановлен",
+        f"[{request.target_language}] {request.source_text}",
+    )
+
+
+def dismiss(request: ResolveRequest) -> Resolution:
+    return _all(request, Verdict.NOT_AN_ERROR, "Номер раздела в переводе не нужен", None)
+
+
+def unsure(request: ResolveRequest) -> Resolution:
+    return _all(request, Verdict.UNSURE, "Нужны правила издательства", None)
+
+
+def still_broken(request: ResolveRequest) -> Resolution:
+    # Исправление, которое проверки не примут: номера раздела по-прежнему нет.
+    return _all(request, Verdict.FIX, "Переведено заново", f"[{request.target_language}] Раздел")
+
+
+async def automatic_issues(session: AsyncSession) -> list[Issue]:
+    return list(
+        await session.scalars(
+            select(Issue)
+            .where(Issue.automatic.is_(True))
+            .order_by(Issue.code)
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
 @requires_database
-async def test_open_critical_issue_stops_and_resume_continues(
-    db_client: AsyncClient, session: AsyncSession
+async def test_issue_filed_by_a_person_waits_for_a_person(
+    db_client: AsyncClient, session: AsyncSession, resolver: Callable[..., Resolver]
 ) -> None:
+    """Заведённое человеком — его решение: сервис его не трогает и модели не отдаёт."""
+    model = resolver(restore)
     account = await register(db_client)
     _, chapters = await prepared(db_client, session, account)
     # Книга уже прошла редактуру руками: автомат подхватит её с нынешнего состояния.
@@ -259,18 +363,201 @@ async def test_open_critical_issue_stops_and_resume_continues(
     assert run["status"] == "waiting_human"
     assert [row["issue_id"] for row in run["waiting"]] == [issue["id"]]
     assert issue["code"] in run["waiting"][0]["message"]
+    assert "Потеряно число" in run["waiting"][0]["message"]
     assert run["stage"] != "done"
+    assert all(
+        problem.key != issue["code"]
+        for call in model.calls
+        for request in call
+        for problem in request.problems
+    )
 
-    # Закрывать замечание сервис не умеет: продолжение без решения остановится снова.
+    # «Продолжить» без решения ничего бы не продолжило: сервер говорит, что сделать.
+    resumed = await db_client.post(
+        f"/autopilot-runs/{run['id']}/resume", headers=account.headers, json={}
+    )
+    assert resumed.status_code == 409, resumed.text
+    assert issue["code"] in resumed.json()["detail"]
+
+    await act(db_client, account, issue["id"], "reject", note="Проверено, не ошибка")
     resumed = await db_client.post(
         f"/autopilot-runs/{run['id']}/resume", headers=account.headers, json={}
     )
     assert resumed.status_code == 200, resumed.text
     run = await drive(session, db_client, account, book_id)
+    assert run["status"] == "done", run["waiting"]
+
+
+@requires_database
+async def test_issue_found_by_checks_is_fixed_by_the_service(
+    db_client: AsyncClient,
+    session: AsyncSession,
+    scripted: Callable[..., Scripted],
+    resolver: Callable[..., Resolver],
+) -> None:
+    scripted(drop_section_numbers)
+    model = resolver(restore)
+    account = await register(db_client)
+    _, book_id = await book_with(db_client, account)
+
+    await launch(db_client, account, book_id)
+    run = await drive(session, db_client, account, book_id)
+    assert run["status"] == "done", run["waiting"]
+
+    issues = await automatic_issues(session)
+    assert len(issues) == 2  # заголовки обеих глав
+    assert {issue.status for issue in issues} == {IssueStatus.CLOSED}
+    assert {problem.key for call in model.calls for r in call for problem in r.problems} == {
+        issue.code for issue in issues
+    }
+
+    for issue in issues:
+        events = list(
+            await session.scalars(
+                select(IssueEvent)
+                .where(
+                    IssueEvent.issue_id == issue.id,
+                    IssueEvent.kind == IssueEventKind.STATUS_CHANGED,
+                )
+                .order_by(IssueEvent.created_at)
+            )
+        )
+        assert [event.to_status for event in events] == [
+            IssueStatus.CONFIRMED,
+            IssueStatus.FIXED,
+            IssueStatus.VERIFIED,
+            IssueStatus.CLOSED,
+        ]
+        assert all(event.payload.get("automatic") is True for event in events)
+        assert "Номер раздела восстановлен" in (events[0].note or "")
+
+        fix = await session.get(TranslationRevision, issue.fix_revision_id)
+        assert fix is not None
+        assert fix.origin is RevisionOrigin.MODEL
+        assert re.match(r"^\[\w+\] \d+ ", fix.text)
+
+    # Исправление автомата никто не смотрел: в память переводов как проверенное оно не идёт.
+    verified = await session.scalar(
+        select(TranslationUnit).where(TranslationUnit.verified.is_(True)).limit(1)
+    )
+    assert verified is None
+
+    resolved = list(
+        await session.scalars(
+            select(AuditEvent).where(AuditEvent.kind == "autopilot.issues_resolved")
+        )
+    )
+    assert resolved and all(row.payload["model"] == "test-resolver" for row in resolved)
+
+    stored = await session.scalar(select(AutopilotRun).execution_options(populate_existing=True))
+    assert stored is not None and stored.input_tokens >= 10
+
+
+@requires_database
+async def test_false_alarm_is_rejected_with_the_models_reason(
+    db_client: AsyncClient,
+    session: AsyncSession,
+    scripted: Callable[..., Scripted],
+    resolver: Callable[..., Resolver],
+) -> None:
+    scripted(drop_section_numbers)
+    resolver(dismiss)
+    account = await register(db_client)
+    _, book_id = await book_with(db_client, account)
+
+    await launch(db_client, account, book_id)
+    run = await drive(session, db_client, account, book_id)
+    assert run["status"] == "done", run["waiting"]
+
+    issues = await automatic_issues(session)
+    assert issues and {issue.status for issue in issues} == {IssueStatus.REJECTED}
+
+    rejection = await session.scalar(
+        select(IssueEvent).where(
+            IssueEvent.issue_id == issues[0].id, IssueEvent.to_status == IssueStatus.REJECTED
+        )
+    )
+    assert rejection is not None
+    assert rejection.note == "Автоматический режим: Номер раздела в переводе не нужен"
+    assert rejection.payload["automatic"] is True
+
+    # Отказ текст не меняет.
+    changed = await session.scalar(
+        select(TranslationRevision)
+        .where(TranslationRevision.origin == RevisionOrigin.MODEL)
+        .where(TranslationRevision.issue_id.is_not(None))
+        .limit(1)
+    )
+    assert changed is None
+
+
+@requires_database
+async def test_fix_rejected_by_checks_is_retried_once_then_stops(
+    db_client: AsyncClient,
+    session: AsyncSession,
+    scripted: Callable[..., Scripted],
+    resolver: Callable[..., Resolver],
+) -> None:
+    scripted(drop_section_numbers)
+    model = resolver(still_broken)
+    account = await register(db_client)
+    _, book_id = await book_with(db_client, account)
+
+    await launch(db_client, account, book_id)
+    run = await drive(session, db_client, account, book_id)
     assert run["status"] == "waiting_human"
 
-    await act(db_client, account, issue["id"], "reject", note="Проверено, не ошибка")
-    await db_client.post(f"/autopilot-runs/{run['id']}/resume", headers=account.headers, json={})
+    issues = await automatic_issues(session)
+    assert {issue.status for issue in issues} == {IssueStatus.NEW}
+
+    # Две попытки на каждый блок, вторая — с объяснением, почему первую не приняли.
+    attempts: dict[str, list[ResolveRequest]] = {}
+    for call in model.calls:
+        for request in call:
+            attempts.setdefault(request.key, []).append(request)
+    assert all(len(rows) == 2 for rows in attempts.values()), attempts
+    assert all(rows[0].previous_attempt is None for rows in attempts.values())
+    assert all(
+        "Проверки не приняли исправление" in (rows[1].previous_attempt or "")
+        for rows in attempts.values()
+    )
+
+    # Остановка одна на всю книгу: замечания обеих глав сразу.
+    assert {row["issue_id"] for row in run["waiting"]} == {str(issue.id) for issue in issues}
+    assert len({row["chapter_id"] for row in run["waiting"]}) == 2
+
+
+@requires_database
+async def test_unsure_answers_stop_and_resume_waits_for_decisions(
+    db_client: AsyncClient,
+    session: AsyncSession,
+    scripted: Callable[..., Scripted],
+    resolver: Callable[..., Resolver],
+) -> None:
+    scripted(drop_section_numbers)
+    resolver(unsure)
+    account = await register(db_client)
+    _, book_id = await book_with(db_client, account)
+
+    await launch(db_client, account, book_id)
+    run = await drive(session, db_client, account, book_id)
+    assert run["status"] == "waiting_human"
+    assert all("в переводе нет чисел" in row["message"] for row in run["waiting"])
+
+    issues = await automatic_issues(session)
+    resumed = await db_client.post(
+        f"/autopilot-runs/{run['id']}/resume", headers=account.headers, json={}
+    )
+    assert resumed.status_code == 409
+    assert all(issue.code in resumed.json()["detail"] for issue in issues)
+
+    for issue in issues:
+        await act(db_client, account, str(issue.id), "reject", note="Номер не нужен")
+
+    resumed = await db_client.post(
+        f"/autopilot-runs/{run['id']}/resume", headers=account.headers, json={}
+    )
+    assert resumed.status_code == 200, resumed.text
     run = await drive(session, db_client, account, book_id)
     assert run["status"] == "done", run["waiting"]
 

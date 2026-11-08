@@ -99,8 +99,9 @@ export function AutopilotPanel({
         <>
           <p className="tile__note">
             Сервис сам проведёт книгу через весь конвейер: главы, термины, перевод, проверки, рисунки,
-            выпуск, DOCX и PDF. Каждое решение записывается в журнал. Там, где нельзя решить уверенно,
-            он остановится и покажет, что нужно от вас. Закрывать замечания сам он не будет.
+            выпуск, DOCX и PDF. Замечания проверок он решает сам: исправляет перевод или объясняет,
+            почему это не ошибка, — каждое решение видно в реестре и журнале. Остановится он только на
+            том, что решить не смог, и покажет это сразу по всей книге.
           </p>
 
           {canRun && (
@@ -180,21 +181,34 @@ export function AutopilotPanel({
             <span>Сервис остановился: это решает человек.</span>
           </p>
 
+          {run.waiting.some((item) => item.issue_id !== null) && (
+            <p className="tile__note">
+              Эти замечания модель не смогла ни исправить, ни обосновать. Откройте каждое: ложную
+              тревогу отклоните, ошибку подтвердите, исправьте и закройте. Потом нажмите
+              «Решено, продолжить».
+            </p>
+          )}
+
           <ul className="bk-gate__list">
             {run.waiting.map((item, index) => (
               <li key={`${item.code}-${index}`}>
                 {item.issue_id !== null ? (
-                  <Link href={`/app/issues/${item.issue_id}`}>{item.message}</Link>
+                  <Link className="wk-link" href={`/app/issues/${item.issue_id}`}>
+                    {item.message}
+                  </Link>
                 ) : item.figures && item.chapter_id !== null ? (
-                  <Link href={`/app/books/${bookId}/chapters/${item.chapter_id}/figures`}>
+                  <Link
+                    className="wk-link"
+                    href={`/app/books/${bookId}/chapters/${item.chapter_id}/figures`}
+                  >
                     {item.message}
                   </Link>
                 ) : item.release_id !== null ? (
-                  <Link href={`/app/books/${bookId}/releases/${item.release_id}`}>
+                  <Link className="wk-link" href={`/app/books/${bookId}/releases/${item.release_id}`}>
                     {item.message}
                   </Link>
                 ) : item.chapter_id !== null ? (
-                  <Link href={`/app/books/${bookId}/chapters/${item.chapter_id}`}>
+                  <Link className="wk-link" href={`/app/books/${bookId}/chapters/${item.chapter_id}`}>
                     {item.message}
                   </Link>
                 ) : (
@@ -230,6 +244,16 @@ export function AutopilotPanel({
                 >
                   Решено, продолжить
                 </button>
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    act(() => cancelAutopilot(bookId, run.id), "Автоматический режим остановлен")
+                  }
+                >
+                  Остановить
+                </button>
               </div>
             </div>
           )}
@@ -253,7 +277,7 @@ export function AutopilotPanel({
         </>
       )}
 
-      {canRun && (running || run?.status === "waiting_human") && run !== null && (
+      {canRun && running && run !== null && (
         <div className="wk-actions">
           <button
             className="btn btn--ghost"

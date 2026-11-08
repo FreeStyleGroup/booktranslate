@@ -53,6 +53,7 @@ from app.services.providers import (
     STUB,
     get_figure_reader,
     get_provider,
+    get_resolver,
     get_reviewer,
     provider_info,
     semantic_info,
@@ -493,7 +494,7 @@ async def advance_autopilot(session: AsyncSession) -> None:
     service = AutopilotService(session, context, get_storage())
 
     try:
-        await service.advance(run_id, provider=get_provider(model))
+        await service.advance(run_id, provider=get_provider(model), resolver=get_resolver(model))
     except (SQLAlchemyError, OSError):
         # База или диск: срок прогона истечёт, и следующий заход попробует снова.
         await session.rollback()

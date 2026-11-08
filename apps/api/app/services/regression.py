@@ -26,13 +26,13 @@ from app.models.regression import (
     RegressionRun,
     RegressionStatus,
 )
-from app.models.review import ReviewCoverage, ReviewKind, ReviewRun, ReviewStatus
 from app.models.translation import RevisionOrigin, RevisionStage, TranslationRevision
 from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.context import RequestContext
 from app.services.errors import ConflictError, InvalidInputError, NotFoundError
 from app.services.issues import REGISTERING_ROLES, IssueService
+from app.services.regression_graph import approved_revisions
 from app.services.storage import ObjectStorage
 
 
@@ -291,21 +291,7 @@ class RegressionService(TenantService):
 
     async def _approved(self, revision_ids: Sequence[uuid.UUID]) -> set[uuid.UUID]:
         """Редакции, прошедшие завершённую финальную сверку: их без решения не перезаписывают."""
-        if not revision_ids:
-            return set()
-
-        rows = await self._session.scalars(
-            select(ReviewCoverage.revision_id)
-            .join(ReviewRun, ReviewRun.id == ReviewCoverage.run_id)
-            .where(
-                ReviewRun.organization_id == self.organization_id,
-                ReviewRun.kind == ReviewKind.FINAL_COMPARE,
-                ReviewRun.status == ReviewStatus.COMPLETED,
-                ReviewCoverage.revision_id.in_(revision_ids),
-            )
-        )
-
-        return {row for row in rows if row is not None}
+        return await approved_revisions(self._session, self.organization_id, revision_ids)
 
     async def _next_numbers(self, block_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
         rows = await self._session.execute(

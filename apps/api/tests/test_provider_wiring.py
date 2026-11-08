@@ -133,6 +133,7 @@ async def test_check_of_all_models_reports_each_and_does_not_stop_at_a_refusal(
 
     monkeypatch.setattr(cli, "_probe_translation", works)
     monkeypatch.setattr(cli, "_probe_review", works)
+    monkeypatch.setattr(cli, "_probe_resolve", works)
     monkeypatch.setattr(cli, "_probe_figure", refuses)
 
     assert await cli.check_all_models() is False
