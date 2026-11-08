@@ -43,9 +43,11 @@ from app.services.providers import (
     get_figure_reader,
     get_lookup,
     get_provider,
+    get_resolver,
     get_reviewer,
     keys_of,
 )
+from app.services.providers.resolver import Problem, ResolveRequest
 from app.services.providers.semantic import SemanticRequest
 
 # Материал для пробного перевода. Две короткие строки с числом, единицей и
@@ -225,6 +227,35 @@ async def _probe_review(model: str) -> tuple[str, Usage]:
     return f"находок: {sum(len(items) for items in answer.items.values())}", answer.usage
 
 
+async def _probe_resolve(model: str) -> tuple[str, Usage]:
+    """Решение замечания автоматическим режимом: перевод потерял число."""
+    answer = await get_resolver(model).resolve(
+        [
+            ResolveRequest(
+                key="CH01-B0001",
+                source_text="Tighten the bolts to 25 Nm.",
+                target_text="Затяните болты.",
+                source_language="en",
+                target_language="ru",
+                problems=[
+                    Problem(
+                        key="BK01-CH01-ERR-0001",
+                        description="в переводе нет чисел: 25",
+                        category="number",
+                        severity="critical",
+                    )
+                ],
+            )
+        ]
+    )
+    resolution = answer.items["CH01-B0001"]
+    verdict = resolution.verdicts["BK01-CH01-ERR-0001"].verdict.value
+
+    return f"решение: {verdict}" + (
+        f" → {resolution.text}" if resolution.text else ""
+    ), answer.usage
+
+
 async def _probe_figure(model: str) -> tuple[str, Usage]:
     reading = await get_figure_reader(model).read(_probe_picture(), "image/png")
 
@@ -232,11 +263,11 @@ async def _probe_figure(model: str) -> tuple[str, Usage]:
 
 
 async def check_all_models() -> bool:
-    """Каждая модель каталога: перевод, смысловая сверка и чтение рисунка.
+    """Каждая модель каталога: перевод, смысловая сверка, решение замечания и чтение рисунка.
 
     Имя в каталоге ещё не значит, что шлюз принимает модель и все виды запросов к ней. Запросы идут
     через те же провайдеры, что и работа с книгой. Один отказ не прерывает проверку: нужен весь
-    список сразу. Это платно, хотя и копейки: по три коротких запроса на модель.
+    список сразу. Это платно, хотя и копейки: по четыре коротких запроса на модель.
     """
     if get_settings().translation_provider != CLAUDE:
         print("Перевод идёт заглушкой: TRANSLATION_PROVIDER=claude включает модель.")
@@ -245,6 +276,7 @@ async def check_all_models() -> bool:
     probes: tuple[tuple[str, Callable[[str], Awaitable[tuple[str, Usage]]]], ...] = (
         ("перевод", _probe_translation),
         ("сверка", _probe_review),
+        ("замечание", _probe_resolve),
         ("рисунок", _probe_figure),
     )
     all_good = True

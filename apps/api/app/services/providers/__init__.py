@@ -43,6 +43,12 @@ from app.services.providers.lookup import (
     Reference,
     TermLookupProvider,
 )
+from app.services.providers.resolver import (
+    RESOLVE_PROMPT_VERSION,
+    ClaudeResolver,
+    IssueResolver,
+    StubResolver,
+)
 from app.services.providers.semantic import (
     SEMANTIC_PROMPT_VERSION,
     ClaudeReviewer,
@@ -230,6 +236,34 @@ def get_reviewer(model: str | None = None) -> SemanticReviewer:
 
 
 @lru_cache
+def get_resolver(model: str | None = None) -> IssueResolver:
+    """Решение замечаний в автоматическом режиме — той же моделью, что перевод."""
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return StubResolver()
+
+    return ClaudeResolver(
+        _client(),
+        _settings_for(model),
+    )
+
+
+def resolver_info(model: str | None = None) -> ProviderInfo:
+    """Чем решались замечания — для журнала решений."""
+    settings = get_settings()
+
+    if settings.translation_provider != CLAUDE:
+        return ProviderInfo(provider=STUB, model=STUB, prompt_version=STUB)
+
+    return ProviderInfo(
+        provider=CLAUDE,
+        model=model or settings.anthropic_model,
+        prompt_version=RESOLVE_PROMPT_VERSION,
+    )
+
+
+@lru_cache
 def get_lookup() -> TermLookupProvider:
     """Источник справок о терминах.
 
@@ -261,8 +295,10 @@ __all__ = [
     "STUB",
     "ClaudeLookup",
     "ClaudeProvider",
+    "ClaudeResolver",
     "ClaudeSettings",
     "Explanation",
+    "IssueResolver",
     "LookupRequest",
     "LookupSettings",
     "Neighbourhood",
@@ -272,6 +308,7 @@ __all__ = [
     "ProviderInfo",
     "Reference",
     "StubProvider",
+    "StubResolver",
     "TermLookupProvider",
     "Translated",
     "TranslationProvider",
@@ -280,9 +317,11 @@ __all__ = [
     "get_lookup",
     "get_provider",
     "get_provider_factory",
+    "get_resolver",
     "get_reviewer",
     "semantic_info",
     "keys_of",
     "provider_info",
     "provider_name",
+    "resolver_info",
 ]

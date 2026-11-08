@@ -12,10 +12,11 @@
 
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block import Block
@@ -30,7 +31,9 @@ from app.models.regression import (
     RegressionRun,
     RegressionStatus,
 )
-from app.models.translation import TranslationRevision
+from app.models.review import ReviewCoverage, ReviewKind, ReviewRun, ReviewStatus
+from app.models.translation import RevisionOrigin, RevisionStage, TranslationRevision
+from app.services.audit import AuditService
 from app.services.base import TenantService
 from app.services.book_objects import ObjectService, PlacedObject
 from app.services.context import RequestContext
@@ -42,6 +45,40 @@ from app.services.terminology_gate import TerminologyGate
 # Потолок на один вид связи: термин из каждого абзаца не должен превращать прогон в обход книги.
 # Порядок в запросах задан: при потолке в прогон должны попадать одни и те же места.
 ITEM_CEILING = 200
+
+# Причины решений автоматического режима: их читает человек в списке мест регрессии.
+AUTO_PROPAGATED = "Автоматический режим: повтор того же текста получил то же исправление"
+AUTO_SAME = "Автоматический режим: здесь уже тот же исправленный текст"
+AUTO_DIFFERENT = (
+    "Автоматический режим: перевод повтора отличается от исправленного — оставлен как есть, "
+    "его проверяют свои проверки"
+)
+AUTO_FINAL = "Автоматический режим: здесь утверждённый текст — без человека он не перезаписывается"
+AUTO_UNSEEN = (
+    "Автоматический режим: связанное место человек не смотрел — его текст проверяют свои проверки"
+)
+
+
+async def approved_revisions(
+    session: AsyncSession, organization_id: uuid.UUID, revision_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Редакции, прошедшие завершённую финальную сверку: их без решения не перезаписывают."""
+    if not revision_ids:
+        return set()
+
+    rows = await session.scalars(
+        select(ReviewCoverage.revision_id)
+        .join(ReviewRun, ReviewRun.id == ReviewCoverage.run_id)
+        .where(
+            ReviewRun.organization_id == organization_id,
+            ReviewRun.kind == ReviewKind.FINAL_COMPARE,
+            ReviewRun.status == ReviewStatus.COMPLETED,
+            ReviewCoverage.revision_id.in_(revision_ids),
+        )
+    )
+
+    return {row for row in rows if row is not None}
+
 
 _HEADING_LABEL = re.compile(r"^\s*(\d+(?:\.\d+)*)\b")
 
@@ -144,6 +181,135 @@ class RegressionGraph(TenantService):
             )
 
         return run
+
+    async def settle_automatically(self, run: RegressionRun) -> None:
+        """Автоматический режим решает места сам; транзакцией управляет вызывающий.
+
+        Повтор с дословно тем же прежним текстом получает то же исправление: это тот же перевод тех
+        же слов. Остальные места отмечаются «не затронуто» с причиной — человек их не смотрел, и
+        запись говорит об этом прямо. Кандидат в финальный текст и утверждённая редакция не
+        перезаписываются.
+        """
+        await self._session.flush()
+
+        items = list(
+            await self._session.scalars(
+                self.scoped(RegressionItem)
+                .where(
+                    RegressionItem.run_id == run.id,
+                    RegressionItem.decision == RegressionDecision.PENDING,
+                )
+                .order_by(RegressionItem.id)
+            )
+        )
+        repeats = [
+            item
+            for item in items
+            if item.kind is DependencyKind.SAME_SOURCE_REPEAT and item.block_id is not None
+        ]
+
+        blocks = {
+            block.id: block
+            for block in await self._session.scalars(
+                self.scoped(Block)
+                .where(Block.id.in_([item.block_id for item in repeats]))
+                .order_by(Block.id)
+                .with_for_update()
+            )
+        }
+        currents = {
+            revision.id: revision
+            for revision in await self._session.scalars(
+                self.scoped(TranslationRevision).where(
+                    TranslationRevision.id.in_(
+                        [
+                            block.current_revision_id
+                            for block in blocks.values()
+                            if block.current_revision_id is not None
+                        ]
+                    )
+                )
+            )
+        }
+        approved = await approved_revisions(self._session, self.organization_id, list(currents))
+        user_id = self._context.user.id
+
+        for item in items:
+            item.decided_by_id = user_id
+
+            if item not in repeats:
+                item.decision = RegressionDecision.NOT_AFFECTED
+                item.note = (
+                    AUTO_DIFFERENT
+                    if item.kind is DependencyKind.SAME_SOURCE_REPEAT
+                    else AUTO_UNSEEN
+                )
+                continue
+
+            block = blocks[item.block_id]  # type: ignore[index]
+            current = currents.get(block.current_revision_id)  # type: ignore[arg-type]
+
+            if current is not None and current.text == item.proposed_text:
+                item.decision = RegressionDecision.NOT_AFFECTED
+                item.note = AUTO_SAME
+                continue
+
+            # Прежний текст повтора был другим — контекст мог быть другим (см. начало модуля).
+            if (
+                current is None
+                or not item.safe
+                or item.proposed_text is None
+                or block.current_revision_id != item.base_revision_id
+            ):
+                item.decision = RegressionDecision.NOT_AFFECTED
+                item.note = AUTO_DIFFERENT
+                continue
+
+            if current.stage is RevisionStage.FINAL_CANDIDATE or current.id in approved:
+                item.decision = RegressionDecision.NOT_AFFECTED
+                item.note = AUTO_FINAL
+                continue
+
+            number = await self._session.scalar(
+                select(func.max(TranslationRevision.revision_no)).where(
+                    TranslationRevision.block_id == block.id
+                )
+            )
+            revision = TranslationRevision(
+                id=uuid.uuid4(),
+                organization_id=self.organization_id,
+                block_id=block.id,
+                revision_no=int(number or 0) + 1,
+                stage=RevisionStage.WORKING,
+                origin=RevisionOrigin.MODEL,
+                text=item.proposed_text,
+                supersedes_id=current.id,
+                created_by_id=user_id,
+            )
+            self._session.add(revision)
+            await self._session.flush()
+
+            block.current_revision_id = revision.id
+            item.decision = RegressionDecision.PROPAGATED
+            item.applied_revision_id = revision.id
+            item.note = AUTO_PROPAGATED
+
+        run.status = RegressionStatus.COMPLETED
+
+        AuditService(self._session, self._context).record(
+            kind="regression.settled_automatically",
+            subject_type="regression_run",
+            subject_id=run.id,
+            payload={
+                "automatic": True,
+                "propagated": sum(
+                    1 for item in items if item.decision is RegressionDecision.PROPAGATED
+                ),
+                "not_affected": sum(
+                    1 for item in items if item.decision is RegressionDecision.NOT_AFFECTED
+                ),
+            },
+        )
 
     # ── виды связей ──
 

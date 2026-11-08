@@ -8,10 +8,16 @@
 следующий шаг. Долгое (перевод, проверки, сборка файлов) ставится обычным заданием в очередь,
 следующий заход увидит результат. Падение рабочего поэтому ничего не ломает.
 
-Сервис не решает за человека то, в чём не уверен. Незакрытое критичное или серьёзное замечание,
-неразборчивая надпись, превышение сметы и любой отказ останавливают прогон, и экран показывает, что
-именно ждёт решения. Закрывать замечания сервис не умеет намеренно: иначе «без заморочек» значило бы
-«молча выпустили с ошибкой».
+Замечания проверок сервис решает сам (решение заказчика 08.11.2026): модель исправляет перевод или
+объясняет, почему это не ошибка. Исправление принимается, только если его не отвергли те же
+проверки, и проходит весь путь замечания; объяснение становится причиной отказа в реестре. Решает
+он только то, что нашли проверки и чего не касался человек: заведённое или переоткрытое человеком —
+решение человека.
+
+Сервис не решает за человека то, в чём не уверен. Замечание, которое модель за две попытки не смогла
+ни исправить, ни обосновать, неразборчивая надпись, превышение сметы и любой отказ останавливают
+прогон, и экран показывает, что именно ждёт решения. Замечания собираются по всей книге: человек
+видит их сразу, а не по одному на главу. Известная ошибка в выпуск не уходит.
 """
 
 import asyncio
@@ -26,11 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.autopilot import AutopilotRun, AutopilotStatus
+from app.models.block import Block
 from app.models.book import BookEdition, SourceValidationResult
 from app.models.chapter import BoundaryStatus, Chapter
 from app.models.document import Document
 from app.models.figure import FigureStatus
-from app.models.issue import Issue, IssueSeverity
+from app.models.issue import Issue, IssueSeverity, IssueStatus
 from app.models.job import LIVE, JobState, TranslationJob
 from app.models.master import ChapterMaster
 from app.models.organization import Role
@@ -38,6 +45,7 @@ from app.models.qa import QAKind
 from app.models.release import ArtifactFormat, BookRelease, BookReleaseStatus, PageStatus
 from app.models.review import ReviewKind, ReviewRun, ReviewStatus
 from app.models.terminology import TermCandidateStatus
+from app.models.translation import TranslationRevision
 from app.services.artifacts import ArtifactService
 from app.services.assembly import BLOCKER, AssemblyService
 from app.services.audit import AuditService
@@ -45,24 +53,43 @@ from app.services.base import TenantService
 from app.services.chapter_approval import ChapterApprovalService
 from app.services.chapter_detection import ChapterDetectionService
 from app.services.chapter_releases import ChapterReleaseService
+from app.services.checks import run_checks
 from app.services.context import RequestContext
-from app.services.errors import ConflictError, DomainError, NotFoundError
+from app.services.errors import ConflictError, DomainError, InvalidInputError, NotFoundError
 from app.services.export.base import ExportError
 from app.services.export.pdf import STUB_RENDERER, page_is_blank
 from app.services.figures import FigureService
+from app.services.glossary import Glossary, GlossaryService
 from app.services.glossary_versions import GlossaryVersionService
 from app.services.issue_status import OPEN
+from app.services.issues import IssueService
 from app.services.masters import MasterService
 from app.services.profiling import EstimateService
 from app.services.providers import provider_name
-from app.services.providers.base import ProviderError, TranslationProvider, TranslationRequest
+from app.services.providers.base import (
+    Neighbourhood,
+    ProviderError,
+    TranslationProvider,
+    TranslationRequest,
+    Usage,
+)
+from app.services.providers.resolver import (
+    RESOLVE_PROMPT_VERSION,
+    IssueResolver,
+    Problem,
+    Resolution,
+    ResolveRequest,
+    Verdict,
+)
 from app.services.qa import QAService
+from app.services.qa_runner import neighbourhoods, protected_of
 from app.services.release_gate import ReleaseGateService
 from app.services.reviews import ReviewService
 from app.services.source_validation import SourceValidationService
 from app.services.storage import ObjectStorage
 from app.services.terminology import Decision, TerminologyService
 from app.services.terminology_gate import TerminologyGate
+from app.services.translation_runner import is_protected
 from app.services.translation_runs import ChapterTranslationService
 from app.services.workspace import WorkspaceSettingsService
 
@@ -72,6 +99,22 @@ LEASE = timedelta(minutes=10)
 
 # Сколько раз пробуем один и тот же шаг. Дальше — к человеку: повторять без конца значит платить.
 MAX_ATTEMPTS = 2
+
+# Что держит книгу: то же, что держит выпуск.
+BLOCKING = (IssueSeverity.CRITICAL, IssueSeverity.MAJOR)
+
+# Сколько раз один блок исправляется автоматически. Каждое исправление проверяется заново и может
+# дать новое замечание: без потолка исправление и проверка гоняли бы друг друга бесконечно.
+MAX_FIX_ROUNDS = 2
+
+# Блоков в одном запросе к модели при решении замечаний.
+RESOLVE_BATCH = 8
+
+# Сколько замечаний перечислить в остановке: остальные — в реестре.
+STOP_LIST_LIMIT = 50
+
+# Описание замечания в строке остановки — коротко: полностью оно в карточке.
+DESCRIPTION_LIMIT = 160
 
 TERM_MIN_FREQUENCY_DEFAULT = 5
 EMPTY_GLOSSARY_REASON = "Автоматический режим: терминов выше порога в книге не нашлось"
@@ -123,6 +166,24 @@ def _reason(
         "figures": figures,
         "release_id": str(release_id) if release_id is not None else None,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class _Outcome:
+    """Чем кончилось решение по блоку: повторить (и почему) или нет; появилась ли новая редакция."""
+
+    retry: str | None = None
+    fixed: bool = False
+
+
+def _short(text: str) -> str:
+    """Описание замечания в строке остановки: начало, по границе слова."""
+    clean = " ".join(text.split())
+    if len(clean) <= DESCRIPTION_LIMIT:
+        return clean
+
+    cut = clean[:DESCRIPTION_LIMIT].rsplit(" ", 1)[0].rstrip(",.;:—-")
+    return f"{cut}…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,12 +272,18 @@ class AutopilotService(TenantService):
         return AutopilotView(run=run, chapters_total=len(chapters), chapters_done=done)
 
     async def resume(self, run_id: uuid.UUID, *, budget_usd: float | None = None) -> AutopilotRun:
-        """Человек решил: продолжить. Счётчики повторов обнуляются, смета при желании новая."""
+        """Человек решил: продолжить. Счётчики повторов обнуляются, смета при желании новая.
+
+        Замечание, на котором сервис остановился, должно быть решено: иначе следующий заход встал
+        бы на нём же, и «продолжить» ничего бы не продолжило.
+        """
         self._context.require(*RUNNING_ROLES)
 
         run = await self._run(run_id)
         if run.status is not AutopilotStatus.WAITING_HUMAN:
             raise ConflictError("Прогон не ждёт решения")
+
+        await self._require_decided(run)
 
         run.status = AutopilotStatus.RUNNING
         run.waiting = []
@@ -229,6 +296,32 @@ class AutopilotService(TenantService):
         await self._session.commit()
 
         return run
+
+    async def _require_decided(self, run: AutopilotRun) -> None:
+        wanted = [uuid.UUID(row["issue_id"]) for row in run.waiting if row.get("issue_id")]
+        if not wanted:
+            return
+
+        codes = list(
+            await self._session.scalars(
+                select(Issue.code)
+                .where(
+                    Issue.organization_id == self.organization_id,
+                    Issue.id.in_(wanted),
+                    Issue.status.in_(OPEN),
+                    Issue.archived_at.is_(None),
+                )
+                .order_by(Issue.code)
+            )
+        )
+        if not codes:
+            return
+
+        shown = ", ".join(codes[:5]) + (f" и ещё {len(codes) - 5}" if len(codes) > 5 else "")
+        raise ConflictError(
+            f"Сначала решите замечания: {shown}. Откройте каждое: ложную тревогу отклоните, "
+            "ошибку подтвердите, исправьте и закройте"
+        )
 
     async def cancel(self, run_id: uuid.UUID) -> AutopilotRun:
         self._context.require(*RUNNING_ROLES)
@@ -245,12 +338,18 @@ class AutopilotService(TenantService):
 
         return run
 
-    async def advance(self, run_id: uuid.UUID, *, provider: TranslationProvider) -> None:
+    async def advance(
+        self,
+        run_id: uuid.UUID,
+        *,
+        provider: TranslationProvider,
+        resolver: IssueResolver,
+    ) -> None:
         """Один заход: дойти до ближайшего ожидания или остановки."""
         run = await self._run(run_id)
 
         try:
-            await self._drive(run, provider)
+            await self._drive(run, provider, resolver)
         except WaitingForQueueError:
             pass
         except RunStoppedError:
@@ -272,7 +371,9 @@ class AutopilotService(TenantService):
 
     # ── шаги ──
 
-    async def _drive(self, run: AutopilotRun, provider: TranslationProvider) -> None:
+    async def _drive(
+        self, run: AutopilotRun, provider: TranslationProvider, resolver: IssueResolver
+    ) -> None:
         book = await self._book(run.book_id)
 
         await self._mark(run, "structure")
@@ -290,8 +391,15 @@ class AutopilotService(TenantService):
 
         await self._budget(run, chapters)
 
+        # Сначала вся книга до проверок и решений: то, что сервис решить не смог, человек видит
+        # сразу по всем главам, а не по одной за остановку.
         for chapter in chapters:
-            await self._chapter(run, chapter)
+            await self._prepare(run, book, chapter, resolver)
+
+        await self._stop_on_issues(chapters)
+
+        for chapter in chapters:
+            await self._finish_chapter(run, chapter)
 
         await self._mark(run, "release")
         release = await self._release(run, book)
@@ -509,7 +617,10 @@ class AutopilotService(TenantService):
         # Сметы нет только там, где платить не за что.
         return found.estimate.usd if found.estimate is not None else 0.0
 
-    async def _chapter(self, run: AutopilotRun, chapter: Chapter) -> None:
+    async def _prepare(
+        self, run: AutopilotRun, book: BookEdition, chapter: Chapter, resolver: IssueResolver
+    ) -> None:
+        """Перевод, проверки и решение замечаний главы."""
         name = chapter.code or f"глава {chapter.ordinal}"
 
         await self._require_no_live_job(chapter)
@@ -570,7 +681,11 @@ class AutopilotService(TenantService):
             await self._session.commit()
             raise WaitingForQueueError
 
-        await self._stop_on_issues(chapter)
+        await self._resolve(run, book, chapter, resolver)
+
+    async def _finish_chapter(self, run: AutopilotRun, chapter: Chapter) -> None:
+        """Рисунки, сверка и готовая версия главы — когда замечаний, держащих книгу, нет."""
+        await self._require_no_live_job(chapter)
 
         await self._mark(run, "figures")
         await self._figures(run, chapter)
@@ -581,33 +696,355 @@ class AutopilotService(TenantService):
         await self._mark(run, "chapters")
         await self._release_chapter(run, chapter)
 
-    async def _stop_on_issues(self, chapter: Chapter) -> None:
-        """Критичное и серьёзное решает только человек: закрывать их сервис не умеет."""
+    async def _stop_on_issues(self, chapters: list[Chapter]) -> None:
+        """Что сервис решить не смог или не вправе: открытое критичное и серьёзное по всей книге."""
+        query = (
+            self.scoped(Issue)
+            .where(
+                Issue.chapter_id.in_([chapter.id for chapter in chapters]),
+                Issue.severity.in_(BLOCKING),
+                Issue.status.in_(OPEN),
+                Issue.archived_at.is_(None),
+            )
+            .order_by(Issue.code)
+        )
+        rows = list(await self._session.scalars(query.limit(STOP_LIST_LIMIT + 1)))
+        if not rows:
+            return
+
+        reasons = [
+            _reason(
+                "open_issue",
+                f"Замечание {row.code} ждёт решения: {_short(row.description)}",
+                chapter_id=row.chapter_id,
+                issue_id=row.id,
+            )
+            for row in rows[:STOP_LIST_LIMIT]
+        ]
+        if len(rows) > STOP_LIST_LIMIT:
+            reasons.append(
+                _reason("more_issues", "Остальные замечания, ждущие решения, — в реестре книги")
+            )
+
+        raise NeedsHumanError(reasons)
+
+    # ── замечания: решает сам сервис ──
+
+    async def _resolve(
+        self, run: AutopilotRun, book: BookEdition, chapter: Chapter, resolver: IssueResolver
+    ) -> None:
+        """Замечания проверок главы: модель исправляет перевод или объясняет, почему это не ошибка.
+
+        Исправление принимается, только если те же проверки не находят в нём ничего, что держит
+        книгу. Не принятое пробуется ещё раз с объяснением, почему; после второй неудачи замечание
+        остаётся человеку. Новые редакции проверяются заново обычным порядком: поэтому после них
+        заход заканчивается, а следующий запустит проверки.
+        """
+        pending = await self._resolvable(run, chapter)
+        if not pending:
+            return
+
+        glossary = await self._chapter_glossary(chapter)
+        order = list(
+            await self._session.scalars(
+                self.scoped(Block)
+                .where(Block.chapter_id == chapter.id, Block.active.is_(True))
+                .order_by(Block.ordinal)
+            )
+        )
+        context = neighbourhoods(order)
+        feedback: dict[uuid.UUID, str] = {}
+        changed = False
+
+        for _ in range(MAX_ATTEMPTS):
+            if not pending:
+                break
+
+            await self._mark(run, "checks")
+            retry: dict[uuid.UUID, list[Issue]] = {}
+            block_ids = list(pending)
+
+            for start in range(0, len(block_ids), RESOLVE_BATCH):
+                blocks = await self._blocks_with_text(block_ids[start : start + RESOLVE_BATCH])
+                # Блок мог уйти из текущей версии мастера: решать по нему больше нечего.
+                batch = [
+                    block_id
+                    for block_id in block_ids[start : start + RESOLVE_BATCH]
+                    if block_id in blocks
+                ]
+                if not batch:
+                    continue
+                requests = [
+                    self._request(
+                        book,
+                        chapter,
+                        blocks[block_id],
+                        pending[block_id],
+                        glossary,
+                        context,
+                        feedback.get(block_id),
+                    )
+                    for block_id in batch
+                ]
+                answer = await resolver.resolve(requests)
+                self._spend(run, answer.usage)
+                run.model = resolver.name
+
+                for block_id, request in zip(batch, requests, strict=True):
+                    block, current = blocks[block_id]
+                    outcome = await self._apply(
+                        run,
+                        block,
+                        current,
+                        pending[block_id],
+                        answer.items[request.key],
+                        glossary,
+                        resolver.name,
+                    )
+                    changed = changed or outcome.fixed
+                    tried = f"resolve:{block_id}"
+
+                    if outcome.retry is None:
+                        # Решено (или оставлено человеку): новое замечание на новом тексте
+                        # получит свои попытки.
+                        run.attempts = {k: v for k, v in run.attempts.items() if k != tried}
+                        continue
+
+                    # Неудачная попытка помнится в прогоне: следующий заход — пока переводятся
+                    # другие главы — не повторит её за деньги.
+                    run.attempts = {**run.attempts, tried: int(run.attempts.get(tried, 0)) + 1}
+                    feedback[block_id] = outcome.retry
+                    if int(run.attempts[tried]) < MAX_ATTEMPTS:
+                        retry[block_id] = pending[block_id]
+
+                await self._session.commit()
+
+            pending = retry
+
+        if changed:
+            # Новые редакции проверяются заново: это новая проверка, а не повтор сорвавшейся.
+            run.attempts = {
+                key: value
+                for key, value in run.attempts.items()
+                if key not in (f"formal:{chapter.id}", f"semantic:{chapter.id}")
+            }
+            await self._session.commit()
+            raise WaitingForQueueError
+
+    async def _resolvable(
+        self, run: AutopilotRun, chapter: Chapter
+    ) -> dict[uuid.UUID, list[Issue]]:
+        """Замечания, которые решает сервис, по блокам: нашли проверки, человек их не касался."""
         rows = list(
             await self._session.scalars(
                 self.scoped(Issue)
                 .where(
                     Issue.chapter_id == chapter.id,
-                    Issue.severity.in_((IssueSeverity.CRITICAL, IssueSeverity.MAJOR)),
-                    Issue.status.in_(OPEN),
+                    Issue.automatic.is_(True),
+                    Issue.status == IssueStatus.NEW,
+                    Issue.severity.in_(BLOCKING),
                     Issue.archived_at.is_(None),
+                    Issue.block_id.is_not(None),
                 )
-                .order_by(Issue.severity, Issue.code)
-                .limit(50)
+                .order_by(Issue.code)
             )
         )
-        if rows:
-            raise NeedsHumanError(
-                [
-                    _reason(
-                        "open_issue",
-                        f"Замечание {row.code} ждёт решения",
-                        chapter_id=chapter.id,
-                        issue_id=row.id,
-                    )
-                    for row in rows
-                ]
+
+        grouped: dict[uuid.UUID, list[Issue]] = {}
+        for row in rows:
+            block_id: uuid.UUID = row.block_id  # type: ignore[assignment]
+            # Блок, который уже исправлялся слишком часто или на котором модель исчерпала
+            # попытки, остаётся человеку.
+            if int(run.attempts.get(f"fix:{block_id}", 0)) >= MAX_FIX_ROUNDS:
+                continue
+            if int(run.attempts.get(f"resolve:{block_id}", 0)) >= MAX_ATTEMPTS:
+                continue
+            grouped.setdefault(block_id, []).append(row)
+
+        if not grouped:
+            return {}
+
+        blocks = await self._blocks_with_text(list(grouped))
+
+        # Листинг переносится знак в знак: править в нём модели нечего, решает человек.
+        return {
+            block_id: issues
+            for block_id, issues in grouped.items()
+            if block_id in blocks
+            and not is_protected(blocks[block_id][0].kind, blocks[block_id][0].source_text)
+        }
+
+    async def _blocks_with_text(
+        self, block_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, tuple[Block, TranslationRevision]]:
+        """Действующие блоки с текущей редакцией; без редакции решать нечего."""
+        rows = await self._session.execute(
+            select(Block, TranslationRevision)
+            .join(TranslationRevision, TranslationRevision.id == Block.current_revision_id)
+            .where(
+                Block.organization_id == self.organization_id,
+                Block.id.in_(block_ids),
+                Block.active.is_(True),
             )
+            .execution_options(populate_existing=True)
+        )
+
+        return {block.id: (block, revision) for block, revision in rows.tuples().all()}
+
+    def _request(
+        self,
+        book: BookEdition,
+        chapter: Chapter,
+        pair: tuple[Block, TranslationRevision],
+        issues: list[Issue],
+        glossary: Glossary,
+        context: dict[uuid.UUID, Neighbourhood],
+        previous: str | None,
+    ) -> ResolveRequest:
+        block, current = pair
+
+        return ResolveRequest(
+            # Полный код, как в реестре и в смысловой сверке: «B0001» есть в каждой главе.
+            key=f"{chapter.code}-{block.code}" if chapter.code else block.code,
+            source_text=block.source_text,
+            target_text=current.text,
+            source_language=book.source_language,
+            target_language=book.target_language,
+            problems=[
+                Problem(
+                    key=issue.code,
+                    description=issue.description,
+                    category=issue.category.value,
+                    severity=issue.severity.value,
+                    proposed_fix=issue.proposed_fix,
+                )
+                for issue in issues
+            ],
+            kind=block.kind.value,
+            terms=list(glossary.match(block.source_text)),
+            protected=protected_of(block),
+            context=context[block.id],
+            previous_attempt=previous,
+        )
+
+    async def _apply(
+        self,
+        run: AutopilotRun,
+        block: Block,
+        current: TranslationRevision,
+        issues: list[Issue],
+        resolution: Resolution,
+        glossary: Glossary,
+        model: str,
+    ) -> "_Outcome":
+        """Принять ответ модели по блоку: решено, повторить (и почему) или оставить человеку."""
+        # Коды — заранее: после отката точки сохранения объекты блока и замечаний устаревают.
+        block_id = block.id
+        block_code = block.code
+        chapter_id = block.chapter_id
+        codes = [issue.code for issue in issues]
+
+        verdicts = {issue.id: resolution.verdicts[issue.code] for issue in issues}
+        unsure = [issue for issue in issues if verdicts[issue.id].verdict is Verdict.UNSURE]
+        if unsure:
+            return _Outcome(
+                retry="Прошлый ответ — «не уверена»: "
+                + "; ".join(f"{issue.code}: {verdicts[issue.id].reason}" for issue in unsure)
+            )
+
+        fixed = {
+            issue.id: verdicts[issue.id].reason
+            for issue in issues
+            if verdicts[issue.id].verdict is Verdict.FIX
+        }
+        rejected = {
+            issue.id: verdicts[issue.id].reason
+            for issue in issues
+            if verdicts[issue.id].verdict is Verdict.NOT_AN_ERROR
+        }
+
+        if fixed:
+            text = resolution.text or ""
+            problems = self._still_blocking(block, text, glossary)
+            if problems:
+                return _Outcome(retry="Проверки не приняли исправление: " + "; ".join(problems))
+            if text == current.text and any(
+                str(current.id) in issue.discovered_revisions for issue in issues
+            ):
+                return _Outcome(retry="Исправленный текст совпадает с прежним")
+
+        try:
+            async with self._session.begin_nested():
+                result = await IssueService(
+                    self._session, self._context, self._storage
+                ).resolve_automatically(
+                    block.id,
+                    base_revision_id=current.id,
+                    text=resolution.text if fixed else None,
+                    fixed=fixed,
+                    rejected=rejected,
+                )
+        except (ConflictError, InvalidInputError, NotFoundError) as error:
+            # Решить нельзя по правилам (правило двух человек, текст сменился): остаётся человеку.
+            self._audit(
+                run,
+                "issue_left_for_human",
+                {"block": block_code, "issues": codes, "why": str(error)},
+            )
+            # Повтор тут ничего не изменит: дальше по этому блоку решает человек.
+            run.attempts = {**run.attempts, f"fix:{block_id}": MAX_FIX_ROUNDS}
+            return _Outcome()
+
+        if result.fixed:
+            key = f"fix:{block_id}"
+            run.attempts = {**run.attempts, key: int(run.attempts.get(key, 0)) + 1}
+
+        self._audit(
+            run,
+            "issues_resolved",
+            {
+                "chapter_id": str(chapter_id),
+                "block": block_code,
+                "fixed": result.fixed,
+                "rejected": result.rejected,
+                "model": model,
+                "prompt_version": RESOLVE_PROMPT_VERSION,
+            },
+        )
+
+        return _Outcome(fixed=bool(result.fixed))
+
+    def _still_blocking(self, block: Block, text: str, glossary: Glossary) -> list[str]:
+        """Те же проверки, что у черновика: что в исправлении всё ещё держит книгу."""
+        if not text.strip():
+            return ["перевод пуст"]
+
+        return [
+            finding.message
+            for finding in run_checks(
+                block.source_text,
+                text,
+                glossary=glossary,
+                kind=block.kind,
+                protected=protected_of(block),
+            )
+            if finding.not_required is None and finding.severity in BLOCKING
+        ]
+
+    async def _chapter_glossary(self, chapter: Chapter) -> Glossary:
+        version = await TerminologyGate(self._session, self._context).effective(
+            chapter.book_id, chapter.id
+        )
+        if version is None:
+            return Glossary([])
+
+        return await GlossaryService(self._session, self._context).load_version(version.id)
+
+    def _spend(self, run: AutopilotRun, usage: Usage) -> None:
+        run.input_tokens += usage.input_tokens
+        run.output_tokens += usage.output_tokens
+        run.cached_input_tokens += usage.cached_input_tokens
+        run.cache_write_tokens += usage.cache_write_tokens
 
     async def _figures(self, run: AutopilotRun, chapter: Chapter) -> None:
         figures = FigureService(self._session, self._context, self._storage)
